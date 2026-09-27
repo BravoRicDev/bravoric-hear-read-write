@@ -2,6 +2,7 @@
 name = "bravoric-stt-clipboard"
 version = "0.1.0"
 description = "Dettatura vocale STT + OCR clipboard su GNOME/Wayland via router scrocco-fissone"
+readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
     "requests>=2.31",
