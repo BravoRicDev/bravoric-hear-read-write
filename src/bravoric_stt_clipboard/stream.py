@@ -34,7 +34,7 @@ import threading
 import time
 import uuid
 import wave
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from pathlib import Path
 from typing import Any, BinaryIO
 
@@ -103,7 +103,13 @@ KNOWN_HALLUCINATIONS = frozenset({
     "Sottotitoli a cura di Whisper",
 })
 
-_STOP = object()
+class _Stop:
+    """Sentinella di arresto per _result_queue: tipo dedicato (non `object`
+    generico) cosi' `isinstance(item, _Stop)` restringe `item` a `_ChunkResult`
+    nel ramo else (un `is` semplice non basta a mypy per il narrowing)."""
+
+
+_STOP = _Stop()
 
 @dataclasses.dataclass(frozen=True)
 class _ChunkResult:
@@ -739,6 +745,7 @@ def _worker(seq, wav_path, prompt, *, stream, sem, result_queue,
     # quei doppioni con TypeError, quindi il default None della firma
     # servirebbe a niente. Qui si chiama la catena VERA col gate e i
     # doppioni restano quelli di prima: il gate si spegne quando non c'e'.
+    _chain: Callable[[Any, Any, Any, Any], str]
     if endpoint_gate is None:
         _chain = _sequential_chain
     else:
@@ -923,7 +930,7 @@ class _FifoSequencer:
         # `None` = lascia decidere il default del modulo (2000).
         self._log_max_lines = log_max_lines
         self._lock = threading.Lock()
-        self._result_queue: queue.Queue[_ChunkResult | object] = queue.Queue()
+        self._result_queue: queue.Queue[_ChunkResult | _Stop] = queue.Queue()
         self._pending: dict[int, _ChunkResult] = {}
         self._next_expected = 0
         self._thread = threading.Thread(target=self._run, daemon=True)
@@ -1003,7 +1010,7 @@ class _FifoSequencer:
     def _run(self):
         while True:
             item = self._result_queue.get()
-            if item is _STOP:
+            if isinstance(item, _Stop):
                 return
             self.ingest(item)
 
