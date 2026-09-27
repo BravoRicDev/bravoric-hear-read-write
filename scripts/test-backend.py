@@ -322,19 +322,49 @@ def _modulo_con_budget_neutro(sorgente: Path):
 def main() -> int:
     tmp = Path(tempfile.mkdtemp(prefix="brv-test-"))
 
-    # Snapshot del vero chunk_log.jsonl PRIMA di qualunque test: la verifica
-    # "nessun test ha scritto sul percorso reale" (fondo file) confrontava
-    # solo due path per disuguaglianza, sempre vera per costruzione — non
-    # dimostrava nulla sul file reale (bug trovato dal vivo: _FifoSequencer
-    # scriveva davvero su questo percorso ad ogni run, la vecchia verifica
-    # non se ne accorgeva mai). Qui si confronta mtime+size REALI, non un
-    # confronto di stringhe.
+    # Snapshot di TUTTI i percorsi reali dell'utente PRIMA di qualunque test.
+    # Motivo: due difetti reali trovati dal vivo in questa stessa suite (non
+    # ipotizzati) — _FifoSequencer scriveva su chunk_log.CHUNK_LOG_PATH senza
+    # path= iniettabile, e il blocco "routing icone" (poco sotto) chiamava
+    # stt._start() REALE (solo audio mockato) PRIMA che status.STATUS_PATH
+    # venisse reindirizzato qualche riga sotto — entrambi scrivevano davvero
+    # nei file dell'utente ad ogni run. La vecchia "difesa" per chunk_log era
+    # tautologica (confrontava due path per disuguaglianza, sempre vera per
+    # costruzione): qui si confronta mtime+size REALI di ogni file noto,
+    # prima e dopo l'intera suite, cosi' un terzo sito analogo (presente o
+    # futuro) non passerebbe inosservato una terza volta.
     from bravoric_stt_clipboard import chunk_log as _real_cl
-    try:
-        _real_cl_before = _real_cl.CHUNK_LOG_PATH.stat()
-        _real_cl_snapshot = (_real_cl_before.st_mtime_ns, _real_cl_before.st_size)
-    except OSError:
-        _real_cl_snapshot = None  # file assente prima dei test: deve restare assente
+    from bravoric_stt_clipboard import endpoint_breaker as _real_eb
+    from bravoric_stt_clipboard import stream as _real_sm
+
+    # I Path VANNO catturati qui, non riletti da module.ATTR a fine suite:
+    # i test riassegnano legittimamente questi attributi a percorsi
+    # temporanei e non li ripristinano sempre (non serve, ognuno usa il
+    # proprio tmp). Rileggere l'attributo a fine corsa confronterebbe un
+    # file temporaneo (spesso gia' sparito, .stat() -> OSError -> None)
+    # contro lo snapshot reale iniziale: falso positivo garantito. Lo
+    # stesso oggetto Path, salvato una volta, e' l'unico modo corretto.
+    _REAL_PATHS = {
+        "status": status.STATUS_PATH,
+        "output_history": output_history.HISTORY_PATH,
+        "config_editor": config_editor.CONFIG_PATH,
+        "chunk_log": _real_cl.CHUNK_LOG_PATH,
+        "endpoint_breaker": _real_eb.BREAKER_PATH,
+        "stream_state": _real_sm.STREAM_STATE_PATH,
+        "stream_live_text": _real_sm.STREAM_LIVE_TEXT_PATH,
+    }
+
+    def _snapshot_real_paths() -> dict[str, tuple[int, int] | None]:
+        snap: dict[str, tuple[int, int] | None] = {}
+        for name, p in _REAL_PATHS.items():
+            try:
+                st = p.stat()
+                snap[name] = (st.st_mtime_ns, st.st_size)
+            except OSError:
+                snap[name] = None  # assente prima dei test: deve restare assente
+        return snap
+
+    _real_paths_before = _snapshot_real_paths()
 
     # --- notification icon registry/resolver contract -----------------
     print("== notification icon slots ==")
@@ -377,6 +407,14 @@ def main() -> int:
     check("editor refuses to create config when user config absent", absent_config_safe)
 
     # --- notification icon slot routing checks -----------------------
+    # status.STATUS_PATH va reindirizzato PRIMA di questo blocco: stt._start
+    # e' la funzione REALE (solo stt.audio e' mockato), e scrive davvero
+    # status.write_status(STATE_RECORDING, service="stt"). Difetto reale
+    # trovato dal vivo: il redirect stava PIU' SOTTO (nel blocco status.py),
+    # quindi questa singola chiamata precedeva la riassegnazione e finiva
+    # nel file VERO dell'utente (~/.cache/bravoric-stt-clipboard/status.json),
+    # sovrascrivendolo con uno stato 'recording' falso e un timestamp fresco.
+    status.STATUS_PATH = tmp / "status.json"
     with mock.patch("bravoric_stt_clipboard.notify.send") as m_send:
         stt_cfg = mock.Mock()
         stt_cfg.notifications = True
@@ -387,7 +425,6 @@ def main() -> int:
 
     # --- status.py: scrittura atomica + lettura robusta -------------------
     print("== status.py ==")
-    status.STATUS_PATH = tmp / "status.json"
     status.write_status("recording", service="stt")
     data = status.read_status()
     check("write/read round-trip", data["state"] == "recording" and data["service"] == "stt")
@@ -6057,16 +6094,14 @@ max_entries = 20
     check("NON-VACUITA': la verifica diventa False quando il log e' rotto",
           _cl_probe_detects_failure is True)
 
-    # Verifica REALE (non tautologica) che nessun test di questa run abbia
-    # scritto sul chunk_log.jsonl vero dell'utente: confronto mtime+size
-    # dello snapshot preso a inizio main() con lo stato attuale.
-    try:
-        _real_cl_after_stat = _real_cl.CHUNK_LOG_PATH.stat()
-        _real_cl_after = (_real_cl_after_stat.st_mtime_ns, _real_cl_after_stat.st_size)
-    except OSError:
-        _real_cl_after = None
-    check("chunk_log: il file REALE dell'utente ha mtime/size invariati dopo l'intera suite",
-          _real_cl_after == _real_cl_snapshot)
+    # Verifica REALE (non tautologica, vedi commento a inizio main()) che
+    # nessun test di questa run abbia scritto su NESSUNO dei percorsi reali
+    # dell'utente: confronto mtime+size di ogni file noto, snapshot preso a
+    # inizio main() contro lo stato attuale.
+    _real_paths_after = _snapshot_real_paths()
+    for _name_rp, _before_rp in _real_paths_before.items():
+        check(f"{_name_rp}: il file REALE dell'utente ha mtime/size invariati dopo l'intera suite",
+              _real_paths_after[_name_rp] == _before_rp)
 
     print(f"\n{PASS} PASS / {FAIL} FAIL")
     return 1 if FAIL else 0
