@@ -43,6 +43,7 @@ from bravoric_stt_clipboard import (  # noqa: E402
     notify,
     ocr,
     output_history,
+    screenshot,
     status,
     storage,
     stt,
@@ -807,6 +808,10 @@ def main() -> int:
         cfg_ocr.notifications = False
         cfg_ocr.storage.ocr_original.enabled = False
         cfg_ocr.storage.ocr_raw.enabled = False
+        # Un Mock() non impostato e' truthy: senza questo, il ramo
+        # screenshot (nuovo) scatterebbe al posto di quello clipboard che
+        # questo test vuole davvero esercitare.
+        cfg_ocr.ocr_capture_screenshot = False
 
         with mock.patch("bravoric_stt_clipboard.ocr.try_with_fallback", return_value="testo"):
             ocr.handle_capture(cfg_ocr)
@@ -4344,6 +4349,7 @@ def main() -> int:
         g3_ocr_cfg.ocr_cleanup.fallback = []
         g3_ocr_cfg.storage.ocr_original.enabled = False
         g3_ocr_cfg.storage.ocr_raw.enabled = False
+        g3_ocr_cfg.ocr_capture_screenshot = False  # vedi commento sul giro 10 sopra
         with mock.patch("bravoric_stt_clipboard.ocr.clipboard") as m_clip_g3, \
              mock.patch("bravoric_stt_clipboard.ocr.notify"), \
              mock.patch("bravoric_stt_clipboard.ocr.storage"), \
@@ -5119,6 +5125,112 @@ def main() -> int:
         _clip_ok_o = [c.args[0] for c in _clip_o2.write_text.call_args_list]
     check("D1-OCR (contro): un'estrazione vera finisce negli appunti come prima",
           "testo estratto" in _clip_ok_o)
+
+    print("== screenshot.py: capture_area_png (nuova funzionalita') ==")
+    # screenshot.capture_area_png non chiama mai un vero gnome-screenshot nei
+    # test: subprocess.run e' sostituito con doppioni che ispezionano l'argv
+    # reale (per scrivere il file al path che la funzione ha davvero scelto,
+    # non uno concordato in anticipo) e simulano i 4 esiti possibili.
+    import dataclasses as _dc
+
+    def _fake_run_success(args: list[str], **_kw: Any) -> subprocess.CompletedProcess:
+        path = Path(args[args.index("--file") + 1])
+        path.write_bytes(b"\x89PNG\r\n\x1a\nFAKE")
+        return subprocess.CompletedProcess(args, 0)
+
+    def _fake_run_cancel(args: list[str], **_kw: Any) -> subprocess.CompletedProcess:
+        return subprocess.CompletedProcess(args, 1)  # Esc: niente file, exit != 0
+
+    def _fake_run_missing(args: list[str], **_kw: Any) -> subprocess.CompletedProcess:
+        raise FileNotFoundError("gnome-screenshot non installato")
+
+    def _fake_run_timeout(args: list[str], **_kw: Any) -> subprocess.CompletedProcess:
+        raise subprocess.TimeoutExpired(args, screenshot.SELECTION_TIMEOUT_SECONDS)
+
+    _orig_ss_run = screenshot.subprocess.run
+    try:
+        screenshot.subprocess.run = _fake_run_success
+        check("screenshot: successo -> bytes del PNG catturato",
+              screenshot.capture_area_png() == b"\x89PNG\r\n\x1a\nFAKE")
+
+        screenshot.subprocess.run = _fake_run_cancel
+        check("screenshot: annullato (Esc, exit!=0, nessun file) -> None, non un errore",
+              screenshot.capture_area_png() is None)
+
+        screenshot.subprocess.run = _fake_run_missing
+        check("screenshot: gnome-screenshot assente -> None (loggato, non solleva)",
+              screenshot.capture_area_png() is None)
+
+        screenshot.subprocess.run = _fake_run_timeout
+        check("screenshot: timeout selezione -> None",
+              screenshot.capture_area_png() is None)
+    finally:
+        screenshot.subprocess.run = _orig_ss_run
+
+    print("== ocr.py: capture_screenshot=True chiama screenshot invece di clipboard ==")
+    cfg_shot = _dc.replace(cfg_stream_min, ocr_capture_screenshot=True)
+    with mock.patch.object(ocr, "screenshot") as _shot_o, \
+         mock.patch.object(ocr, "clipboard") as _clip_shot, \
+         mock.patch.object(ocr, "try_with_fallback", return_value="testo da screenshot"), \
+         mock.patch.object(ocr, "status"), \
+         mock.patch.object(ocr, "notify"), \
+         mock.patch.object(ocr, "storage"), \
+         mock.patch.object(ocr, "output_history"):
+        _shot_o.capture_area_png.return_value = b"png-bytes"
+        ocr.handle_capture(cast(Any, cfg_shot))
+        _shot_calls = _shot_o.capture_area_png.call_count
+        _clip_read_calls = _clip_shot.read_image_png.call_count
+        _shot_final = [c.args[0] for c in _clip_shot.write_text.call_args_list]
+    check("ocr capture_screenshot=True: chiama screenshot.capture_area_png, non clipboard.read_image_png",
+          _shot_calls == 1 and _clip_read_calls == 0)
+    check("ocr capture_screenshot=True: il testo estratto arriva comunque in clipboard",
+          "testo da screenshot" in _shot_final)
+
+    # CONTRO: annullamento (None) non scrive nulla in clipboard e non chiama la catena OCR.
+    with mock.patch.object(ocr, "screenshot") as _shot_cancel, \
+         mock.patch.object(ocr, "clipboard") as _clip_cancel, \
+         mock.patch.object(ocr, "try_with_fallback") as _chain_cancel, \
+         mock.patch.object(ocr, "status") as _st_cancel, \
+         mock.patch.object(ocr, "notify"), \
+         mock.patch.object(ocr, "storage"), \
+         mock.patch.object(ocr, "output_history"):
+        _st_cancel.STATE_PROCESSING = status.STATE_PROCESSING
+        _st_cancel.STATE_IDLE = status.STATE_IDLE
+        _shot_cancel.capture_area_png.return_value = None
+        ocr.handle_capture(cast(Any, cfg_shot))
+        _cancel_write_calls = _clip_cancel.write_text.call_count
+        _cancel_chain_calls = _chain_cancel.call_count
+        _cancel_states = [c.args[0] for c in _st_cancel.write_status.call_args_list]
+    check("ocr capture_screenshot=True, annullato: nessuna scrittura in clipboard",
+          _cancel_write_calls == 0)
+    check("ocr capture_screenshot=True, annullato: la catena OCR non viene nemmeno chiamata",
+          _cancel_chain_calls == 0)
+    check("ocr capture_screenshot=True, annullato: stato torna a idle, non error",
+          _cancel_states and _cancel_states[-1] == status.STATE_IDLE)
+
+    # CONTRO: capture_screenshot=False (default) continua a leggere la clipboard, invariato.
+    with mock.patch.object(ocr, "screenshot") as _shot_off, \
+         mock.patch.object(ocr, "clipboard") as _clip_off, \
+         mock.patch.object(ocr, "try_with_fallback", return_value="testo da clipboard"), \
+         mock.patch.object(ocr, "status"), \
+         mock.patch.object(ocr, "notify"), \
+         mock.patch.object(ocr, "storage"), \
+         mock.patch.object(ocr, "output_history"):
+        _clip_off.read_image_png.return_value = b"png-bytes"
+        ocr.handle_capture(cast(Any, cfg_stream_min))
+        _off_shot_calls = _shot_off.capture_area_png.call_count
+    check("ocr capture_screenshot=False (default): screenshot.capture_area_png MAI chiamata",
+          _off_shot_calls == 0)
+
+    print("== config.py: ocr_capture_screenshot (default e parsing) ==")
+    check("Config: ocr_capture_screenshot default False su cfg_stream_min",
+          cfg_stream_min.ocr_capture_screenshot is False)
+    _cfg_shot_true = config._build_config({"ocr": {"capture_screenshot": True}})
+    check("config: [ocr].capture_screenshot = true viene letto",
+          _cfg_shot_true.ocr_capture_screenshot is True)
+    _cfg_shot_absent = config._build_config({})
+    check("config: [ocr] assente -> capture_screenshot default False",
+          _cfg_shot_absent.ocr_capture_screenshot is False)
 
 
     print("== giro 18: P3 il prompt di default esiste davvero ==")

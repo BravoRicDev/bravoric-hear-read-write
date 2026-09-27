@@ -153,7 +153,7 @@ function findShortcutConflict(binding) {
 const SERVICES = [
     { key: 'stt', label: N_('STT — Audio transcription'), hasEnabled: false, hasPrompt: true, hasLanguage: true, hasHotwords: true, promptField: 'prompt' },
     { key: 'stt_cleanup', label: N_('STT — LLM cleanup'), hasEnabled: true, hasPrompt: true, promptField: 'system_prompt' },
-    { key: 'ocr', label: N_('OCR — Extraction (Vision)'), hasEnabled: false, hasPrompt: true, promptField: 'system_prompt' },
+    { key: 'ocr', label: N_('OCR — Extraction (Vision)'), hasEnabled: false, hasPrompt: true, promptField: 'system_prompt', hasScreenshotToggle: true },
     { key: 'ocr_cleanup', label: N_('OCR — LLM cleanup'), hasEnabled: true, hasPrompt: true, promptField: 'system_prompt' },
 ];
 
@@ -1626,6 +1626,18 @@ export default class BravoricPreferences extends ExtensionPreferences {
                 setSectionField(svc.key, 'language', langRow.text);
             });
             group.add(langRow);
+        }
+
+        if (svc.hasScreenshotToggle) {
+            const screenshotRow = new Adw.SwitchRow({
+                title: _('Take screenshot on capture'),
+                subtitle: _('Select a screen area (gnome-screenshot) instead of reading an image already in the clipboard.'),
+                active: svcState.capture_screenshot ?? false,
+            });
+            screenshotRow.connect('notify::active', () => {
+                setSectionField(svc.key, 'capture_screenshot', screenshotRow.active ? 'true' : 'false');
+            });
+            group.add(screenshotRow);
         }
 
         if (svc.hasPrompt) {

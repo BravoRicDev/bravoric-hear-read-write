@@ -134,6 +134,9 @@ timeout_seconds = 120
 
 [ocr]
 system_prompt = "Estrai il testo presente nell'immagine, verbatim, senza markdown, senza commenti."
+# Se true, seleziona interattivamente un'area dello schermo (gnome-screenshot)
+# invece di leggere un'immagine già presente negli appunti. Richiede gnome-screenshot.
+capture_screenshot = false
 
 # --- OCR cleanup: ripasso LLM opzionale sul testo estratto ---
 [ocr_cleanup]

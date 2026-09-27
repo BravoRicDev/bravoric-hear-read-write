@@ -9,7 +9,10 @@ Three ways to get text into the clipboard without typing it:
 - **STT (push-to-talk dictation)** — press a shortcut, speak, press again: the
   recording is transcribed and written to the clipboard.
 - **OCR (screenshot capture)** — select a region of the screen, get the text
-  it contains.
+  it contains. By default it reads whatever image is already in the
+  clipboard (e.g. from your own screenshot tool); optionally, it can trigger
+  an interactive area selection itself (`gnome-screenshot`) on the same
+  shortcut.
 - **Streaming dictation** — continuous, low-latency dictation that types
   directly into the focused field as you speak, with voice commands
   ("new line", "delete last word", …) and live context so the model sees

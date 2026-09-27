@@ -368,6 +368,10 @@ class Config:
     history_max_entries: int
     icons: IconsConfig
     stream: StreamConfig
+    # Se True, OCR scatta prima uno screenshot interattivo (gnome-screenshot
+    # -a) invece di leggere un'immagine già presente in clipboard. Default
+    # False: comportamento di sempre, invariato per chi non lo attiva.
+    ocr_capture_screenshot: bool = False
     # Retrocompatibilità: stt_fallback è un alias di stt.fallback
     stt_fallback: list[FallbackLevel] = field(init=False, repr=False)
 
@@ -616,6 +620,7 @@ def _build_config(raw: dict) -> Config:
             ),
             ocr_fallback=_parse_fallback_list(raw.get("ocr", {}).get("fallback", [])),
             ocr_system_prompt=ocr_raw.get("system_prompt", ""),
+            ocr_capture_screenshot=ocr_raw.get("capture_screenshot", False),
             ocr_cleanup=CleanupConfig(
                 enabled=ocr_cleanup_raw.get("enabled", False),
                 system_prompt=ocr_cleanup_raw.get("system_prompt", ""),

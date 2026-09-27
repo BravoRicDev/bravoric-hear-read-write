@@ -134,6 +134,9 @@ timeout_seconds = 120
 
 [ocr]
 system_prompt = "Extract the text present in the image, verbatim, no markdown, no comments."
+# If true, interactively select a screen area (gnome-screenshot) instead of
+# reading an image already present in the clipboard. Requires gnome-screenshot.
+capture_screenshot = false
 
 # --- OCR cleanup: optional LLM pass over the extracted text ---
 [ocr_cleanup]

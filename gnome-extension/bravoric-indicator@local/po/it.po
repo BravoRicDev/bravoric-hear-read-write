@@ -730,6 +730,14 @@ msgstr "OK"
 msgid "Enabled"
 msgstr "Attivo"
 
+#: gnome-extension/bravoric-indicator@local/prefs.js:1633
+msgid "Take screenshot on capture"
+msgstr "Scatta screenshot alla cattura"
+
+#: gnome-extension/bravoric-indicator@local/prefs.js:1634
+msgid "Select a screen area (gnome-screenshot) instead of reading an image already in the clipboard."
+msgstr "Seleziona un'area dello schermo (gnome-screenshot) invece di leggere un'immagine già presente negli appunti."
+
 #: gnome-extension/bravoric-indicator@local/prefs.js:1412
 msgid "System prompt"
 msgstr "Prompt di sistema"

@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import logging
 
-from . import clipboard, notify, output_history, status, storage
+from . import clipboard, notify, output_history, screenshot, status, storage
 from .api_client import vision_extract
 from .config import Config
 from .fallback import AllLevelsFailedError, cleanup_with_validation, try_with_fallback
@@ -22,13 +22,25 @@ def handle_capture(cfg: Config) -> None:
         icon=notify.resolve_icon("ocr_start", cfg.icons.ocr_start),
     )
 
-    try:
-        image_bytes = clipboard.read_image_png(cfg.clipboard_paste_tool)
-    except Exception as exc:  # noqa: BLE001 - fail fast con notifica utente
-        status.write_status(status.STATE_ERROR)
-        if cfg.notifications:
-            notify.send(_("OCR: no image in clipboard"), str(exc), icon=notify.resolve_icon("error_general", cfg.icons.error_general))
-        return
+    if cfg.ocr_capture_screenshot:
+        image_bytes = screenshot.capture_area_png()
+        if image_bytes is None:
+            # Annullato (Esc) o nessuna risposta: un cambio idea dell'utente,
+            # non un errore. Si torna a idle senza notifica, cosi' come non
+            # si notifica mai una scorciatoia premuta per sbaglio due volte.
+            try:
+                status.write_status(status.STATE_IDLE)
+            except Exception:
+                logger.debug("impossibile aggiornare lo status su IDLE", exc_info=True)
+            return
+    else:
+        try:
+            image_bytes = clipboard.read_image_png(cfg.clipboard_paste_tool)
+        except Exception as exc:  # noqa: BLE001 - fail fast con notifica utente
+            status.write_status(status.STATE_ERROR)
+            if cfg.notifications:
+                notify.send(_("OCR: no image in clipboard"), str(exc), icon=notify.resolve_icon("error_general", cfg.icons.error_general))
+            return
 
     try:
         storage.save_if_enabled(cfg.storage.base_dir, "ocr/original", cfg.storage.ocr_original, image_bytes, "png")

@@ -120,7 +120,7 @@ def _toml_line_value(key: str, value: str) -> str:
             return str(int(value))
         except ValueError as exc:
             raise ConfigEditorError(f"{key} must be an integer, got {value!r}") from exc
-    if key in ("enabled",):
+    if key in ("enabled", "capture_screenshot"):
         return "true" if value in ("true", "True", "1") else "false"
     escaped = (
         value.replace("\\", "\\\\")
@@ -275,8 +275,8 @@ def set_level_field(service: str, level_index: int, field: str, value: str) -> N
 
 
 def set_section_field(service: str, field: str, value: str) -> None:
-    """field in {'enabled', 'system_prompt', 'language', 'prompt', 'hotwords'},
-    sulla sezione singola [service] (non array-of-tables).
+    """field in {'enabled', 'system_prompt', 'language', 'prompt', 'hotwords',
+    'capture_screenshot'}, sulla sezione singola [service] (non array-of-tables).
 
     Se la sezione [service] non esiste nel TOML (config legacy: solo
     [[service.fallback]]), la crea; se esiste ma la chiave manca, la inserisce
@@ -579,6 +579,7 @@ def get_state() -> dict:
         "ocr": {
             "levels": levels_of("ocr"),
             "system_prompt": raw.get("ocr", {}).get("system_prompt", ""),
+            "capture_screenshot": raw.get("ocr", {}).get("capture_screenshot", False),
         },
         "ocr_cleanup": {
             "enabled": raw.get("ocr_cleanup", {}).get("enabled", False),
