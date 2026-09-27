@@ -52,6 +52,16 @@ from bravoric_stt_clipboard import (  # noqa: E402
 PASS = 0
 FAIL = 0
 
+# Difetto reale trovato dal vivo: _FifoSequencer._log_chunk chiamava
+# chunk_log.append_record senza `path=`, quindi ogni _FifoSequencer
+# costruito da un test (una decina di siti, testano l'ordine FIFO/blacklist/
+# contesto, non il chunk log) scriveva riga per riga nel file VERO
+# dell'utente (~/.cache/bravoric-stt-clipboard/chunk_log.jsonl) ad ogni
+# esecuzione di questa suite. _FifoSequencer ora accetta log_path=: questo
+# e' il percorso che ogni test che NON sta specificamente testando
+# chunk_log/percorso-reale deve passare.
+_TEST_CHUNK_LOG_PATH = Path(tempfile.mkdtemp(prefix="bravoric-test-chunklog-")) / "chunk_log.jsonl"
+
 
 def _append_entry_worker(history_path: str, i: int) -> None:
     from bravoric_stt_clipboard import output_history as oh
@@ -311,6 +321,20 @@ def _modulo_con_budget_neutro(sorgente: Path):
 
 def main() -> int:
     tmp = Path(tempfile.mkdtemp(prefix="brv-test-"))
+
+    # Snapshot del vero chunk_log.jsonl PRIMA di qualunque test: la verifica
+    # "nessun test ha scritto sul percorso reale" (fondo file) confrontava
+    # solo due path per disuguaglianza, sempre vera per costruzione — non
+    # dimostrava nulla sul file reale (bug trovato dal vivo: _FifoSequencer
+    # scriveva davvero su questo percorso ad ogni run, la vecchia verifica
+    # non se ne accorgeva mai). Qui si confronta mtime+size REALI, non un
+    # confronto di stringhe.
+    from bravoric_stt_clipboard import chunk_log as _real_cl
+    try:
+        _real_cl_before = _real_cl.CHUNK_LOG_PATH.stat()
+        _real_cl_snapshot = (_real_cl_before.st_mtime_ns, _real_cl_before.st_size)
+    except OSError:
+        _real_cl_snapshot = None  # file assente prima dei test: deve restare assente
 
     # --- notification icon registry/resolver contract -----------------
     print("== notification icon slots ==")
@@ -1729,6 +1753,7 @@ def main() -> int:
         st_fifo = {"chunks": [], "last_chunks": []}
         seq_fifo = stream_module._FifoSequencer(
             st_fifo, stream_test_cfg, lambda text: None, lambda text: None,
+            log_path=_TEST_CHUNK_LOG_PATH,
         )
         seq_fifo.ingest(stream_module._ChunkResult(2, "Mondo", True))
         seq_fifo.ingest(stream_module._ChunkResult(0, "Ciao", True))
@@ -1747,6 +1772,7 @@ def main() -> int:
         st_solo = {"chunks": [], "last_chunks": ["dal", "backend"]}
         seq_solo = stream_module._FifoSequencer(
             st_solo, stream_test_cfg, lambda text: None, lambda text: None,
+            log_path=_TEST_CHUNK_LOG_PATH,
         )
         check("contesto: il fallback prende last_chunks e nient'altro",
               seq_solo.get_context_snapshot() == ["dal", "backend"])
@@ -1762,6 +1788,7 @@ def main() -> int:
         }
         seq_live = stream_module._FifoSequencer(
             st_live, stream_test_cfg, lambda text: None, lambda text: None,
+            log_path=_TEST_CHUNK_LOG_PATH,
         )
         _live_snapshot = seq_live.get_context_snapshot()
         # Le ultime tre righe del file, non tutto il file: read_live_text
@@ -1789,6 +1816,7 @@ def main() -> int:
         }
         seq_altra = stream_module._FifoSequencer(
             st_altra, stream_test_cfg, lambda text: None, lambda text: None,
+            log_path=_TEST_CHUNK_LOG_PATH,
         )
         check("contesto: il testo vivo di un'altra sessione viene rifiutato",
               seq_altra.get_context_snapshot() == ["dal", "backend"])
@@ -1819,11 +1847,11 @@ def main() -> int:
           not _live_fake.exists() and not _live_dir.exists())
     no_context = config.StreamConfig("per_chunk", 0.7, -30, 0.4, 30, 250, context_enabled=False, fallback=[])
     st_no_context = {"chunks": [], "last_chunks": ["existing"]}
-    seq_no_context = stream_module._FifoSequencer(st_no_context, no_context, lambda text: None, lambda text: None)
+    seq_no_context = stream_module._FifoSequencer(st_no_context, no_context, lambda text: None, lambda text: None, log_path=_TEST_CHUNK_LOG_PATH)
     seq_no_context.ingest(stream_module._ChunkResult(0, "personal prompt only", True))
     check("context disabled leaves last_chunks unchanged", st_no_context["last_chunks"] == ["existing"])
     st_tomb = {"chunks": [], "last_chunks": []}
-    seq_tomb = stream_module._FifoSequencer(st_tomb, stream_test_cfg, lambda text: None, lambda text: None)
+    seq_tomb = stream_module._FifoSequencer(st_tomb, stream_test_cfg, lambda text: None, lambda text: None, log_path=_TEST_CHUNK_LOG_PATH)
     for item in [stream_module._ChunkResult(0, "Primo", True), stream_module._ChunkResult(1, "", False), stream_module._ChunkResult(2, "Terzo", True)]:
         seq_tomb.ingest(item)
     check("failed chunk advances tombstone without blocking", st_tomb["chunks"] == ["Primo ", "Terzo "] and seq_tomb._next_expected == 3)
@@ -2504,7 +2532,7 @@ def main() -> int:
 
     # Sequencer tombstone and drop behavior with blacklist
     st_bl = {"chunks": [], "last_chunks": []}
-    seq_bl = stream_module._FifoSequencer(st_bl, stream_test_cfg, lambda text: None, lambda text: None, blacklist=frozenset({"grazie"}))
+    seq_bl = stream_module._FifoSequencer(st_bl, stream_test_cfg, lambda text: None, lambda text: None, blacklist=frozenset({"grazie"}), log_path=_TEST_CHUNK_LOG_PATH)
     committed_bl = []
     committed_bl.extend(seq_bl.ingest(stream_module._ChunkResult(0, "Primo", True)))
     committed_bl.extend(seq_bl.ingest(stream_module._ChunkResult(1, "Grazie!", True)))
@@ -2515,7 +2543,7 @@ def main() -> int:
 
     # drain_and_stop with blacklisted orphan
     st_bl_drain = {"chunks": [], "last_chunks": []}
-    seq_bl_drain = stream_module._FifoSequencer(st_bl_drain, stream_test_cfg, lambda text: None, lambda text: None, blacklist=frozenset({"grazie"}))
+    seq_bl_drain = stream_module._FifoSequencer(st_bl_drain, stream_test_cfg, lambda text: None, lambda text: None, blacklist=frozenset({"grazie"}), log_path=_TEST_CHUNK_LOG_PATH)
     seq_bl_drain._pending[0] = stream_module._ChunkResult(0, "Grazie.", True)
     seq_bl_drain._pending[1] = stream_module._ChunkResult(1, "Fine", True)
     seq_bl_drain.drain_and_stop(2)
@@ -3779,6 +3807,7 @@ def main() -> int:
     sq = _sm._FifoSequencer(
         seq_state, _stream_cfg(levels=[a_p, b_s, c_s]),
         lambda t: None, lambda t: None,
+        log_path=_TEST_CHUNK_LOG_PATH,
     )
     st_s = _stream_cfg(levels=[a_p, b_s, c_s])
     seen3: list[str] = []
@@ -4312,7 +4341,7 @@ def main() -> int:
         g2_cfg = config.StreamConfig("per_chunk", 0.7, -30, 0.4, 30, 250, fallback=[])
         st3 = {"chunks": [], "last_chunks": []}
         seq3 = stream_mod._FifoSequencer(st3, g2_cfg, lambda t: None, lambda t: None,
-                                         blacklist=frozenset())
+                                         blacklist=frozenset(), log_path=_TEST_CHUNK_LOG_PATH)
         seq3._pending[0] = stream_mod._ChunkResult(0, "Primo", True)
         seq3._pending[1] = stream_mod._ChunkResult(1, "Secondo", True)
         seq3.drain_and_stop(2)
@@ -5999,11 +6028,11 @@ max_entries = 20
           _rc_last == 0 and _last_text.count("\n") == 1
           and "seq=1" in _last_text)
 
-    # --- 10. il percorso di default NON e' mai stato toccato -------------
-    # Difesa finale: se qualche test avesse scritto sul percorso reale, qui
-    # lo si vedrebbe. Non basta asserire che il file esiste (il modulo lo
-    # crea): si verifica che il log di questa sessione di test sia intatto.
-    check("chunk_log: nessun test ha scritto sul percorso REALE dell'utente",
+    # --- 10. il percorso di default e' quello vero, non un doppione -------
+    # (la verifica che il percorso reale non sia stato TOCCATO da nessun test
+    # e' in fondo a main(): confronta mtime+size reali, non stringhe di path
+    # — quella era la vecchia "difesa finale", tautologica per costruzione.)
+    check("chunk_log: CHUNK_LOG_PATH del modulo e' il percorso reale, non un doppione di test",
           cl_mod.CHUNK_LOG_PATH != _cl_log
           and str(_cl_log) not in str(cl_mod.CHUNK_LOG_PATH))
 
@@ -6027,6 +6056,17 @@ max_entries = 20
     _cl_probe_detects_failure = (not _cl_probe_written) and not _cl_probe_after
     check("NON-VACUITA': la verifica diventa False quando il log e' rotto",
           _cl_probe_detects_failure is True)
+
+    # Verifica REALE (non tautologica) che nessun test di questa run abbia
+    # scritto sul chunk_log.jsonl vero dell'utente: confronto mtime+size
+    # dello snapshot preso a inizio main() con lo stato attuale.
+    try:
+        _real_cl_after_stat = _real_cl.CHUNK_LOG_PATH.stat()
+        _real_cl_after = (_real_cl_after_stat.st_mtime_ns, _real_cl_after_stat.st_size)
+    except OSError:
+        _real_cl_after = None
+    check("chunk_log: il file REALE dell'utente ha mtime/size invariati dopo l'intera suite",
+          _real_cl_after == _real_cl_snapshot)
 
     print(f"\n{PASS} PASS / {FAIL} FAIL")
     return 1 if FAIL else 0

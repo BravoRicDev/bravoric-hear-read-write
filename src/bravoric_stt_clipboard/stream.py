@@ -983,13 +983,22 @@ class _FifoSequencer:
     """Commits STT result in audio order; ingest is a pure testable core."""
     def __init__(self, state, stream, record_history, notify_chunk,
                  blacklist: frozenset[str] | None = None,
-                 log_max_lines: Any = None):
+                 log_max_lines: Any = None,
+                 log_path: Path | str | None = None):
         self._state, self._stream = state, stream
         self._record_history, self._notify_chunk = record_history, notify_chunk
         self._blacklist = blacklist if blacklist is not None else parse_blacklist(stream.blacklist)
         # Ritenzione del log in RIGHE (non in orari): il file e' di debug.
         # `None` = lascia decidere il default del modulo (2000).
         self._log_max_lines = log_max_lines
+        # `None` = chunk_log.append_record usa il suo CHUNK_LOG_PATH reale
+        # (comportamento di produzione, invariato). Iniettabile per gli
+        # stessi motivi di log_max_lines: un test che costruisce un
+        # _FifoSequencer vero e chiama .ingest() non deve scrivere sul
+        # percorso reale dell'utente (bug trovato dal vivo: ~200 sequencer
+        # di test in test-backend.py scrivevano riga per riga in
+        # ~/.cache/bravoric-stt-clipboard/chunk_log.jsonl ad ogni run).
+        self._log_path = log_path
         self._lock = threading.Lock()
         self._result_queue: queue.Queue[_ChunkResult | _Stop] = queue.Queue()
         self._pending: dict[int, _ChunkResult] = {}
@@ -1020,7 +1029,7 @@ class _FifoSequencer:
                 total_ms=item.total_ms,
                 text=text,
             )
-            chunk_log.append_record(record, max_lines=self._log_max_lines)
+            chunk_log.append_record(record, path=self._log_path, max_lines=self._log_max_lines)
         except Exception:
             logger.debug("chunk log: riga non scritta per seq %s", item.seq_id,
                          exc_info=True)
