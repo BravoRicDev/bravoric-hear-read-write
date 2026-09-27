@@ -64,7 +64,8 @@ RUNNER="$WORK/runner.sh"
 run_block() {
     local xdg="$1"
     local proj="$2"
-    local logdir="$WORK/log-$(basename "$(dirname "$xdg")")"
+    local logdir
+    logdir="$WORK/log-$(basename "$(dirname "$xdg")")"
     mkdir -p "$(dirname "$proj")/home" "$xdg" "$logdir"
     env HOME="$(dirname "$proj")/home" XDG_DATA_HOME="$xdg" PROJECT_DIR="$proj" bash "$RUNNER" >"$logdir/out.txt" 2>"$logdir/err.txt"
     local rc=$?
@@ -100,18 +101,18 @@ rc=$?
 
 OUT1="$(outof "$W1/xdg" out.txt)"
 ERR1="$(outof "$W1/xdg" err.txt)"
-both1="$OUT1 $ERR1"
+both1=("$OUT1" "$ERR1")
 ok_rc=0
 [ "$rc" -eq 0 ] && ok_rc=1
 check "caso 1: il blocco termina senza errori (gate delle chiavi passa)" "$ok_rc"
-check "F1: avvisa che la destinazione e' una copia reale" "$(grepany 'copia' $both1)"
-check "F1: dice che schema/traduzioni vanno sulla COPIA e non sul repo" "$(grepany 'non (sul )?repo|sulla COPIA' $both1)"
-check "F1: dice che git pull non aggiorna l'estensione che gira" "$(grepany 'git pull' $both1)"
+check "F1: avvisa che la destinazione e' una copia reale" "$(grepany 'copia' "${both1[@]}")"
+check "F1: dice che schema/traduzioni vanno sulla COPIA e non sul repo" "$(grepany 'non (sul )?repo|sulla COPIA' "${both1[@]}")"
+check "F1: dice che git pull non aggiorna l'estensione che gira" "$(grepany 'git pull' "${both1[@]}")"
 if grep -q 'Estensione linkata' "$OUT1"; then ok_nolink=0; else ok_nolink=1; fi
 check "F1: non dichiara piu' 'Estensione linkata' quando e' una copia" "$ok_nolink"
 if [ -f "$EXT1/marker.txt" ]; then ok_marker=1; else ok_marker=0; fi
 check "F1: la copia preesistente NON viene cancellata (niente rm -rf non richiesta)" "$ok_marker"
-check "F1: avvisa anche che la copia e' ancora reale dopo la ln" "$(grepany 'ancora una copia reale' $both1)"
+check "F1: avvisa anche che la copia e' ancora reale dopo la ln" "$(grepany 'ancora una copia reale' "${both1[@]}")"
 
 # --- Caso 2: destinazione assente (percorso normale, symlink) -------------
 W2="$WORK/caso2"
