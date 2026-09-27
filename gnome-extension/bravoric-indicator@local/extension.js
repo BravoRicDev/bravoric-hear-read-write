@@ -923,7 +923,7 @@ class BravoricIndicator extends PanelMenu.Button {
 
     // Giro 2 (B2-frontend-B): get_current_event_time() restituisce i
     // MILLISECONDI, notify_keyval si aspetta i MICROSECONDI. Le tre reference
-    // del progetto stesso (ROADMAP-CHUNK.md:41-45,
+    // del progetto stesso (docs/ROADMAP-CHUNK.md:41-45,
     // clipboard-indicator/keyboard.js:24, emoji-copy:304) scrivono tutti
     // "* 1000": la prescrizione era gia' scritta e non era stata applicata.
     // Impatto non misurabile senza Mutter dal vivo: qui si corregge solo

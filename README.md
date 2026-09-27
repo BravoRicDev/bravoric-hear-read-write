@@ -91,6 +91,12 @@ that execute real extracted functions/classes from the extension source
 (not hand-written copies), and ~700 backend assertions covering the fallback
 chain, circuit breaker, atomic writes, and the streaming VAD/dispatch logic.
 
+## Development history
+
+[`docs/`](docs/) has the working notes from building this: bug write-ups,
+measured trade-offs, and the reasoning behind trickier decisions (mostly in
+Italian). Not required reading to use the extension.
+
 ## License
 
 TBD.
