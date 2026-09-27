@@ -5511,6 +5511,58 @@ max_entries = 20
         finally:
             config_editor.CONFIG_PATH = _saved_cp21
 
+    print("== config_editor.reset_to_default: mai testata finora ==")
+    # Operazione distruttiva (sovrascrive config.toml col template) con zero
+    # copertura di test fino ad ora. Legge il template REALE del repo
+    # (config/config.example*.toml, gia' verificato tomllib-valido altrove),
+    # ma scrive su un CONFIG_PATH temporaneo: nessun file reale dell'utente
+    # e' toccato.
+    with tempfile.TemporaryDirectory() as _td_rst:
+        _p_rst = Path(_td_rst) / "config.toml"
+        _p_rst.write_text('[general]\nnotifications = false\n', encoding="utf-8")
+        _saved_cp_rst = config_editor.CONFIG_PATH
+        try:
+            config_editor.CONFIG_PATH = _p_rst
+            config_editor.reset_to_default()
+            _txt_rst = _p_rst.read_text(encoding="utf-8")
+            check("reset_to_default: il file esiste ancora ed e' TOML valido",
+                  isinstance(tomllib.loads(_txt_rst), dict))
+            check("reset_to_default: la personalizzazione precedente e' sparita (sovrascritta)",
+                  "notifications = false" not in _txt_rst)
+            check("reset_to_default: contiene una sezione [ocr] del template",
+                  "[ocr]" in _txt_rst)
+        finally:
+            config_editor.CONFIG_PATH = _saved_cp_rst
+
+    # CONTRO: un template TOML rotto viene rifiutato PRIMA di scrivere
+    # (config_editor._example_config_path e' quella vera, quindi si
+    # monkeypatcha solo tomllib.loads per simulare un template guasto senza
+    # toccare i file reali del repo).
+    with tempfile.TemporaryDirectory() as _td_rst2:
+        _p_rst2 = Path(_td_rst2) / "config.toml"
+        _original_content = '[general]\nnotifications = true\n'
+        _p_rst2.write_text(_original_content, encoding="utf-8")
+        _saved_cp_rst2 = config_editor.CONFIG_PATH
+        _orig_tomllib_loads = config_editor.tomllib.loads
+        try:
+            config_editor.CONFIG_PATH = _p_rst2
+
+            def _broken_loads(_text: str) -> dict:
+                raise config_editor.tomllib.TOMLDecodeError("template rotto (simulato)")
+            config_editor.tomllib.loads = _broken_loads
+            _raised_rst2 = None
+            try:
+                config_editor.reset_to_default()
+            except config_editor.ConfigEditorError as exc:
+                _raised_rst2 = str(exc)
+            check("reset_to_default (contro): template rotto solleva ConfigEditorError",
+                  _raised_rst2 is not None and "invalid TOML template" in _raised_rst2)
+            check("reset_to_default (contro): il file originale non viene toccato se il template e' rotto",
+                  _p_rst2.read_text(encoding="utf-8") == _original_content)
+        finally:
+            config_editor.tomllib.loads = _orig_tomllib_loads
+            config_editor.CONFIG_PATH = _saved_cp_rst2
+
     # Anti-drift sull'estensione: nessuno switch deve piu' scrivere il file
     # fuori dal lock, e le chiavi che costruisce devono essere tutte note al
     # backend (se una nuova riga usasse una chiave fuori elenco, la scrittura
