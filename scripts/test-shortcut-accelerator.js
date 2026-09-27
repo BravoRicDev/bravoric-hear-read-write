@@ -24,6 +24,7 @@
 
 import Gio from 'gi://Gio';
 import GLib from 'gi://GLib';
+import { matchBrace } from './lib/brace-match.mjs';
 // Gtk 4 esplicitamente: senza questo gjs segnala "Gtk ha 2 versioni" e la
 // versione scelta puo' cambiare comportamento di accelerator_parse.
 imports.gi.versions.Gtk = '4.0';
@@ -56,14 +57,10 @@ function funcSource(src, signature) {
     if (at === -1)
         throw new Error(`${signature} non trovato in prefs.js`);
     const open = src.indexOf('{', at);
-    let depth = 0;
-    for (let i = open; i < src.length; i++) {
-        if (src[i] === '{')
-            depth++;
-        else if (src[i] === '}' && --depth === 0)
-            return src.slice(at, i + 1);
-    }
-    throw new Error(`graffe non bilanciate in ${signature}`);
+    const end = matchBrace(src, open);
+    if (end === -1)
+        throw new Error(`graffe non bilanciate in ${signature}`);
+    return src.slice(at, end + 1);
 }
 
 // Se la funzione non c'eta' piu' nel prodotto (per esempio dopo un

@@ -21,6 +21,7 @@
 
 import Gio from 'gi://Gio';
 import GLib from 'gi://GLib';
+import { matchBrace } from './lib/brace-match.mjs';
 
 const PREFS_PATH = GLib.build_filenamev([
     GLib.get_current_dir(), 'gnome-extension', 'bravoric-indicator@local', 'prefs.js',
@@ -32,14 +33,10 @@ function classSource(src, name) {
     if (at === -1)
         throw new Error(`classe ${name} non trovata in prefs.js`);
     const open = src.indexOf('{', at);
-    let depth = 0;
-    for (let i = open; i < src.length; i++) {
-        if (src[i] === '{')
-            depth++;
-        else if (src[i] === '}' && --depth === 0)
-            return src.slice(at, i + 1);
-    }
-    throw new Error(`graffe non bilanciate in ${name}`);
+    const end = matchBrace(src, open);
+    if (end === -1)
+        throw new Error(`graffe non bilanciate in ${name}`);
+    return src.slice(at, end + 1);
 }
 
 const [ok, bytes] = GLib.file_get_contents(PREFS_PATH);

@@ -2,6 +2,7 @@ import Adw from 'gi://Adw';
 import Gtk from 'gi://Gtk';
 import Gdk from 'gi://Gdk';
 import GLib from 'gi://GLib';
+import { matchBrace } from './lib/brace-match.mjs';
 
 Adw.init();
 
@@ -86,14 +87,10 @@ function bodyOf(src, signature) {
     if (at === -1)
         throw new Error(`${signature} non trovato in prefs.js`);
     const open = src.indexOf('{', at);
-    let depth = 0;
-    for (let i = open; i < src.length; i++) {
-        if (src[i] === '{')
-            depth++;
-        else if (src[i] === '}' && --depth === 0)
-            return src.slice(open, i + 1);
-    }
-    throw new Error(`graffe non bilanciate in ${signature}`);
+    const end = matchBrace(src, open);
+    if (end === -1)
+        throw new Error(`graffe non bilanciate in ${signature}`);
+    return src.slice(open, end + 1);
 }
 
 // Serializer REALE estratto da prefs.js: funzione pura a livello di modulo,

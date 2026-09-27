@@ -5,6 +5,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
+const { matchBrace } = require('./lib/brace-match.cjs');
 
 (async () => {
     const extensionPath = path.join(__dirname, '..', 'gnome-extension', 'bravoric-indicator@local', 'extension.js');
@@ -230,12 +231,10 @@ const { pathToFileURL } = require('node:url');
         const at = src.indexOf(signature);
         assert.ok(at !== -1, `${signature} non trovato in extension.js`);
         const open = src.indexOf('{', at);
-        let depth = 0;
-        for (let i = open; i < src.length; i++) {
-            if (src[i] === '{') depth++;
-            else if (src[i] === '}' && --depth === 0) return src.slice(open + 1, i);
-        }
-        throw new Error('graffe non bilanciate');
+        const end = matchBrace(src, open);
+        if (end === -1)
+            throw new Error('graffe non bilanciate');
+        return src.slice(open + 1, end);
     }
 
     // Ancoraggio sulla DEFINIZIONE, non sulla chiamata: la stringa

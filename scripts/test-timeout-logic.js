@@ -11,6 +11,7 @@
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
+const { matchBrace } = require('./lib/brace-match.cjs');
 
 const EXT_DIR = path.join(__dirname, '..', 'gnome-extension', 'bravoric-indicator@local');
 const SRC = path.join(EXT_DIR, 'extension.js');
@@ -424,11 +425,7 @@ check('P4 _timeoutLimitFor presente in extension.js', atLimit !== -1);
 let realLimitSrc = '';
 if (atLimit !== -1) {
     const openL = src.indexOf('{', atLimit);
-    let depthL = 0, endL = -1;
-    for (let i = openL; i < src.length; i++) {
-        if (src[i] === '{') depthL++;
-        else if (src[i] === '}' && --depthL === 0) { endL = i; break; }
-    }
+    const endL = matchBrace(src, openL);
     realLimitSrc = endL === -1 ? '' : src.slice(atLimit, endL + 1);
 }
 check('P4 il corpo di _timeoutLimitFor e\' stato estratto', realLimitSrc.length > 0);
@@ -499,11 +496,7 @@ check("F _runStreamCommand presente in extension.js", atF !== -1);
 let methodSrc = '';
 if (atF !== -1) {
     const openF = src.indexOf('{', atF);
-    let depthF = 0, endF = -1;
-    for (let i = openF; i < src.length; i++) {
-        if (src[i] === '{') depthF++;
-        else if (src[i] === '}' && --depthF === 0) { endF = i; break; }
-    }
+    const endF = matchBrace(src, openF);
     methodSrc = endF === -1 ? '' : src.slice(atF, endF + 1);
 }
 check("F il corpo di _runStreamCommand e' stato estratto", methodSrc.length > 0);

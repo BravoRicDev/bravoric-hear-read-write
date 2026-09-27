@@ -12,6 +12,7 @@
 const fs = require('fs');
 const path = require('path');
 const assert = require('assert');
+const { matchBrace } = require('./lib/brace-match.cjs');
 
 const PREFS_PATH = path.join(__dirname, '..', 'gnome-extension', 'bravoric-indicator@local', 'prefs.js');
 const prefsSrc = fs.readFileSync(PREFS_PATH, 'utf-8');
@@ -73,11 +74,7 @@ assert(runCmdAt !== -1, '_runStreamCommand non trovato in extension.js');
 const keyMapAt = extSrc.indexOf('const keyMap = {', runCmdAt);
 assert(keyMapAt !== -1, 'const keyMap non trovata dentro _runStreamCommand');
 const keyMapOpen = extSrc.indexOf('{', keyMapAt);
-let kmDepth = 0, keyMapEnd = -1;
-for (let i = keyMapOpen; i < extSrc.length; i++) {
-    if (extSrc[i] === '{') kmDepth++;
-    else if (extSrc[i] === '}' && --kmDepth === 0) { keyMapEnd = i; break; }
-}
+const keyMapEnd = matchBrace(extSrc, keyMapOpen);
 assert(keyMapEnd !== -1, 'graffe non bilanciate nella keyMap di _runStreamCommand');
 const keyMapBody = extSrc.slice(keyMapOpen + 1, keyMapEnd);
 // I tasti F1..F12 NON sono letterali: arrivano da uno spread
@@ -163,14 +160,10 @@ function methodBody(src, signature) {
     const at = src.indexOf(signature);
     assert(at !== -1, `${signature} non trovato in prefs.js`);
     const open = src.indexOf('{', at);
-    let depth = 0;
-    for (let i = open; i < src.length; i++) {
-        if (src[i] === '{')
-            depth++;
-        else if (src[i] === '}' && --depth === 0)
-            return src.slice(open + 1, i);
-    }
-    throw new Error(`graffe non bilanciate in ${signature}`);
+    const end = matchBrace(src, open);
+    if (end === -1)
+        throw new Error(`graffe non bilanciate in ${signature}`);
+    return src.slice(open + 1, end);
 }
 
 // I commenti non contano: il campo e' citato anche nella nota esplicativa
@@ -305,18 +298,11 @@ let guardCount = 0;
 for (const m of expanderCodeOnda4.matchAll(guardRe)) {
     guardCount++;
     const open = m.index + m[0].length - 1;
-    let depth = 0;
-    for (let i = open; i < expanderCodeOnda4.length; i++) {
-        if (expanderCodeOnda4[i] === '{')
-            depth++;
-        else if (expanderCodeOnda4[i] === '}' && --depth === 0) {
-            const body = expanderCodeOnda4.slice(open + 1, i);
-            if (body.includes("'parallel'") && body.includes("'max_concurrency'")) {
-                poolBranch = body;
-                break;
-            }
-            break;
-        }
+    const close = matchBrace(expanderCodeOnda4, open);
+    if (close !== -1) {
+        const body = expanderCodeOnda4.slice(open + 1, close);
+        if (body.includes("'parallel'") && body.includes("'max_concurrency'"))
+            poolBranch = body;
     }
     if (poolBranch)
         break;
@@ -336,14 +322,10 @@ function objectLiteralAfter(src, needle) {
     assert(at !== -1, `${needle} non trovato nel ramo stream`);
     const open = src.indexOf('{', at + needle.length - 1);
     assert(open !== -1, `manca '{' dopo ${needle}`);
-    let depth = 0;
-    for (let i = open; i < src.length; i++) {
-        if (src[i] === '{')
-            depth++;
-        else if (src[i] === '}' && --depth === 0)
-            return src.slice(open + 1, i);
-    }
-    throw new Error(`graffe non bilanciate dopo ${needle}`);
+    const end = matchBrace(src, open);
+    if (end === -1)
+        throw new Error(`graffe non bilanciate dopo ${needle}`);
+    return src.slice(open + 1, end);
 }
 
 // Un interruttore e uno slider, non altro: SwitchRow per il flag booleano,
