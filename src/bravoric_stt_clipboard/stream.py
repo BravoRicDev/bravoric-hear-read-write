@@ -731,6 +731,66 @@ def _sequential_chain(levels, wav_path, stream, prompt, endpoint_gate=None) -> s
     )
 
 
+def _submit_via_sequential_chain(seq, wav_path, prompt, stream, endpoint_gate,
+                                  sequencer, stop_timeout) -> None:
+    """Ultimo tentativo per un'utterance senza slot nel pool: catena
+    sequenziale sincrona sull'INTERA lista dei livelli, in ordine di config
+    (contratto B/D). Estratta da `_submit_utterance` dentro `_run_supervisor`
+    (P16, la funzione era ~430 righe): stessa logica byte per byte, solo
+    parametri espliciti al posto della chiusura su `_run_supervisor`.
+
+    Questa via NON passa da `_worker`, quindi il raccoglitore va armato qui:
+    senza, i tentativi della catena sarebbero persi e la riga direbbe
+    served_by null su un chunk che invece ha risposto.
+    """
+    logger.warning(
+        "semaphore acquire timeout exceeded (%.1fs), chunk %d served by the sequential chain",
+        stop_timeout, seq,
+    )
+    _previous_attempts, _sync_attempts = _push_attempts()
+    _sync_started = time.monotonic()
+    try:
+        # Stessa regola del ripiego del pool: la catena riceve i livelli MENO
+        # quelli gia' tentati. Qui il chunk non e' mai passato da un worker,
+        # quindi non e' stato tentato nulla e l'insieme dei tentativi e' vuoto:
+        # la lista e' quella di config, cioe' il legacy.
+        text = _sequential_chain(
+            _levels_untried(stream.fallback, set()), wav_path, stream,
+            prompt, endpoint_gate=endpoint_gate,
+        )
+    except AllLevelsFailedError as exc:
+        # Qui il chunk E' davvero perso: la stringa dell'errore lo dice e
+        # resta nel log, invece di un _ChunkResult vuoto che il sequenziatore
+        # scarterebbe senza lasciare traccia.
+        logger.error("utterance %d lost, all levels failed: %s", seq, exc)
+        _sync_audio_s = _wav_seconds(wav_path)
+        with contextlib.suppress(OSError):
+            wav_path.unlink()
+        sequencer.ingest(_ChunkResult(
+            seq, "", False, str(exc), tuple(_sync_attempts),
+            _sync_audio_s, (time.monotonic() - _sync_started) * 1000.0))
+        _pop_attempts(_previous_attempts)
+        return
+    except Exception as exc:  # noqa: BLE001 - l'ultima rete non butta via il supervisore
+        logger.error("utterance %d lost: %r", seq, exc)
+        _sync_audio_s = _wav_seconds(wav_path)
+        with contextlib.suppress(OSError):
+            wav_path.unlink()
+        sequencer.ingest(_ChunkResult(
+            seq, "", False, repr(exc), tuple(_sync_attempts),
+            _sync_audio_s, (time.monotonic() - _sync_started) * 1000.0))
+        _pop_attempts(_previous_attempts)
+        return
+    # audio_s PRIMA dell'unlink: dopo, l'header del WAV non c'e' piu'.
+    _sync_audio_s = _wav_seconds(wav_path)
+    with contextlib.suppress(OSError):
+        wav_path.unlink()
+    sequencer.ingest(_ChunkResult(
+        seq, text, bool(text), None, tuple(_sync_attempts),
+        _sync_audio_s, (time.monotonic() - _sync_started) * 1000.0))
+    _pop_attempts(_previous_attempts)
+
+
 def _worker(seq, wav_path, prompt, *, stream, sem, result_queue,
             dispatcher=None, stop_check=None, stop_timeout=30.0,
             endpoint_gate=None):
@@ -1995,60 +2055,12 @@ class StreamSession:
                 )
                 return
             # Ultimo tentativo, FUORI dalla coda dei worker: la catena
-            # sequenziale sincrona sull'intera lista dei livelli, in ordine di
-            # config. Non e' un doppione: e' la via che il contratto chiede
-            # quando il chunk non ha un endpoint utilizzabile nel pool.
-            logger.warning(
-                "semaphore acquire timeout exceeded (%.1fs), chunk %d served by the sequential chain",
-                STOP_TIMEOUT, seq,
+            # sequenziale sincrona sull'intera lista dei livelli (contratto
+            # B/D). Estratta in _submit_via_sequential_chain (P16): stessa
+            # logica, vedi il docstring li' per il dettaglio.
+            _submit_via_sequential_chain(
+                seq, wav_path, prompt, stream, endpoint_gate, sequencer, STOP_TIMEOUT,
             )
-            # Questa via NON passa da _worker, quindi il raccoglitore va armato
-            # qui: senza, i tentativi della catena sarebbero persi e la riga
-            # direbbe served_by null su un chunk che invece ha risposto.
-            _previous_attempts, _sync_attempts = _push_attempts()
-            _sync_started = time.monotonic()
-            try:
-                # Stessa regola del ripiego del pool: la catena riceve i
-                # livelli MENO quelli gia' tentati. Qui il chunk non e' mai
-                # passato da un worker, quindi non e' stato tentato nulla e
-                # l'insieme dei tentativi e' vuoto: la lista e' quella di
-                # config, cioe' il legacy. Scritto cosi' perche' il call site
-                # dica la regola invece di sembrare un'eccezione.
-                text = _sequential_chain(
-                    _levels_untried(stream.fallback, set()), wav_path, stream,
-                    prompt, endpoint_gate=endpoint_gate,
-                )
-            except AllLevelsFailedError as exc:
-                # Qui il chunk E' davvero perso: la stringa dell'errore lo dice
-                # e resta nel log, invece di un _ChunkResult vuoto che il
-                # sequenziatore scarterebbe senza lasciare traccia.
-                logger.error("utterance %d lost, all levels failed: %s", seq, exc)
-                _sync_audio_s = _wav_seconds(wav_path)
-                with contextlib.suppress(OSError):
-                    wav_path.unlink()
-                sequencer.ingest(_ChunkResult(
-                    seq, "", False, str(exc), tuple(_sync_attempts),
-                    _sync_audio_s, (time.monotonic() - _sync_started) * 1000.0))
-                _pop_attempts(_previous_attempts)
-                return
-            except Exception as exc:  # noqa: BLE001 - l'ultima rete non butta via il supervisore
-                logger.error("utterance %d lost: %r", seq, exc)
-                _sync_audio_s = _wav_seconds(wav_path)
-                with contextlib.suppress(OSError):
-                    wav_path.unlink()
-                sequencer.ingest(_ChunkResult(
-                    seq, "", False, repr(exc), tuple(_sync_attempts),
-                    _sync_audio_s, (time.monotonic() - _sync_started) * 1000.0))
-                _pop_attempts(_previous_attempts)
-                return
-            # audio_s PRIMA dell'unlink: dopo, l'header del WAV non c'e' piu'.
-            _sync_audio_s = _wav_seconds(wav_path)
-            with contextlib.suppress(OSError):
-                wav_path.unlink()
-            sequencer.ingest(_ChunkResult(
-                seq, text, bool(text), None, tuple(_sync_attempts),
-                _sync_audio_s, (time.monotonic() - _sync_started) * 1000.0))
-            _pop_attempts(_previous_attempts)
 
         try:
             proc = subprocess.Popen(
