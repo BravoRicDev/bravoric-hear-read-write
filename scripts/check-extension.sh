@@ -408,6 +408,10 @@ else
     # Python non gestita prima della riga finale dava solo "FAIL
     # test-backend.py" senza traceback, costringendo a rilanciare a mano.
     if [ -n "$BACKEND_STDERR" ]; then
+        # ${var//pattern/repl} non antepone il prefisso a OGNI riga di una
+        # variabile multi-riga, solo sostituisce match letterali; qui serve
+        # indentare ogni riga, quindi resta sed.
+        # shellcheck disable=SC2001
         echo "$BACKEND_STDERR" | sed 's/^/    /'
     fi
     bad "test-backend.py"
