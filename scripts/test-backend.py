@@ -1557,6 +1557,34 @@ def main() -> int:
     check("StreamConfig positional keeps appended-field defaults", stream_test_cfg.max_concurrent_chunks == 3 and stream_test_cfg.chunk_timeout_seconds == 30.0)
     check("StreamConfig positional keeps vad_margin_db default", stream_test_cfg.vad_margin_db == 6.0)
 
+    # --- stream.py: _rms_to_db / _rms_db_of_chunk (mai testate finora) -----
+    # _rms_db_of_chunk sostituisce un ciclo per-campione con struct.unpack in
+    # blocco (perf, giro curriculum): stesso risultato numerico, verificato
+    # qui su casi noti invece che solo a occhio sul confronto vecchio/nuovo.
+    print("== stream.py (_rms_to_db / _rms_db_of_chunk) ==")
+    import struct as _struct
+
+    from bravoric_stt_clipboard.stream import _MIN_DB, _rms_db_of_chunk, _rms_to_db
+    check("_rms_to_db: rms 1.0 -> 0 dB", _rms_to_db(1.0) == 0.0)
+    check("_rms_to_db: rms 0 -> sentinella _MIN_DB", _rms_to_db(0.0) == _MIN_DB)
+    check("_rms_to_db: rms negativo -> sentinella _MIN_DB (difesa, non dovrebbe capitare)",
+          _rms_to_db(-1.0) == _MIN_DB)
+    check("_rms_to_db: dimezzare l'ampiezza toglie ~6 dB",
+          abs((_rms_to_db(0.5) - _rms_to_db(1.0)) - (-6.0206)) < 1e-3)
+    # Silenzio digitale esatto (tutti campioni a 0): rms 0 -> _MIN_DB.
+    silence = _struct.pack("<480h", *([0] * 480))
+    check("_rms_db_of_chunk: silenzio digitale -> _MIN_DB",
+          _rms_db_of_chunk(silence, 480) == _MIN_DB)
+    # Onda a piena scala (±32767 alternati): rms vicino a 1.0 -> ~0 dB.
+    full_scale = _struct.pack("<480h", *([32767, -32767] * 240))
+    check("_rms_db_of_chunk: piena scala -> vicino a 0 dB",
+          abs(_rms_db_of_chunk(full_scale, 480) - 0.0) < 0.01)
+    # Byte finale dispari: scartato, stesso comportamento del ciclo originale
+    # (num_samples = len // 2, il resto non entra nel calcolo).
+    odd_trailing = _struct.pack("<3h", 100, 200, 300) + b"\xff"
+    check("_rms_db_of_chunk: byte finale dispari ignorato",
+          _rms_db_of_chunk(odd_trailing, 3) == _rms_db_of_chunk(odd_trailing[:6], 3))
+
     # --- stream.py: formula soglia VAD adattiva (distinta da noise_db) -----
     print("== stream.py (adaptive VAD threshold) ==")
     from bravoric_stt_clipboard.stream import (

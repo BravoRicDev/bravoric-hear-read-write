@@ -27,6 +27,7 @@ import os
 import queue
 import shutil
 import signal
+import struct
 import subprocess
 import sys
 import tempfile
@@ -1133,6 +1134,24 @@ def _rms_to_db(rms: float) -> float:
     return 20.0 * math.log10(rms)
 
 
+def _rms_db_of_chunk(pcm_chunk: bytes, num_samples: int) -> float:
+    """RMS in dB di `num_samples` campioni PCM 16-bit little-endian firmati.
+
+    Estratta dal loop VAD di _run_supervisor (perf): un ciclo Python puro
+    con int.from_bytes + slicing per ogni singolo campione, eseguito ad ogni
+    frame (~30ms) per tutta la durata di una sessione di streaming, e' molto
+    piu' lento di uno struct.unpack in blocco — stesso risultato numerico
+    (verificato su 2000 campioni casuali prima di sostituire), stdlib, nessuna
+    nuova dipendenza. Il chiamante decide gia' `num_samples`: qui si prendono
+    solo i primi `num_samples * 2` byte, lo stesso taglio che il ciclo
+    originale applicava scartando l'eventuale byte finale dispari.
+    """
+    samples = struct.unpack(f"<{num_samples}h", pcm_chunk[:num_samples * 2])
+    sum_squares = sum(s * s for s in samples)
+    rms = math.sqrt(sum_squares / num_samples) / 32768.0  # normalize to [-1, 1]
+    return _rms_to_db(rms)
+
+
 # Clamp della soglia VAD adattiva: mai troppo sensibile / mai troppo sordo.
 VAD_THRESHOLD_MIN_DB = -55.0
 VAD_THRESHOLD_MAX_DB = -15.0
@@ -2108,18 +2127,10 @@ class StreamSession:
                     pcm_chunk = pcm_item
 
                     # Compute RMS of the chunk
-                    sum_squares = 0
                     num_samples = len(pcm_chunk) // BYTES_PER_SAMPLE
                     if num_samples == 0:
                         continue
-                    for i in range(num_samples):
-                        sample = int.from_bytes(
-                            pcm_chunk[i*BYTES_PER_SAMPLE:(i+1)*BYTES_PER_SAMPLE],
-                            byteorder='little', signed=True
-                        )
-                        sum_squares += sample * sample
-                    rms = math.sqrt(sum_squares / num_samples) / 32768.0  # normalize to [-1, 1]
-                    rms_db = _rms_to_db(rms)
+                    rms_db = _rms_db_of_chunk(pcm_chunk, num_samples)
 
                     # Stima adattiva del noise floor solo fuori dall'utterance.
                     # Per evitare che parlato iniziale basso (che non supera NOISE_DB)
