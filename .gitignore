@@ -1,0 +1,22 @@
+__pycache__/
+*.pyc
+.venv/
+*.egg-info/
+config/config.toml
+*.ogg
+*~
+
+# Stato/cache di tool, non sorgente del progetto (git init, mandato perfetto).
+.opencode/
+.pi/
+.mypy_cache/
+.ruff_cache/
+.claude/
+
+# Artefatto compilato stray in root, non referenziato da pyproject.toml
+# package-data (i .mo reali vivono in src/.../locale/ e gnome-extension/.../locale/).
+/messages.mo
+
+# Log/scratch di verifica gate, mai contenuto del progetto.
+*.log
+/plans/*.bak

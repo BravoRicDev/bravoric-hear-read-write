@@ -1,0 +1,9 @@
+{
+  "uuid": "bravoric-indicator@local",
+  "name": "Bravoric STT/OCR Indicator",
+  "description": "Indicatore stato STT/OCR in top bar (idle/recording/processing). Accede al clipboard per scrivere il testo trascritto o riconosciuto, su azione esplicita dell'utente (click sull'indicatore, scorciatoia definita dall'utente o comando vocale): i dati non lasciano mai il computer e non vengono condivisi con terzi.",
+  "shell-version": ["45", "46", "47", "48", "49", "50"],
+  "settings-schema": "org.gnome.shell.extensions.bravoric-indicator",
+  "gettext-domain": "bravoric-indicator",
+  "url": ""
+}

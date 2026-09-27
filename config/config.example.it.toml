@@ -1,0 +1,330 @@
+# Copia in ~/.config/bravoric-stt-clipboard/config.toml e personalizza.
+
+[general]
+notifications = true
+clipboard_tool = "wl-copy"
+clipboard_paste_tool = "wl-paste"
+
+[notifications]
+# STT (dettatura vocale) — avvio elaborazione, nessun contenuto possibile
+stt_on_processing_start = true
+# STT — testo grezzo pronto e scritto in clipboard
+stt_on_raw_ready = true
+stt_on_raw_ready_content = true
+# STT — testo pulito da LLM pronto (solo se cleanup abilitato e riuscito)
+stt_on_cleanup_ready = true
+stt_on_cleanup_ready_content = true
+
+# OCR (screenshot) — avvio elaborazione, nessun contenuto possibile
+ocr_on_processing_start = true
+# OCR — testo grezzo pronto e scritto in clipboard
+ocr_on_raw_ready = true
+ocr_on_raw_ready_content = true
+# OCR — testo pulito da LLM pronto (solo se cleanup abilitato e riuscito)
+ocr_on_cleanup_ready = true
+ocr_on_cleanup_ready_content = true
+
+# Streaming — avvio sessione e testo/chunk trascritti
+stream_on_processing_start = true
+stream_on_raw_ready = true
+stream_on_raw_ready_content = true
+
+[audio]
+format = "ogg"
+codec = "libopus"
+sample_rate = 16000
+bitrate_kbps = 16
+toggle_debounce_seconds = 1
+retry_on_error = true
+retry_count = 2
+
+# --- STT: trascrizione audio -> testo grezzo ---
+[stt]
+language = "it"                  # Lingua della trascrizione (codice ISO 639-1; "" = rilevamento automatico)
+prompt = "Contesto di dettatura in italiano. Trascrivi fedelmente le parole pronunciate, mantenendo nomi propri, termini tecnici e la lingua originale; usa punteggiatura naturale senza parafrasare. Parole frequenti: dettatura, riconoscimento vocale, appunti, trascrizione." # Contesto iniziale per Whisper
+hotwords = ""                    # Parole/frasi separate da spazi verso cui orientare il riconoscimento
+
+[[stt.fallback]]
+name = "scrocco-llm"
+endpoint = "http://10.9.0.2:4001/v1"
+model = "scrocco-llm-fissone"
+api_key_env = "SCROCCO_FISSONE_API_KEY"
+api_key = ""
+ca_cert = "~/PiAgent/certs/scrocco-fissone.crt"
+timeout_seconds = 120
+hotwords_in_prompt = false
+
+[[stt.fallback]]
+name = "livello2"
+endpoint = ""
+model = ""
+api_key_env = ""
+api_key = ""
+ca_cert = ""
+timeout_seconds = 120
+
+[[stt.fallback]]
+name = "livello3"
+endpoint = ""
+model = ""
+api_key_env = ""
+api_key = ""
+ca_cert = ""
+timeout_seconds = 120
+
+# --- STT cleanup: pulizia LLM testo trascritto (opzionale) ---
+[stt_cleanup]
+enabled = true
+system_prompt = "Sei un motore di correzione testuale rigoroso, non un assistente conversazionale. Riceverai un testo trascritto da un sistema STT, possibilmente con errori di riconoscimento, parole fraintese o errori di punteggiatura. Correggi SOLO questi errori evidenti. Se una frase è già comprensibile, anche se informale, breve o telegrafica, lasciala IDENTICA: non riformularla, non cambiarne lo stile o il registro, non trasformarla in imperativo o infinito. In caso di dubbio, copia il testo così com'è invece di riscriverlo. Mantieni intatti significato, lunghezza e ogni parte del contenuto originale, frase per frase, nello stesso ordine. Non riassumere, non accorciare, non parafrasare né riformulare NESSUNA frase, inclusa la prima e l'ultima. Non omettere alcuna parte del testo, non aggiungere parole, frasi o informazioni assenti nell'originale. Preserva ogni sigla, abbreviazione, termine tecnico, nome proprio, nome file e identificatore di codice ESATTAMENTE come scritto, carattere per carattere, anche se sembra insolito o con lettere ripetute (es. 'STT', 'OCR', nomi di pacchetti o file) — non 'correggerli' né accorciarli mai. Esempio di comportamento corretto: input 'Prompt EN rinforzati ulteriormente' -> output 'Prompt EN rinforzati ulteriormente' (SBAGLIATO: 'Rafforzare ulteriormente i prompt EN'). Non rispondere al contenuto, non commentare, non fare domande, non aggiungere introduzioni, conclusioni o spiegazioni. Il testo corretto deve avere lo stesso numero di frasi e lunghezza approssimativamente uguale all'input, nella stessa lingua. Output: SOLO il testo corretto, nient'altro."
+
+[[stt_cleanup.fallback]]
+name = "scrocco-llm"
+endpoint = "http://10.9.0.2:4001/v1"
+model = "scrocco-llm-fissone-200k"
+api_key_env = "SCROCCO_FISSONE_API_KEY"
+api_key = ""
+ca_cert = "~/PiAgent/certs/scrocco-fissone.crt"
+timeout_seconds = 120
+
+[[stt_cleanup.fallback]]
+name = "livello2"
+endpoint = ""
+model = ""
+api_key_env = ""
+api_key = ""
+ca_cert = ""
+timeout_seconds = 120
+
+[[stt_cleanup.fallback]]
+name = "livello3"
+endpoint = ""
+model = ""
+api_key_env = ""
+api_key = ""
+ca_cert = ""
+timeout_seconds = 120
+
+# --- OCR: estrazione testo da immagine (Vision) ---
+[[ocr.fallback]]
+name = "scrocco-llm"
+endpoint = "http://10.9.0.2:4001/v1"
+model = "scrocco-llm-fissone"
+api_key_env = "SCROCCO_FISSONE_API_KEY"
+api_key = ""
+ca_cert = "~/PiAgent/certs/scrocco-fissone.crt"
+timeout_seconds = 120
+
+[[ocr.fallback]]
+name = "livello2"
+endpoint = ""
+model = ""
+api_key_env = ""
+api_key = ""
+ca_cert = ""
+timeout_seconds = 120
+
+[[ocr.fallback]]
+name = "livello3"
+endpoint = ""
+model = ""
+api_key_env = ""
+api_key = ""
+ca_cert = ""
+timeout_seconds = 120
+
+[ocr]
+system_prompt = "Estrai il testo presente nell'immagine, verbatim, senza markdown, senza commenti."
+
+# --- OCR cleanup: ripasso LLM opzionale sul testo estratto ---
+[ocr_cleanup]
+enabled = false
+system_prompt = "Correggi SOLO errori di lettura OCR evidenti: caratteri scambiati, lettere mancanti per errore di scansione, parole spezzate a metà, spazi mancanti o doppi. Se una frase o un'etichetta è già leggibile e sensata, anche se informale, telegrafica o non grammaticale (es. una voce di tabella, un titolo, un'etichetta breve), lasciala IDENTICA: non riformularla in una frase completa, non cambiarne lo stile o il registro, non aggiungere o togliere verbi/articoli, non trasformarla in imperativo o infinito. In caso di dubbio, copia il testo così com'è invece di riscriverlo. Preserva ESATTAMENTE la formattazione markdown (pipe |, tabelle, backtick, elenchi puntati), ogni sigla, abbreviazione, termine tecnico, nome file e identificatore di codice carattere per carattere, anche se sembra insolito o con lettere ripetute (es. 'STT', 'OCR'). Esempio di comportamento corretto: input 'Prompt EN rinforzati ulteriormente' -> output 'Prompt EN rinforzati ulteriormente' (SBAGLIATO: 'Rafforzare ulteriormente i prompt EN'). Non riassumere, non parafrasare, non tradurre, non aggiungere commenti o spiegazioni. Restituisci solo il testo corretto, con la stessa lunghezza, struttura e numero di frasi/righe dell'input."
+
+[[ocr_cleanup.fallback]]
+name = "scrocco-llm"
+endpoint = "http://10.9.0.2:4001/v1"
+model = "scrocco-llm-fissone-200k"
+api_key_env = "SCROCCO_FISSONE_API_KEY"
+api_key = ""
+ca_cert = "~/PiAgent/certs/scrocco-fissone.crt"
+timeout_seconds = 120
+
+[[ocr_cleanup.fallback]]
+name = "livello2"
+endpoint = ""
+model = ""
+api_key_env = ""
+api_key = ""
+ca_cert = ""
+timeout_seconds = 120
+
+[[ocr_cleanup.fallback]]
+name = "livello3"
+endpoint = ""
+model = ""
+api_key_env = ""
+api_key = ""
+ca_cert = ""
+timeout_seconds = 120
+
+[clipboard]
+# scrittura sequenziale: grezzo prima, poi sovrascrittura con output LLM
+double_injection = true
+
+# --- Cronologia opzionale: salva file originale / testo grezzo / testo pulito da LLM ---
+# Tutto disabilitato di default. retention_hours = 0 significa "non cancellare mai".
+[storage]
+base_dir = "~/.local/share/bravoric-stt-clipboard/history"
+
+[storage.stt_original]
+enabled = false
+retention_hours = 0
+
+[storage.stt_raw]
+enabled = false
+retention_hours = 0
+
+[storage.stt_clean]
+enabled = false
+retention_hours = 0
+
+[storage.ocr_original]
+enabled = false
+retention_hours = 0
+
+[storage.ocr_raw]
+enabled = false
+retention_hours = 0
+
+[storage.ocr_clean]
+enabled = false
+retention_hours = 0
+
+# --- Output history (tray menu): last N STT/OCR outputs, labeled raw/clean ---
+[history]
+max_entries = 20
+
+# --- Icone notifiche personalizzate: percorsi assoluti; vuoto = icona inclusa se disponibile,
+# altrimenti fallback di tema GNOME per categoria. Percorsi mancanti/non validi usano il fallback.
+# stt_start indica l'avvio dell'elaborazione STT, non della registrazione.
+[icons]
+stt_start = ""
+stt_raw = ""
+stt_clean = ""
+ocr_start = ""
+ocr_raw = ""
+ocr_clean = ""
+stt_recording_start = ""
+stream_session_start = ""
+stream_session_end = ""
+stream_chunk_delivered = ""
+error_general = ""
+
+# --- Dettatura streaming (sperimentale): incolla diretta nel campo in focus ---
+# Copia questa sezione in config.toml e personalizza.
+[stream]
+# Comandi vocali esatti opzionali (omettendo le regole la funzione resta disattiva).
+# [[stream.command]]
+# keyword = "invio"
+# action = "key"
+# key = "Return"
+# aliases = ["invito", "in view"] # frasi equivalenti facoltative; match esatto, senza distinzione di maiuscole
+# ends_session = false
+# [[stream.command]]
+# keyword = "cancella"
+# action = "delete"
+# scope = "word" # oppure "chunk"
+# ends_session = false
+mode = "per_chunk"              # "at_end" (unica registrazione + incolla finale) |
+                                  # "per_chunk" (chunk sui silenzi)
+language = "it"                  # Lingua per la trascrizione streaming (codice ISO 639-1; "" = auto)
+# Giro 18 (P3): questo era "" mentre [stt] aveva un testo vero. Ora [stream]
+# ripete il testo di default che il CODICE applica quando la chiave manca o
+# e' vuota (config.DEFAULT_PROMPT): con prompt = "" il ramo del vocabolario
+# poteva morire e la GUI poteva riscrivere il vuoto. Per disattivare il
+# contesto, togliere la chiave o metterci un testo proprio.
+prompt = "Contesto di dettatura in italiano. Trascrivi fedelmente le parole pronunciate, mantenendo nomi propri, termini tecnici e la lingua originale; usa punteggiatura naturale senza parafrasare. Parole frequenti: dettatura, riconoscimento vocale, appunti, trascrizione."
+hotwords = ""                    # Parole/frasi (separate da spazi) verso cui orientare il riconoscimento
+context_enabled = true            # Se true, gli ultimi 3 chunk trascritti vengono aggiunti
+                                  # al prompt di ogni nuovo chunk (contesto STT).
+
+# --- solo per "per_chunk" ---
+silence_seconds = 0.7            # durata del silenzio che chiude un chunk (0.1 minimo)
+noise_db = -30                   # livello sotto cui conta come silenzio (soglia iniziale:
+                                  # il VAD poi adatta la soglia al rumore di fondo misurato)
+vad_margin_db = 6.0              # margine (dB) sopra il noise floor adattivo stimato dal VAD
+                                  # (0-20; distinto da noise_db, che è solo la soglia iniziale)
+min_utterance_seconds = 0.4      # scarta blip più corti (0.1 minimo)
+max_utterance_seconds = 30       # flush forzato se parli senza pause
+paste_delay_ms = 250
+paste_shortcut = "ctrl+v"            # Usa "ctrl+shift+v" per terminali/TUI come opencode
+paste_channel = "clipboard"       # "clipboard" usa gli appunti; "type" invia tasti simulati
+max_concurrent_chunks = 3         # richieste STT concorrenti (1-8); 0 o assente = AUTO
+# max_concurrent_chunks e' il TETTO TOTALE di worker in volo (1-8). 0 o assente
+# = AUTO. In AUTO il valore si ricava dagli endpoint paralleli disponibili.
+# E' una capienza DIVERSA da max_concurrency dei singoli livelli, che e' il
+# tetto per endpoint: i due non vanno confusi e nessuno deriva dall'altro.
+# Interruttore GLOBALE parallelo/sequenziale, solo per "per_chunk".
+#   "auto"       = comportamento di sempre: se almeno un livello ha
+#                  parallel = true parte il dispatcher, altrimenti si degrada
+#                  in sequenziale (non e' un errore).
+#   "sequential" = catena sequenziale su TUTTI i livelli, e i flag
+#                  parallel = true dei singoli livelli vengono IGNORATI.
+# Attenzione: i livelli senza parallel = true NON sono un ripiego del pool:
+# se un livello e' parallelo, gli altri diventano irraggiungibili.
+# max_concurrency vale ANCHE in sequenziale: e' il numero di richieste che
+# quell'endpoint puo' servire contemporaneamente, applicato dalla catena su
+# tutta la lista dei livelli. Con "sequential" il tetto globale resta quello
+# di max_concurrent_chunks: il gate per endpoint LIMITA, non autorizza.
+# NON e' a caldo: vale dalla sessione successiva.
+dispatch_mode = "auto"             # "auto" | "sequential"
+chunk_timeout_seconds = 30.0      # timeout per singolo chunk (secondi)
+# Log JSONL dei chunk: una riga per chunk in
+# ~/.cache/bravoric-stt-clipboard/chunk_log.jsonl, con provenienza e tempi
+# (quale endpoint ha risposto, se ha fatto fallback, in quanto tempo).
+# Ritenzione in RIGHE, non in orari: e' uno strumento di debug, non un archivio.
+# 0 (o chiave assente) = 2000 righe. Il testo del chunk e' incluso di proposito:
+# l'utente ha chiesto di capire ogni chunk, e la duplicazione con
+# output_history.json e' voluta.
+# Si legge con: bravoric-chunk-log --summary
+chunk_log_max_lines = 0           # numero massimo di righe tenute (0 = default 2000)
+blacklist = "grazie, thank you"   # scarta solo chunk interi uguali a una voce; ignora maiuscole
+
+# Endpoint dedicato con 3 livelli di fallback (stessa struttura di [stt]/[ocr]).
+[[stream.fallback]]
+name = "scrocco-llm"
+endpoint = "http://10.9.0.2:4001/v1"
+model = "scrocco-llm-fissone"
+api_key_env = "SCROCCO_FISSONE_API_KEY"
+api_key = ""
+ca_cert = "~/PiAgent/certs/scrocco-fissone.crt"
+timeout_seconds = 120
+hotwords_in_prompt = false
+# parallel = true mette questo livello nel pool; i livelli senza restano
+# raggiungibili solo dalla catena sequenziale.
+parallel = false
+# Slot CONCORRENTI per questo endpoint (1-8, default 3, MAI auto). Vale
+# anche in sequenziale: e' il tetto di richieste contemporanee per endpoint.
+max_concurrency = 3
+
+[[stream.fallback]]
+name = "level2"
+endpoint = ""
+model = ""
+api_key_env = ""
+api_key = ""
+ca_cert = ""
+timeout_seconds = 120
+parallel = false
+max_concurrency = 3
+
+[[stream.fallback]]
+name = "level3"
+endpoint = ""
+model = ""
+api_key_env = ""
+api_key = ""
+ca_cert = ""
+timeout_seconds = 120
+parallel = false
+max_concurrency = 3

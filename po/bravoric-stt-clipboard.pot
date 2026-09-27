@@ -1,0 +1,156 @@
+# SOME DESCRIPTIVE TITLE.
+# Copyright (C) YEAR THE PACKAGE'S COPYRIGHT HOLDER
+# This file is distributed under the same license as the PACKAGE package.
+# FIRST AUTHOR <EMAIL@ADDRESS>, YEAR.
+#
+#, fuzzy
+msgid ""
+msgstr ""
+"Project-Id-Version: PACKAGE VERSION\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2026-09-25 15:11+0200\n"
+"PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
+"Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
+"Language-Team: LANGUAGE <LL@li.org>\n"
+"Language: \n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=CHARSET\n"
+"Content-Transfer-Encoding: 8bit\n"
+
+#: src/bravoric_stt_clipboard/api_client.py:166
+msgid "Extract the text from this image."
+msgstr ""
+
+#: src/bravoric_stt_clipboard/cli.py:23 src/bravoric_stt_clipboard/cli.py:52
+#: src/bravoric_stt_clipboard/cli.py:76
+#, python-brace-format
+msgid "Config error: {exc}"
+msgstr ""
+
+#: src/bravoric_stt_clipboard/cli.py:25 src/bravoric_stt_clipboard/cli.py:54
+#: src/bravoric_stt_clipboard/cli.py:77
+msgid "Config error"
+msgstr ""
+
+#: src/bravoric_stt_clipboard/cli.py:98 src/bravoric_stt_clipboard/cli.py:107
+msgid "Unexpected error"
+msgstr ""
+
+#: src/bravoric_stt_clipboard/cli.py:98 src/bravoric_stt_clipboard/cli.py:107
+msgid "Check the system log for details"
+msgstr ""
+
+#: src/bravoric_stt_clipboard/config.py:501
+#, python-brace-format
+msgid "Invalid value in config: {exc}"
+msgstr ""
+
+#: src/bravoric_stt_clipboard/config.py:509
+#, python-brace-format
+msgid "Config not found: {path}"
+msgstr ""
+
+#: src/bravoric_stt_clipboard/config.py:516
+#, python-brace-format
+msgid "Invalid TOML in {path}: {exc}"
+msgstr ""
+
+#: src/bravoric_stt_clipboard/config.py:520
+#, python-brace-format
+msgid "Cannot read {path}: {exc}"
+msgstr ""
+
+#: src/bravoric_stt_clipboard/ocr.py:21
+msgid "OCR: processing"
+msgstr ""
+
+#: src/bravoric_stt_clipboard/ocr.py:30
+msgid "OCR: no image in clipboard"
+msgstr ""
+
+#: src/bravoric_stt_clipboard/ocr.py:46
+msgid "OCR: extraction error"
+msgstr ""
+
+#: src/bravoric_stt_clipboard/ocr.py:57
+msgid "Empty extraction"
+msgstr ""
+
+#: src/bravoric_stt_clipboard/ocr.py:58
+msgid "OCR: raw text ready"
+msgstr ""
+
+#: src/bravoric_stt_clipboard/ocr.py:90
+msgid "OCR: clipboard error"
+msgstr ""
+
+#: src/bravoric_stt_clipboard/ocr.py:99
+msgid "OCR: cleaned text ready"
+msgstr ""
+
+#: src/bravoric_stt_clipboard/stream.py:556
+#: src/bravoric_stt_clipboard/stream.py:562
+#: src/bravoric_stt_clipboard/stream.py:568
+#: src/bravoric_stt_clipboard/stream.py:579
+#: src/bravoric_stt_clipboard/stream.py:618
+#: src/bravoric_stt_clipboard/stream.py:632
+#: src/bravoric_stt_clipboard/stream.py:648
+#: src/bravoric_stt_clipboard/stream.py:669
+#: src/bravoric_stt_clipboard/stream.py:720
+#: src/bravoric_stt_clipboard/stream.py:773
+#: src/bravoric_stt_clipboard/stream.py:836
+msgid "Streaming dictation"
+msgstr ""
+
+#: src/bravoric_stt_clipboard/stream.py:557
+#: src/bravoric_stt_clipboard/stream.py:563
+msgid "Another operation in progress"
+msgstr ""
+
+#: src/bravoric_stt_clipboard/stream.py:569
+msgid "No endpoint configured"
+msgstr ""
+
+#: src/bravoric_stt_clipboard/stream.py:618
+msgid "Recording..."
+msgstr ""
+
+#: src/bravoric_stt_clipboard/stream.py:632
+msgid "Transcribing..."
+msgstr ""
+
+#: src/bravoric_stt_clipboard/stream.py:649
+msgid "Transcription failed"
+msgstr ""
+
+#: src/bravoric_stt_clipboard/stream.py:720
+msgid "Listening..."
+msgstr ""
+
+#: src/bravoric_stt_clipboard/stream.py:773
+msgid "Session ended"
+msgstr ""
+
+#: src/bravoric_stt_clipboard/stt.py:30
+msgid "STT: recording started"
+msgstr ""
+
+#: src/bravoric_stt_clipboard/stt.py:55
+msgid "STT: processing"
+msgstr ""
+
+#: src/bravoric_stt_clipboard/stt.py:89
+msgid "STT: transcription error"
+msgstr ""
+
+#: src/bravoric_stt_clipboard/stt.py:105
+msgid "STT: raw text ready"
+msgstr ""
+
+#: src/bravoric_stt_clipboard/stt.py:141
+msgid "STT: clipboard error"
+msgstr ""
+
+#: src/bravoric_stt_clipboard/stt.py:150
+msgid "STT: cleaned text ready"
+msgstr ""

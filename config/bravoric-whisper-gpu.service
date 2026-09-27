@@ -1,0 +1,29 @@
+[Unit]
+Description=Bravoric STT - Whisper locale su GPU (Vulkan/Asahi)
+Documentation=https://github.com/ggml-org/whisper.cpp
+After=graphical-session.target
+PartOf=graphical-session.target
+
+[Service]
+Type=simple
+# --- Percorsi (sostituiti dall'installatore) ---
+# HOME e' gia' risolto da systemd come %h
+Environment=LD_LIBRARY_PATH=__WHISPER_DIR__/bin
+Environment=VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/asahi_icd.aarch64.json
+# Il modello resta in RAM tra una richiesta e l'altra: -ml limita la lunghezza
+# dei segmenti per non far crescere la memoria, --convert richiede ffmpeg.
+ExecStart=__WHISPER_DIR__/bin/whisper-server \
+  -m __WHISPER_DIR__/ggml-large-v3-turbo.bin \
+  -l it -t 6 --host 127.0.0.1 --port 8080 \
+  --request-path /v1 --inference-path /audio/transcriptions \
+  -sns
+Restart=on-failure
+RestartSec=3
+# Con 1.9 GB di RAM residenti non conviene riciclarlo spesso
+TimeoutStopSec=20
+Nice=-5
+# Limite di sicurezza: se il modello crescesse per colpa del driver
+MemoryMax=6G
+
+[Install]
+WantedBy=graphical-session.target

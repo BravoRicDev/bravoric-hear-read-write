@@ -1,0 +1,10 @@
+# Dipendenze del server Whisper locale (bin/whisper-server.py).
+# Separate da quelle del plugin (requirements.txt): installare in un venv
+# dedicato, non in quello del plugin.
+#
+#   python3 -m venv ~/.local/share/bravoric-stt-clipboard/whisper-venv
+#   ~/.local/share/bravoric-stt-clipboard/whisper-venv/bin/pip install -r bin/whisper-requirements.txt
+#
+faster-whisper>=1.1.0
+fastapi>=0.110
+uvicorn>=0.29

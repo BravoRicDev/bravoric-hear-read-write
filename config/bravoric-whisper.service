@@ -1,0 +1,14 @@
+[Unit]
+Description=Whisper locale STT (endpoint OpenAI-compatible) per bravoric-stt-clipboard
+Documentation=https://github.com/bravoric/bravoric-stt-clipboard
+After=default.target
+
+[Service]
+Type=simple
+# Sostituire __PROJECT_DIR__ con il path assoluto del progetto in fase di install.
+ExecStart=__PROJECT_DIR__/bin/whisper-server.sh --model small --port 8080
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=default.target

@@ -1,0 +1,177 @@
+msgid ""
+msgstr ""
+"Project-Id-Version: bravoric-stt-clipboard\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2026-09-25 12:12+0200\n"
+"PO-Revision-Date: 2026-09-23 01:52+0200\n"
+"Last-Translator: \n"
+"Language-Team: \n"
+"Language: it\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+
+#: src/bravoric_stt_clipboard/api_client.py:164
+msgid "Extract the text from this image."
+msgstr "Estrai il testo da questa immagine."
+
+#: src/bravoric_stt_clipboard/cli.py:23 src/bravoric_stt_clipboard/cli.py:52
+#: src/bravoric_stt_clipboard/cli.py:76
+#, python-brace-format
+msgid "Config error: {exc}"
+msgstr "Errore config: {exc}"
+
+#: src/bravoric_stt_clipboard/cli.py:25 src/bravoric_stt_clipboard/cli.py:54
+#: src/bravoric_stt_clipboard/cli.py:77
+msgid "Config error"
+msgstr "Errore di configurazione"
+
+#: src/bravoric_stt_clipboard/cli.py:98 src/bravoric_stt_clipboard/cli.py:107
+msgid "Unexpected error"
+msgstr "Errore imprevisto"
+
+#: src/bravoric_stt_clipboard/cli.py:98 src/bravoric_stt_clipboard/cli.py:107
+msgid "Check the system log for details"
+msgstr "Controlla il log di sistema per i dettagli"
+
+#: src/bravoric_stt_clipboard/config.py:427
+#, python-brace-format
+msgid "Invalid value in config: {exc}"
+msgstr "Valore non valido nella config: {exc}"
+
+#: src/bravoric_stt_clipboard/config.py:435
+#, python-brace-format
+msgid "Config not found: {path}"
+msgstr "Config non trovata: {path}"
+
+#: src/bravoric_stt_clipboard/config.py:442
+#, python-brace-format
+msgid "Invalid TOML in {path}: {exc}"
+msgstr "TOML non valido in {path}: {exc}"
+
+#: src/bravoric_stt_clipboard/config.py:446
+#, python-brace-format
+msgid "Cannot read {path}: {exc}"
+msgstr "Impossibile leggere {path}: {exc}"
+
+#: src/bravoric_stt_clipboard/ocr.py:22
+msgid "OCR: processing"
+msgstr "OCR: elaborazione in corso"
+
+#: src/bravoric_stt_clipboard/ocr.py:31
+msgid "OCR: no image in clipboard"
+msgstr "OCR: nessuna immagine in clipboard"
+
+#: src/bravoric_stt_clipboard/ocr.py:47
+msgid "OCR: extraction error"
+msgstr "OCR: errore estrazione"
+
+#: src/bravoric_stt_clipboard/ocr.py:57
+msgid "Empty extraction"
+msgstr "Estrazione vuota"
+
+#: src/bravoric_stt_clipboard/ocr.py:59
+msgid "OCR: raw text ready"
+msgstr "OCR: testo grezzo pronto"
+
+#: src/bravoric_stt_clipboard/ocr.py:91
+msgid "OCR: clipboard error"
+msgstr "OCR: errore appunti"
+
+#: src/bravoric_stt_clipboard/ocr.py:100
+msgid "OCR: cleaned text ready"
+msgstr "OCR: testo pulito pronto"
+
+#: src/bravoric_stt_clipboard/stream.py:503
+#: src/bravoric_stt_clipboard/stream.py:509
+#: src/bravoric_stt_clipboard/stream.py:515
+#: src/bravoric_stt_clipboard/stream.py:526
+#: src/bravoric_stt_clipboard/stream.py:557
+#: src/bravoric_stt_clipboard/stream.py:571
+#: src/bravoric_stt_clipboard/stream.py:587
+#: src/bravoric_stt_clipboard/stream.py:604
+#: src/bravoric_stt_clipboard/stream.py:653
+#: src/bravoric_stt_clipboard/stream.py:704
+#: src/bravoric_stt_clipboard/stream.py:764
+msgid "Streaming dictation"
+msgstr "Dettatura streaming"
+
+#: src/bravoric_stt_clipboard/stream.py:504
+#: src/bravoric_stt_clipboard/stream.py:510
+msgid "Another operation in progress"
+msgstr "Un'altra operazione è in corso"
+
+#: src/bravoric_stt_clipboard/stream.py:516
+msgid "No endpoint configured"
+msgstr "Nessun endpoint configurato"
+
+#: src/bravoric_stt_clipboard/stream.py:557
+msgid "Recording..."
+msgstr "Registrazione in corso..."
+
+#: src/bravoric_stt_clipboard/stream.py:571
+msgid "Transcribing..."
+msgstr "Trascrizione in corso..."
+
+#: src/bravoric_stt_clipboard/stream.py:588
+msgid "Transcription failed"
+msgstr "Trascrizione non riuscita"
+
+#: src/bravoric_stt_clipboard/stream.py:653
+msgid "Listening..."
+msgstr "In ascolto..."
+
+#: src/bravoric_stt_clipboard/stream.py:704
+msgid "Session ended"
+msgstr "Sessione terminata"
+
+#: src/bravoric_stt_clipboard/stt.py:31
+msgid "STT: recording started"
+msgstr "STT: registrazione avviata"
+
+#: src/bravoric_stt_clipboard/stt.py:56
+msgid "STT: processing"
+msgstr "STT: elaborazione in corso"
+
+#: src/bravoric_stt_clipboard/stt.py:90
+msgid "STT: transcription error"
+msgstr "STT: errore trascrizione"
+
+#: src/bravoric_stt_clipboard/stt.py:106
+msgid "STT: raw text ready"
+msgstr "STT: testo grezzo pronto"
+
+#: src/bravoric_stt_clipboard/stt.py:142
+msgid "STT: clipboard error"
+msgstr "STT: errore appunti"
+
+#: src/bravoric_stt_clipboard/stt.py:151
+msgid "STT: cleaned text ready"
+msgstr "STT: testo pulito pronto"
+
+#, javascript-format
+#~ msgid "Paste shortcut"
+#~ msgstr "Scorciatoia di incolla"
+
+#~ msgid "Use Ctrl+Shift+V for terminals/TUIs such as opencode."
+#~ msgstr "Usa Ctrl+Shift+V per terminali/TUI come opencode."
+
+#: src/bravoric_stt_clipboard/config.py:ICON_SLOT_REGISTRY
+msgid "STT — Recording started"
+msgstr "STT — Registrazione avviata"
+
+#: src/bravoric_stt_clipboard/config.py:ICON_SLOT_REGISTRY
+msgid "Stream — Session started"
+msgstr "Stream — Sessione avviata"
+
+#: src/bravoric_stt_clipboard/config.py:ICON_SLOT_REGISTRY
+msgid "Stream — Session ended"
+msgstr "Stream — Sessione terminata"
+
+#: src/bravoric_stt_clipboard/config.py:ICON_SLOT_REGISTRY
+msgid "Stream — Text delivered"
+msgstr "Stream — Testo consegnato"
+
+#: src/bravoric_stt_clipboard/config.py:ICON_SLOT_REGISTRY
+msgid "General — Error"
+msgstr "Generale — Errore"

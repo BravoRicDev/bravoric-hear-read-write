@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+set -euo pipefail
+DATA_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/bravoric-stt-clipboard"
+source "$DATA_DIR/venv/bin/activate"
+exec bravoric-stream-toggle "$@"

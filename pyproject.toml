@@ -1,0 +1,33 @@
+[project]
+name = "bravoric-stt-clipboard"
+version = "0.1.0"
+description = "Dettatura vocale STT + OCR clipboard su GNOME/Wayland via router scrocco-fissone"
+requires-python = ">=3.11"
+dependencies = [
+    "requests>=2.31",
+]
+
+[project.scripts]
+bravoric-stt-toggle = "bravoric_stt_clipboard.cli:stt_toggle_main"
+bravoric-ocr-capture = "bravoric_stt_clipboard.cli:ocr_capture_main"
+bravoric-stream-toggle = "bravoric_stt_clipboard.cli:stream_toggle_main"
+bravoric-config-editor = "bravoric_stt_clipboard.config_editor:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+# Pyright/Mypy devono vedere "src" come radice del pacchetto, altrimenti
+# `from . import notify` non risolve e ogni attributo del modulo risulta
+# sconosciuto (falso positivo "resolve_icon is not a known attribute").
+[tool.pyright]
+include = ["src", "scripts"]
+extraPaths = ["src"]
+pythonVersion = "3.11"
+typeCheckingMode = "basic"
+
+[tool.setuptools.package-data]
+bravoric_stt_clipboard = ["locale/*/LC_MESSAGES/*.mo", "icons/*.png"]

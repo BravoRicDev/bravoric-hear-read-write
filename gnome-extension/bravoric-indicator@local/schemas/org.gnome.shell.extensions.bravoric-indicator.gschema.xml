@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<schemalist>
+  <schema id="org.gnome.shell.extensions.bravoric-indicator" path="/org/gnome/shell/extensions/bravoric-indicator/">
+    <key name="dictation-shortcut" type="as">
+      <default>['&lt;Alt&gt;&lt;Super&gt;r']</default>
+      <summary>Dictation toggle shortcut</summary>
+    </key>
+    <key name="ocr-shortcut" type="as">
+      <default>['&lt;Alt&gt;&lt;Super&gt;o']</default>
+      <summary>OCR capture shortcut</summary>
+    </key>
+    <key name="stream-shortcut" type="as">
+      <default>['&lt;Alt&gt;&lt;Super&gt;s']</default>
+      <summary>Streaming dictation toggle shortcut</summary>
+    </key>
+  </schema>
+</schemalist>
