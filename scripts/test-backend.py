@@ -5483,6 +5483,34 @@ max_entries = 20
         finally:
             config_editor.CONFIG_PATH = _saved_cp5d
 
+    print("== giro 21: tabella presente ma chiave assente (set_storage_field/history) ==")
+    # Difetto reale (non lo stesso di P5 sopra): set_storage_field e
+    # set_history_max_entries chiamavano _replace_key_in_block, che solleva
+    # se la CHIAVE manca in un blocco che PERO' esiste gia' (config piu'
+    # vecchia di quel campo, o modificata a mano). _find_block_bounds non
+    # c'entra qui: la tabella c'e', manca solo la riga. Riprodotto dal vivo
+    # prima del fix: ConfigEditorError su un salvataggio GUI legittimo.
+    with tempfile.TemporaryDirectory() as _td21:
+        _p21 = Path(_td21) / "config.toml"
+        _p21.write_text('[storage.stt_raw]\nenabled = false\n\n[history]\n', encoding="utf-8")
+        _saved_cp21 = config_editor.CONFIG_PATH
+        try:
+            config_editor.CONFIG_PATH = _p21
+            # retention_hours non e' nel blocco [storage.stt_raw]: deve
+            # inserirla, non sollevare.
+            config_editor.set_storage_field("stt_raw", "retention_hours", "24")
+            # max_entries non e' nel blocco [history]: idem.
+            config_editor.set_history_max_entries("50")
+            _txt21 = _p21.read_text(encoding="utf-8")
+            check("giro 21: set_storage_field inserisce una chiave assente in un blocco esistente",
+                  "retention_hours = 24" in _txt21)
+            check("giro 21: set_history_max_entries inserisce una chiave assente in un blocco esistente",
+                  "max_entries = 50" in _txt21)
+            check("giro 21: il TOML risultante resta valido",
+                  isinstance(tomllib.loads(_txt21), dict))
+        finally:
+            config_editor.CONFIG_PATH = _saved_cp21
+
     # Anti-drift sull'estensione: nessuno switch deve piu' scrivere il file
     # fuori dal lock, e le chiavi che costruisce devono essere tutte note al
     # backend (se una nuova riga usasse una chiave fuori elenco, la scrittura

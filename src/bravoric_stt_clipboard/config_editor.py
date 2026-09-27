@@ -147,25 +147,20 @@ def _find_block_bounds(lines: list[str], header: str, occurrence: int) -> tuple[
     return start, end
 
 
-def _replace_key_in_block(lines: list[str], start: int, end: int, key: str, new_value: str) -> None:
-    pattern = re.compile(rf"^{re.escape(key)} = .*$")
-    for i in range(start, end):
-        if pattern.match(lines[i]):
-            lines[i] = f"{key} = {new_value}"
-            return
-    raise ConfigEditorError(f"Key '{key}' not found in block at line {start}")
-
-
 def _find_or_insert_key_in_block(
     lines: list[str], start: int, end: int, key: str, new_value: str,
     *, key_regex: str | None = None, skip_trailing_blank: bool = True,
 ) -> None:
     """Sostituisce `key` nel blocco se c'è già, altrimenti la inserisce
-    (P13, mandato perfetto: 5 copie byte-quasi-identiche consolidate qui).
+    (P13, mandato perfetto: 5 copie byte-quasi-identiche consolidate qui;
+    set_storage_field e set_history_max_entries migrate dopo, avevano un
+    `_replace_key_in_block` gemello che sollevava se la chiave mancava in
+    un blocco già esistente — config più vecchie di un campo si rompevano
+    al primo salvataggio da GUI invece di limitarsi a inserirlo).
 
-    A differenza di `_replace_key_in_block` (che solleva se manca), qui la
-    chiave assente non è un errore: i config creati prima dell'introduzione
-    di un campo non devono rompersi al primo salvataggio da GUI.
+    La chiave assente non è un errore: i config creati prima
+    dell'introduzione di un campo non devono rompersi al primo salvataggio
+    da GUI.
 
     Due varianti PRESERVATE esattamente, non uniformate (cambierebbero il
     TOML prodotto, che 5 punti del gate asseriscono byte per byte):
@@ -344,7 +339,7 @@ def set_storage_field(section: str, field: str, value: str) -> None:
             _write_validated(lines)
             return
         start, end = _find_block_bounds(lines, header, 0)
-        _replace_key_in_block(lines, start, end, field, _toml_line_value(field, value))
+        _find_or_insert_key_in_block(lines, start, end, field, _toml_line_value(field, value))
         _write_validated(lines)
 
 
@@ -509,7 +504,7 @@ def set_history_max_entries(value: str) -> None:
             _write_validated(lines)
             return
         start, end = _find_block_bounds(lines, "[history]", 0)
-        _replace_key_in_block(lines, start, end, "max_entries", _toml_line_value("max_entries", value))
+        _find_or_insert_key_in_block(lines, start, end, "max_entries", _toml_line_value("max_entries", value))
         _write_validated(lines)
 
 
