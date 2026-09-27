@@ -13,6 +13,18 @@ logger = logging.getLogger(__name__)
 
 
 def handle_capture(cfg: Config) -> None:
+    # Con capture_screenshot=True una doppia pressione della scorciatoia (o
+    # l'attesa lunga della selezione, fino a SELECTION_TIMEOUT_SECONDS)
+    # lancerebbe un secondo gnome-screenshot interattivo sopra il primo: due
+    # selezioni sovrapposte, nessun crash ma un'esperienza confusa. La
+    # lettura clipboard (ramo di default) e' invece istantanea e idempotente,
+    # quindi non ha bisogno di questa guardia: una doppia pressione ci legge
+    # la stessa immagine due volte, innocuo.
+    if cfg.ocr_capture_screenshot:
+        current = status.read_status()
+        if current.get("state") == status.STATE_PROCESSING and current.get("service") == "ocr":
+            logger.info("cattura OCR gia' in corso, secondo tasto ignorato")
+            return
     try:
         status.write_status(status.STATE_PROCESSING, service="ocr")
     except Exception:

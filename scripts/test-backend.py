@@ -5222,6 +5222,42 @@ def main() -> int:
     check("ocr capture_screenshot=False (default): screenshot.capture_area_png MAI chiamata",
           _off_shot_calls == 0)
 
+    print("== ocr.py: guardia rientranza capture_screenshot (doppia pressione) ==")
+    # Senza questa guardia, una seconda pressione mentre la prima selezione
+    # e' ancora aperta lancerebbe un secondo gnome-screenshot sovrapposto.
+    _st_saved_reentr = status.STATUS_PATH
+    try:
+        _tmp_status_dir = Path(tempfile.mkdtemp(prefix="bravoric-status-reentr-"))
+        status.STATUS_PATH = _tmp_status_dir / "status.json"
+        status.write_status(status.STATE_PROCESSING, service="ocr")
+        with mock.patch.object(ocr, "screenshot") as _shot_re, \
+             mock.patch.object(ocr, "clipboard"), \
+             mock.patch.object(ocr, "try_with_fallback") as _chain_re, \
+             mock.patch.object(ocr, "notify"), \
+             mock.patch.object(ocr, "storage"), \
+             mock.patch.object(ocr, "output_history"):
+            ocr.handle_capture(cast(Any, cfg_shot))
+            _reentr_shot_calls = _shot_re.capture_area_png.call_count
+            _reentr_chain_calls = _chain_re.call_count
+        check("ocr capture_screenshot=True: seconda pressione durante 'processing' non riscatta uno screenshot",
+              _reentr_shot_calls == 0 and _reentr_chain_calls == 0)
+
+        # CONTRO: a idle (nessuna cattura in corso), la guardia non blocca la prima pressione.
+        status.write_status(status.STATE_IDLE)
+        with mock.patch.object(ocr, "screenshot") as _shot_ok, \
+             mock.patch.object(ocr, "clipboard"), \
+             mock.patch.object(ocr, "try_with_fallback", return_value="ok"), \
+             mock.patch.object(ocr, "notify"), \
+             mock.patch.object(ocr, "storage"), \
+             mock.patch.object(ocr, "output_history"):
+            _shot_ok.capture_area_png.return_value = b"png"
+            ocr.handle_capture(cast(Any, cfg_shot))
+            _idle_shot_calls = _shot_ok.capture_area_png.call_count
+        check("ocr capture_screenshot=True (contro): a idle la prima pressione scatta normalmente",
+              _idle_shot_calls == 1)
+    finally:
+        status.STATUS_PATH = _st_saved_reentr
+
     print("== config.py: ocr_capture_screenshot (default e parsing) ==")
     check("Config: ocr_capture_screenshot default False su cfg_stream_min",
           cfg_stream_min.ocr_capture_screenshot is False)
