@@ -54,14 +54,6 @@ def resolve_icon(slot: str, override: str = "") -> str:
     return _FALLBACKS[metadata.fallback_category]
 
 
-def icon_path(service: str, stage: str, override: str = "") -> str:
-    """Compatibility wrapper for the original six explicitly mapped slots."""
-    key = f"{service}_{stage}"
-    if key not in _PACKAGED_DEFAULTS:
-        raise ValueError(f"Unknown legacy icon pair: {service!r}, {stage!r}")
-    return resolve_icon(key, override)
-
-
 def send(title: str, body: str = "", icon: str = ICON_READY) -> None:
     # B27a: usa -- per evitare che un titolo che inizia con `-` sia
     # interpretato come opzione di notify-send. Deve stare DOPO le opzioni

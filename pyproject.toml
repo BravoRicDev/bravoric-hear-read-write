@@ -12,6 +12,7 @@ bravoric-stt-toggle = "bravoric_stt_clipboard.cli:stt_toggle_main"
 bravoric-ocr-capture = "bravoric_stt_clipboard.cli:ocr_capture_main"
 bravoric-stream-toggle = "bravoric_stt_clipboard.cli:stream_toggle_main"
 bravoric-config-editor = "bravoric_stt_clipboard.config_editor:main"
+bravoric-chunk-log = "bravoric_stt_clipboard.cli:chunk_log_main"
 
 [build-system]
 requires = ["setuptools>=68"]
