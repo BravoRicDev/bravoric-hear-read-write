@@ -109,7 +109,7 @@ then ok "it.po completo, nessun fuzzy"; else bad "i18n"; fi
 # Copertura reale: ogni stringa _()/N_() del sorgente deve risolversi nel .mo.
 # (Il controllo sopra confronta solo .po vs .pot: se il .pot e' stantio, il gap
 # non emerge. Qui si estrae dal sorgente JS e si interroga gettext davvero.)
-EXT_I18N_OUT=$(python3 - "$EXT" <<'PY'
+if EXT_I18N_OUT=$(python3 - "$EXT" <<'PY'
 import gettext, os, re, sys
 ext = sys.argv[1]
 src = ""
@@ -147,8 +147,7 @@ if untranslated:
     sys.exit(1)
 print(len(strings))
 PY
-)
-if [ $? -eq 0 ]; then
+); then
     ok "copertura gettext del sorgente ($EXT_I18N_OUT stringhe)"
 else
     echo "$EXT_I18N_OUT"
@@ -195,7 +194,7 @@ then ok "po/it.po backend completo, nessun fuzzy"; else bad "i18n backend"; fi
 # Una voce presente con msgstr "" passava, e gettext in Python restituiva
 # l'inglese. Il blocco dell'estensione (riga 109) faceva gia' il controllo
 # giusto: qui si replica per il dominio backend, interrogando il .mo compilato.
-BACKEND_I18N_OUT=$(python3 - "$REPO/src/bravoric_stt_clipboard" <<'PY'
+if BACKEND_I18N_OUT=$(python3 - "$REPO/src/bravoric_stt_clipboard" <<'PY'
 import gettext, os, re, sys
 src_root = sys.argv[1]
 src = ""
@@ -259,8 +258,7 @@ if untranslated:
     sys.exit(1)
 print(len(strings))
 PY
-)
-if [ $? -eq 0 ]; then
+); then
     ok "copertura gettext backend ($BACKEND_I18N_OUT stringhe)"
 else
     echo "$BACKEND_I18N_OUT"
