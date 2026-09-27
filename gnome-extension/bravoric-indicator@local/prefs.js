@@ -1377,7 +1377,7 @@ export default class BravoricPreferences extends ExtensionPreferences {
 
         const clearHistoryLabel = _('Clear history');
         const clearHistoryRow = new Adw.ActionRow({ title: clearHistoryLabel, activatable: true });
-        const clearHistoryButton = new Gtk.Button({ icon_name: 'user-trash-symbolic', valign: Gtk.Align.CENTER });
+        const clearHistoryButton = new Gtk.Button({ icon_name: 'user-trash-symbolic', valign: Gtk.Align.CENTER, tooltip_text: clearHistoryLabel });
         let revertId = null;
         clearHistoryButton.connect('clicked', () => {
             const ok = runConfigEditor(['clear-history']).success;
@@ -1430,7 +1430,7 @@ export default class BravoricPreferences extends ExtensionPreferences {
                 subtitle: iconState?.override ?? iconState?.default ?? '',
             });
 
-            const chooseButton = new Gtk.Button({ icon_name: 'document-open-symbolic', valign: Gtk.Align.CENTER });
+            const chooseButton = new Gtk.Button({ icon_name: 'document-open-symbolic', valign: Gtk.Align.CENTER, tooltip_text: _('Choose icon image') });
             chooseButton.connect('clicked', () => {
                 const dialog = new Gtk.FileDialog({ title: _('Choose icon image') });
                 dialog.open(window, null, (dlg, result) => {
@@ -1450,7 +1450,7 @@ export default class BravoricPreferences extends ExtensionPreferences {
                 });
             });
 
-            const resetButton = new Gtk.Button({ icon_name: 'edit-undo-symbolic', valign: Gtk.Align.CENTER });
+            const resetButton = new Gtk.Button({ icon_name: 'edit-undo-symbolic', valign: Gtk.Align.CENTER, tooltip_text: _('Reset to default') });
             resetButton.connect('clicked', () => {
                 if (setIconField(item.slot, ''))
                     row.subtitle = iconState?.default ?? '';
