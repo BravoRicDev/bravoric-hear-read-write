@@ -571,7 +571,7 @@ def _transcribe_traced(level, wav_path, stream, prompt) -> str:
     started = time.monotonic()
     try:
         text = _transcribe(level, wav_path, stream, prompt)
-    except Exception as exc:  # noqa: BLE001 - la prova non deve cambiare l'esito
+    except Exception as exc:
         collector.append(chunk_log.make_attempt(
             level, (time.monotonic() - started) * 1000.0, False, exc))
         raise
@@ -862,7 +862,7 @@ def _worker(seq, wav_path, prompt, *, stream, sem, result_queue,
                         "pool: " + "; ".join(pool_errors) + " | catena: " + str(exc)
                     ) from exc
                 raise
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 if pool_errors:
                     # Stessa cosa per un'eccezione che NON e' un errore di
                     # livello (try_with_fallback lascia passare tutto cio' che
@@ -879,7 +879,8 @@ def _worker(seq, wav_path, prompt, *, stream, sem, result_queue,
             success = True
     except AllLevelsFailedError as exc:
         error = str(exc)
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - rete di sicurezza del worker: un'eccezione
+        # imprevista qui non deve uccidere il thread e perdere il chunk in silenzio.
         error = f"unexpected: {exc!r}"
     finally:
         # Rilascio garantito, anche su eccezione o return anticipato: uno slot
@@ -922,8 +923,8 @@ class _FifoSequencer:
         # `None` = lascia decidere il default del modulo (2000).
         self._log_max_lines = log_max_lines
         self._lock = threading.Lock()
-        self._result_queue = queue.Queue()
-        self._pending = {}
+        self._result_queue: queue.Queue[_ChunkResult | object] = queue.Queue()
+        self._pending: dict[int, _ChunkResult] = {}
         self._next_expected = 0
         self._thread = threading.Thread(target=self._run, daemon=True)
 
@@ -952,7 +953,7 @@ class _FifoSequencer:
                 text=text,
             )
             chunk_log.append_record(record, max_lines=self._log_max_lines)
-        except Exception:  # noqa: BLE001 - il log non ferma mai la dettatura
+        except Exception:
             logger.debug("chunk log: riga non scritta per seq %s", item.seq_id,
                          exc_info=True)
 
@@ -1903,7 +1904,7 @@ class StreamSession:
         calib_logged = False
 
         # State for VAD
-        voiced_frames = []  # list of PCM frames (bytes) for the current utterance
+        voiced_frames: list[bytes] = []  # PCM frames for the current utterance
         silent_frames = 0   # consecutive silent frames
         in_utterance = False
         utterance_start_time = 0.0
@@ -2251,7 +2252,9 @@ class StreamSession:
         # campo di destinazione prima di riprovare.
         try:
             clipboard.write_text(chunk, self._cfg.clipboard_tool)
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - wl-copy puo' fallire in molti modi
+            # (assente, timeout, exit!=0): tutti devono lasciare il chunk in coda, non
+            # far propagare un'eccezione che fermerebbe paste_next senza registrare nulla.
             logger.error("clipboard write fallito per il chunk %d: %s", idx, exc)
             return False
         state["next_chunk_index"] = idx + 1

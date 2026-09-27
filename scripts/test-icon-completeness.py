@@ -8,7 +8,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
-from bravoric_stt_clipboard.config import ICON_SLOT_KEYS  # noqa: E402
+from bravoric_stt_clipboard.config import ICON_SLOT_KEYS
 
 prefs = (ROOT / "gnome-extension/bravoric-indicator@local/prefs.js").read_text()
 rows = set(re.findall(r"slot: '([^']+)'", prefs))

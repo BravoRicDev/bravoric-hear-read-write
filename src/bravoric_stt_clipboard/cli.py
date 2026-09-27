@@ -32,7 +32,7 @@ def stt_toggle_main() -> int:
         # quindi un traceback non segnalerebbe nulla. Registriamo l'errore e lo
         # notifichiamo; l'estensione riporterà comunque l'icona a idle tramite
         # il proprio timeout.
-        logging.exception("unexpected error in STT toggle")
+        logger.exception("unexpected error in STT toggle")
         # B28: scrivi STATE_ERROR così l'estensione non resta bloccata su
         # 'processing' fino al timeout (30 min STT / 120 min OCR).
         #
@@ -81,7 +81,7 @@ def ocr_capture_main() -> int:
     try:
         ocr.handle_capture(cfg)
     except Exception:
-        logging.exception("unexpected error in OCR capture")
+        logger.exception("unexpected error in OCR capture")
         try:
             status.write_status(status.STATE_ERROR)
         except Exception:
@@ -135,7 +135,7 @@ def stream_toggle_main(argv: list[str] | None = None) -> int:
             if not session.start():
                 return 1
     except Exception:
-        logging.exception("unexpected error in streaming toggle")
+        logger.exception("unexpected error in streaming toggle")
         notify.send(_("Unexpected error"), _("Check the system log for details"),
                     icon=notify.ICON_ERROR)
         return 1
@@ -163,7 +163,7 @@ def _report_unexpected_error() -> None:
             icon=notify.ICON_ERROR,
         )
     except Exception:
-        logging.exception("failed to send error notification")
+        logger.exception("failed to send error notification")
 
 
 if __name__ == "__main__":

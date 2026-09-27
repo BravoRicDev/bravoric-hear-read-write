@@ -106,7 +106,12 @@ def _process_recording(cfg: Config, audio_path: Path) -> None:
 
     attempts = cfg.audio.retry_count if cfg.audio.retry_on_error else 1
     raw_text = None
-    last_error = None
+    # Annotato esplicitamente: senza, mypy inferisce AllLevelsFailedError|None
+    # dalla prima assegnazione (riga sotto) e la riga 134 (RuntimeError su
+    # vuoto senza eccezione a monte) diventa un'incompatibilita' di tipo —
+    # innocua a runtime (str(last_error) funziona su qualunque eccezione),
+    # ma un falso allarme da mypy che vale la pena chiudere con un tipo vero.
+    last_error: Exception | None = None
     for _attempt in range(max(1, attempts)):
         try:
             raw_text = try_with_fallback(

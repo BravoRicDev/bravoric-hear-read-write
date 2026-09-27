@@ -61,9 +61,9 @@ from .config import FallbackLevel, endpoint_key
 
 __all__ = [
     "CLOSED",
-    "OPEN",
-    "HALF_OPEN",
     "DEFAULT_COOLDOWN",
+    "HALF_OPEN",
+    "OPEN",
     "EndpointBreaker",
     "compute_state",
     "endpoint_id",

@@ -313,7 +313,7 @@ def append_record(record: dict, path: Path | str | None = None,
             os.close(fd)
         _bump_count(target, limit)
         return True
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         # Un log rotto non puo' fermare la dettatura: qui si SEGNA e si torna
         # False, mai si rilancia. Il chiamante e' il sequencer, e la sua firma
         # promette gia' False in caso di errore: rilanciare renderebbe falso

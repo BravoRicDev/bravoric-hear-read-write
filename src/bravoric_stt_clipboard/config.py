@@ -190,18 +190,18 @@ def parse_blacklist(raw: object) -> frozenset[str]:
 
 def _parse_stream_commands(raw: object) -> list[StreamCommand]:
     if not isinstance(raw, list):
-        raise ValueError("stream.command must be an array of tables")
+        raise TypeError("stream.command must be an array of tables")
     result, seen = [], set()
     for entry in raw:
         if not isinstance(entry, dict):
-            raise ValueError("each stream.command must be a table")
+            raise TypeError("each stream.command must be a table")
         keyword = entry.get("keyword")
         action = entry.get("action")
         ends = entry.get("ends_session", False)
         if not isinstance(keyword, str) or not keyword.strip():
             raise ValueError("command keyword must be a non-empty string")
         if not isinstance(ends, bool):
-            raise ValueError("command ends_session must be boolean")
+            raise TypeError("command ends_session must be boolean")
         normalized = _command_norm(keyword)
         if not normalized:
             raise ValueError(f"command keyword has no usable text: {keyword!r}")
@@ -435,7 +435,7 @@ def _coerce_bool(raw: object) -> bool:
 def _coerce_int(raw: object, default: int, lo: int, hi: int) -> int:
     """Converte un valore TOML in int, con fallback e clamp sui limiti."""
     try:
-        value = int(raw)  # type: ignore[arg-type]  # pyright: ignore[reportArgumentType]
+        value = int(raw)  # type: ignore[call-overload]  # pyright: ignore[reportArgumentType]
     except (TypeError, ValueError):
         return default
     # OverflowError: TOML ammette `inf`, `nan`, `inf` e `-inf` come float.
@@ -684,7 +684,7 @@ def _build_config(raw: dict) -> Config:
         }
         overlap = blacklist_phrases & command_phrases
         if overlap:
-            raise ValueError(f"blacklist phrase conflicts with command: {sorted(overlap)[0]!r}")
+            raise ValueError(f"blacklist phrase conflicts with command: {min(overlap)!r}")
         # cfg.stt_fallback e' gia' impostato da __post_init__ (righe 374-375),
         # eseguito automaticamente durante Config(...) qui sopra: nessuna riga
         # tra la costruzione e questo punto muta cfg.stt.fallback, quindi una
