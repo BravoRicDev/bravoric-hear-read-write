@@ -979,6 +979,30 @@ export default class BravoricPreferences extends ExtensionPreferences {
         });
         modeGroup.add(contextRow);
 
+        this._buildVoiceCommandGroup(window, page, modeGroup, streamState);
+
+        // Sezione fallback per stream. get_state() espone gli endpoint con
+        // la stessa chiave `levels` usata dagli altri servizi.
+        if (Array.isArray(streamState.levels)) {
+            const fallbackGroup = new Adw.PreferencesGroup({
+                title: _('Streaming STT endpoint'),
+                description: _('Dedicated endpoint for stream transcription (independent of standard STT).'),
+            });
+            page.add(fallbackGroup);
+
+            streamState.levels.forEach((level, idx) => {
+                fallbackGroup.add(this._buildLevelExpander('stream', idx, level, streamState));
+            });
+        }
+    }
+
+    // F2-resto: estratto da _buildStreamPage (era ~570 righe, questo blocco ne
+    // valeva quasi metà). GUI e comportamento identici: stessi widget, stesso
+    // ordine di aggiunta ai gruppi, nessuna logica toccata — solo spostati i
+    // confini del metodo. blacklistRow resta qui (non in _buildStreamPage)
+    // anche se va in `modeGroup`: la sua validazione (blacklistConflicts)
+    // dipende da commandRows, che vive in questa chiusura.
+    _buildVoiceCommandGroup(window, page, modeGroup, streamState) {
         // Regole vocali: ogni salvataggio sostituisce atomicamente l'intera lista.
         const commandGroup = new Adw.PreferencesGroup({
             title: _('Voice commands'),
@@ -1262,20 +1286,6 @@ export default class BravoricPreferences extends ExtensionPreferences {
         const addCommand = new Gtk.Button({ label: _('Add command'), halign: Gtk.Align.START });
         addCommand.connect('clicked', () => addCommandRow(null));
         commandGroup.add(addCommand);
-
-        // Sezione fallback per stream. get_state() espone gli endpoint con
-        // la stessa chiave `levels` usata dagli altri servizi.
-        if (Array.isArray(streamState.levels)) {
-            const fallbackGroup = new Adw.PreferencesGroup({
-                title: _('Streaming STT endpoint'),
-                description: _('Dedicated endpoint for stream transcription (independent of standard STT).'),
-            });
-            page.add(fallbackGroup);
-
-            streamState.levels.forEach((level, idx) => {
-                fallbackGroup.add(this._buildLevelExpander('stream', idx, level, streamState));
-            });
-        }
     }
 
     _buildStoragePage(window) {
