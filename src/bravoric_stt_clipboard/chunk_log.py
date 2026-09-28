@@ -42,6 +42,8 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
 
+from .i18n import _
+
 logger = logging.getLogger(__name__)
 
 # Percorso INIETTABILE: i test lo riassegnano (o lo passano a append_record)
@@ -498,7 +500,7 @@ def _format_record(record: dict) -> str:
             )
             for a in attempts if isinstance(a, dict))
     else:
-        rendered = "(nessun tentativo registrato)"
+        rendered = _("(no attempt recorded)")
     return (
         "{ts}  seq={seq}  audio={audio_s:.2f}s  total={total_ms}ms  "
         "served_by={served_by}  fallback={fallback}  session={session}  "
@@ -510,16 +512,17 @@ def _format_record(record: dict) -> str:
             fallback=str(bool(record.get("fallback"))).lower(),
             session=(record.get("session") or "-")[:8],
             attempts=rendered)
-        + ("\n      testo: " + str(record.get("text", "")) if record.get("text_len") else "")
+        + ("\n      " + _("text:") + " " + str(record.get("text", "")) if record.get("text_len") else "")
     )
 
 
 def _format_summary(rows: list[dict], total_records: int) -> str:
     if not rows:
-        return f"Nessun chunk nel log ({total_records} righe lette, nessun tentativo registrato)."
+        return _("No chunk in the log ({total_records} lines read, no attempt recorded).").format(
+            total_records=total_records)
     lines = [
-        (f"{'endpoint':<44} {'tent':>5} {'ok':>4} {'ko':>4} {'ms_avg':>8} "
-         f"{'p50':>8} {'p95':>8} {'serviti':>8} {'quota':>7}"),
+        (f"{'endpoint':<44} {_('tries'):>5} {'ok':>4} {'ko':>4} {'ms_avg':>8} "
+         f"{'p50':>8} {'p95':>8} {_('served'):>8} {_('share'):>7}"),
         "-" * 104,
     ]
     for row in rows:
@@ -531,9 +534,9 @@ def _format_summary(rows: list[dict], total_records: int) -> str:
             f"{_cell(row['ms_avg']):>8} {_cell(row['p50']):>8} {_cell(row['p95']):>8} "
             f"{served:>8} {quota:>7}")
     lines.append("")
-    lines.append("ms su tentativi RIUSCITI (un timeout non e' una latenza). "
-                 "quota = chunk serviti da quell'endpoint sul totale dei chunk "
-                 "con almeno una risposta.")
+    lines.append(_("ms over SUCCESSFUL attempts (a timeout is not a latency). "
+                   "share = chunks served by that endpoint out of all chunks "
+                   "with at least one answer."))
     return "\n".join(lines)
 
 
@@ -544,19 +547,19 @@ def _cell(value: float | None) -> str:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="bravoric-chunk-log",
-        description="Legge il log JSONL dei chunk di dettatura "
-                    "(~/.cache/bravoric-stt-clipboard/chunk_log.jsonl).")
+        description=_("Reads the JSONL log of dictation chunks "
+                      "(~/.cache/bravoric-stt-clipboard/chunk_log.jsonl)."))
     parser.add_argument("--last", type=int, default=None, metavar="N",
-                        help="ultime N righe, piu' recente in fondo")
+                        help=_("last N lines, most recent at the bottom"))
     parser.add_argument("--session", default=None, metavar="ID",
-                        help="solo le righe di una sessione")
+                        help=_("only the lines of one session"))
     parser.add_argument("--summary", action="store_true",
-                        help="vista aggregata per endpoint: tentativi, ok, falliti, "
-                             "ms medio, p50, p95 e quota di chunk serviti")
-    parser.add_argument("--since", type=float, default=None, metavar="MINUTI",
-                        help="solo le righe degli ultimi N minuti")
+                        help=_("per-endpoint summary: attempts, ok, failed, "
+                            "mean ms, p50, p95 and share of chunks served"))
+    parser.add_argument("--since", type=float, default=None, metavar=_("MINUTES"),
+                        help=_("only the lines of the last N minutes"))
     parser.add_argument("--path", default=None, metavar="FILE",
-                        help="percorso alternativo del log (default: quello reale)")
+                        help=_("alternative log path (default: the real one)"))
     return parser
 
 
@@ -570,7 +573,8 @@ def main(argv: list[str] | None = None) -> int:
         print(_format_summary(summarize(selected), len(records)))
     elif not selected:
         where = target
-        print(f"Nessun chunk nel log ({len(records)} righe in {where}).")
+        print(_("No chunk in the log ({count} lines in {where}).").format(
+            count=len(records), where=where))
     else:
         for record in selected:
             print(_format_record(record))

@@ -166,3 +166,65 @@ msgstr ""
 #: src/bravoric_stt_clipboard/config.py:ICON_SLOT_REGISTRY
 msgid "Stream — Transcribing"
 msgstr ""
+
+#: src/bravoric_stt_clipboard/chunk_log.py
+msgid "(no attempt recorded)"
+msgstr ""
+
+#: src/bravoric_stt_clipboard/chunk_log.py
+msgid "text:"
+msgstr ""
+
+#: src/bravoric_stt_clipboard/chunk_log.py
+#, python-brace-format
+msgid "No chunk in the log ({total_records} lines read, no attempt recorded)."
+msgstr ""
+
+#: src/bravoric_stt_clipboard/chunk_log.py
+#, python-brace-format
+msgid "No chunk in the log ({count} lines in {where})."
+msgstr ""
+
+#: src/bravoric_stt_clipboard/chunk_log.py
+msgid "tries"
+msgstr ""
+
+#: src/bravoric_stt_clipboard/chunk_log.py
+msgid "served"
+msgstr ""
+
+#: src/bravoric_stt_clipboard/chunk_log.py
+msgid "share"
+msgstr ""
+
+#: src/bravoric_stt_clipboard/chunk_log.py
+msgid "ms over SUCCESSFUL attempts (a timeout is not a latency). share = chunks served by that endpoint out of all chunks with at least one answer."
+msgstr ""
+
+#: src/bravoric_stt_clipboard/chunk_log.py
+msgid "Reads the JSONL log of dictation chunks (~/.cache/bravoric-stt-clipboard/chunk_log.jsonl)."
+msgstr ""
+
+#: src/bravoric_stt_clipboard/chunk_log.py
+msgid "last N lines, most recent at the bottom"
+msgstr ""
+
+#: src/bravoric_stt_clipboard/chunk_log.py
+msgid "only the lines of one session"
+msgstr ""
+
+#: src/bravoric_stt_clipboard/chunk_log.py
+msgid "per-endpoint summary: attempts, ok, failed, mean ms, p50, p95 and share of chunks served"
+msgstr ""
+
+#: src/bravoric_stt_clipboard/chunk_log.py
+msgid "MINUTES"
+msgstr ""
+
+#: src/bravoric_stt_clipboard/chunk_log.py
+msgid "only the lines of the last N minutes"
+msgstr ""
+
+#: src/bravoric_stt_clipboard/chunk_log.py
+msgid "alternative log path (default: the real one)"
+msgstr ""

@@ -187,3 +187,65 @@ msgstr "Generale — Errore"
 #: src/bravoric_stt_clipboard/config.py:ICON_SLOT_REGISTRY
 msgid "Stream — Transcribing"
 msgstr "Stream — Trascrizione in corso"
+
+#: src/bravoric_stt_clipboard/chunk_log.py
+msgid "(no attempt recorded)"
+msgstr "(nessun tentativo registrato)"
+
+#: src/bravoric_stt_clipboard/chunk_log.py
+msgid "text:"
+msgstr "testo:"
+
+#: src/bravoric_stt_clipboard/chunk_log.py
+#, python-brace-format
+msgid "No chunk in the log ({total_records} lines read, no attempt recorded)."
+msgstr "Nessun chunk nel log ({total_records} righe lette, nessun tentativo registrato)."
+
+#: src/bravoric_stt_clipboard/chunk_log.py
+#, python-brace-format
+msgid "No chunk in the log ({count} lines in {where})."
+msgstr "Nessun chunk nel log ({count} righe in {where})."
+
+#: src/bravoric_stt_clipboard/chunk_log.py
+msgid "tries"
+msgstr "tent"
+
+#: src/bravoric_stt_clipboard/chunk_log.py
+msgid "served"
+msgstr "serviti"
+
+#: src/bravoric_stt_clipboard/chunk_log.py
+msgid "share"
+msgstr "quota"
+
+#: src/bravoric_stt_clipboard/chunk_log.py
+msgid "ms over SUCCESSFUL attempts (a timeout is not a latency). share = chunks served by that endpoint out of all chunks with at least one answer."
+msgstr "ms su tentativi RIUSCITI (un timeout non è una latenza). quota = chunk serviti da quell'endpoint sul totale dei chunk con almeno una risposta."
+
+#: src/bravoric_stt_clipboard/chunk_log.py
+msgid "Reads the JSONL log of dictation chunks (~/.cache/bravoric-stt-clipboard/chunk_log.jsonl)."
+msgstr "Legge il log JSONL dei chunk di dettatura (~/.cache/bravoric-stt-clipboard/chunk_log.jsonl)."
+
+#: src/bravoric_stt_clipboard/chunk_log.py
+msgid "last N lines, most recent at the bottom"
+msgstr "ultime N righe, la più recente in fondo"
+
+#: src/bravoric_stt_clipboard/chunk_log.py
+msgid "only the lines of one session"
+msgstr "solo le righe di una sessione"
+
+#: src/bravoric_stt_clipboard/chunk_log.py
+msgid "per-endpoint summary: attempts, ok, failed, mean ms, p50, p95 and share of chunks served"
+msgstr "vista aggregata per endpoint: tentativi, ok, falliti, ms medio, p50, p95 e quota di chunk serviti"
+
+#: src/bravoric_stt_clipboard/chunk_log.py
+msgid "MINUTES"
+msgstr "MINUTI"
+
+#: src/bravoric_stt_clipboard/chunk_log.py
+msgid "only the lines of the last N minutes"
+msgstr "solo le righe degli ultimi N minuti"
+
+#: src/bravoric_stt_clipboard/chunk_log.py
+msgid "alternative log path (default: the real one)"
+msgstr "percorso alternativo del log (default: quello reale)"
