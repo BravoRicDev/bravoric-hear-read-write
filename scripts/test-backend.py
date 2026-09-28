@@ -5489,6 +5489,28 @@ def main() -> int:
     _cfg_shot_true = config._build_config({"ocr": {"capture_screenshot": True}})
     check("config: [ocr].capture_screenshot = true viene letto",
           _cfg_shot_true.ocr_capture_screenshot is True)
+    # La stringa "false" e' truthy in Python: senza _coerce_bool attivava lo
+    # screenshot per un refuso (o per un config scritto dal vecchio bug che
+    # serializzava questo campo come stringa TOML invece che bool).
+    check("config: capture_screenshot = \"false\" (stringa) resta False, non truthy",
+          config._build_config({"ocr": {"capture_screenshot": "false"}}).ocr_capture_screenshot is False)
+    check("config: capture_screenshot = \"true\" (stringa) e' True",
+          config._build_config({"ocr": {"capture_screenshot": "true"}}).ocr_capture_screenshot is True)
+    check("config: capture_screenshot = 0 (intero) resta False",
+          config._build_config({"ocr": {"capture_screenshot": 0}}).ocr_capture_screenshot is False)
+    # Stessa coercizione lato GUI: get_state alimenta lo switch di prefs.js;
+    # con "false" grezzo (truthy) lo switch mostrerebbe ON mentre il backend
+    # (_coerce_bool) dice OFF — GUI che mente sullo stato reale.
+    with tempfile.TemporaryDirectory() as _td_gs:
+        _p_gs = Path(_td_gs) / "config.toml"
+        _p_gs.write_text('[ocr]\ncapture_screenshot = "false"\n', encoding="utf-8")
+        _saved_cp_gs = config_editor.CONFIG_PATH
+        try:
+            config_editor.CONFIG_PATH = _p_gs
+            check("get_state: capture_screenshot = \"false\" (stringa) -> False, coerente col backend",
+                  config_editor.get_state()["ocr"]["capture_screenshot"] is False)
+        finally:
+            config_editor.CONFIG_PATH = _saved_cp_gs
     _cfg_shot_absent = config._build_config({})
     check("config: [ocr] assente -> capture_screenshot default False",
           _cfg_shot_absent.ocr_capture_screenshot is False)

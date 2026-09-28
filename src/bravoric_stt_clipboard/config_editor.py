@@ -16,7 +16,7 @@ import tempfile
 import tomllib
 from pathlib import Path
 
-from .config import ICON_SLOT_KEYS, STREAM_DISPATCH_MODES, _coerce_int
+from .config import ICON_SLOT_KEYS, STREAM_DISPATCH_MODES, _coerce_bool, _coerce_int
 
 CONFIG_PATH = Path.home() / ".config" / "bravoric-stt-clipboard" / "config.toml"
 
@@ -588,7 +588,7 @@ def get_state() -> dict:
         "ocr": {
             "levels": levels_of("ocr"),
             "system_prompt": raw.get("ocr", {}).get("system_prompt", ""),
-            "capture_screenshot": raw.get("ocr", {}).get("capture_screenshot", False),
+            "capture_screenshot": _coerce_bool(raw.get("ocr", {}).get("capture_screenshot", False)),
         },
         "ocr_cleanup": {
             "enabled": raw.get("ocr_cleanup", {}).get("enabled", False),

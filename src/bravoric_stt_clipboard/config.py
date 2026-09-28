@@ -620,7 +620,11 @@ def _build_config(raw: dict) -> Config:
             ),
             ocr_fallback=_parse_fallback_list(raw.get("ocr", {}).get("fallback", [])),
             ocr_system_prompt=ocr_raw.get("system_prompt", ""),
-            ocr_capture_screenshot=ocr_raw.get("capture_screenshot", False),
+            # _coerce_bool, non il valore grezzo: la stringa "false" e' truthy
+            # in Python e attiverebbe l'apertura di gnome-screenshot ad ogni
+            # pressione per un refuso (o per un config.toml scritto prima
+            # che config_editor serializzasse questo campo come bool vero).
+            ocr_capture_screenshot=_coerce_bool(ocr_raw.get("capture_screenshot", False)),
             ocr_cleanup=CleanupConfig(
                 enabled=ocr_cleanup_raw.get("enabled", False),
                 system_prompt=ocr_cleanup_raw.get("system_prompt", ""),
