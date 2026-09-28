@@ -44,7 +44,7 @@ import GLib from 'gi://GLib';
 import { matchBrace } from './lib/brace-match.mjs';
 
 const PREFS_PATH = GLib.build_filenamev([
-    GLib.get_current_dir(), 'gnome-extension', 'bravoric-indicator@local', 'prefs.js',
+    GLib.get_current_dir(), 'gnome-extension', 'bravoric-hear-read-write@riccardomurru.it', 'prefs.js',
 ]);
 
 // Estrae una classe per brace-matching dal sorgente reale.

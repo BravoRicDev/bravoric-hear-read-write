@@ -173,7 +173,7 @@ function notificationEnabled(key) {
         if (notificationSettings?.settings_schema?.has_key(key))
             return notificationSettings.get_boolean(key);
     } catch (e) {
-        logError(e, `bravoric-indicator: lettura di ${key} fallita`);
+        logError(e, `bravoric-hear-read-write: lettura di ${key} fallita`);
     }
     return true;
 }
@@ -192,7 +192,7 @@ function settingInt(key, fallback) {
                 return value;
         }
     } catch (e) {
-        logError(e, `bravoric-indicator: lettura di ${key} fallita`);
+        logError(e, `bravoric-hear-read-write: lettura di ${key} fallita`);
     }
     return fallback;
 }
@@ -208,7 +208,7 @@ function settingBool(key, fallback) {
         if (notificationSettings?.settings_schema?.has_key(key))
             return notificationSettings.get_boolean(key);
     } catch (e) {
-        logError(e, `bravoric-indicator: lettura di ${key} fallita`);
+        logError(e, `bravoric-hear-read-write: lettura di ${key} fallita`);
     }
     return fallback;
 }
@@ -257,7 +257,7 @@ const ioDeps = { Gio, GLib, logError };
 
 
 function spawnBackground(binName, ...args) {
-    spawnVenvBinary(binName, args, `bravoric-indicator: impossibile lanciare ${binName}`);
+    spawnVenvBinary(binName, args, `bravoric-hear-read-write: impossibile lanciare ${binName}`);
 }
 
 function showCopiedOsd() {
@@ -279,7 +279,7 @@ function showCopiedOsd() {
 // spawnVenvBinary, common to all the venv binaries.
 function spawnConfigEditor(...args) {
     spawnVenvBinary('bravoric-config-editor', args,
-        'bravoric-indicator: impossibile eseguire config-editor');
+        'bravoric-hear-read-write: impossibile eseguire config-editor');
 }
 
 // Nomi accessibili dei bottoni rapidi (lettori di schermo e suggerimenti),
@@ -337,7 +337,7 @@ function makeQuickButton(uuid, spec, labels, onClick) {
 const BravoricIndicator = GObject.registerClass(
 class BravoricIndicator extends PanelMenu.Button {
     _init(extension) {
-        super._init(0.0, 'Bravoric STT/OCR');
+        super._init(0.0, 'Bravoric Hear, Read & Write');
         this._extension = extension;
         this._cancellable = new Gio.Cancellable();
 
@@ -400,7 +400,7 @@ class BravoricIndicator extends PanelMenu.Button {
         this._pasteShortcut = 'ctrl+v';
         this._pasteChannel = 'clipboard';
 
-        this.accessible_name = _('Bravoric STT/OCR indicator');
+        this.accessible_name = _('Bravoric Hear, Read & Write indicator');
         this._setAccessibleState('idle');
 
         this._icon = new St.Icon({
@@ -504,7 +504,7 @@ class BravoricIndicator extends PanelMenu.Button {
         const f = this._diagnosticsFacts();
         const label = (ok) => ok ? 'OK' : 'MISSING';
         return [
-            'bravoric-indicator diagnostics',
+            'bravoric-hear-read-write diagnostics',
             'venv: ' + label(f.venvOk) + ' (' + VENV_BIN + ')',
             'schema: ' + label(f.schemaOk) + ' (' + f.schemaPath + ')',
             'status.json: ' + label(f.statusOk) + ' (' + STATUS_PATH + ')',
@@ -743,7 +743,7 @@ class BravoricIndicator extends PanelMenu.Button {
         if (!result.accepted)
             return;
         if (result.invalid > 0)
-            console.warn(`bravoric-indicator: scartati ${result.invalid} chunk stream non validi`);
+            console.warn(`bravoric-hear-read-write: scartati ${result.invalid} chunk stream non validi`);
 
         if (Number.isFinite(state.paste_delay_ms) && state.paste_delay_ms >= 0)
             this._pasteDelayMs = state.paste_delay_ms;
@@ -838,7 +838,7 @@ class BravoricIndicator extends PanelMenu.Button {
                 notifyErrorIfEnabled(_('Streaming paste unavailable'),
                     _('The virtual keyboard is unavailable; pending chunks were kept in memory.'));
                 logError(new Error('tastiera virtuale non disponibile; chunk stream mantenuti in coda'),
-                    'bravoric-indicator: paste stream sospeso');
+                    'bravoric-hear-read-write: paste stream sospeso');
             }
             return; // Nessun retry busy-loop; un prossimo evento può riprovare. | No busy-loop retry; a next event can retry.
         }
@@ -907,7 +907,7 @@ class BravoricIndicator extends PanelMenu.Button {
                     `invio Ctrl+V fallito per ${item.sessionId} chunk ${item.index}; `
                     + 'chunk conservato in testa alla coda, riattivare l\'estensione '
                     + 'solo dopo aver verificato il campo per evitare duplicati'),
-                    'bravoric-indicator: paste stream incompleto');
+                    'bravoric-hear-read-write: paste stream incompleto');
                 // Esito ambiguo: trattieni l'elemento e blocca il drain per non
                 // dichiararlo consegnato né ritentare automaticamente/duplicare.
                 // Ambiguous outcome: hold the item and block the drain so as not to declare
@@ -950,7 +950,7 @@ class BravoricIndicator extends PanelMenu.Button {
                     : character === '\t' ? Clutter.KEY_Tab
                         : Clutter.unicode_to_keysym(codepoint);
             } catch (error) {
-                logError(error, 'bravoric-indicator: conversione tasto stream fallita');
+                logError(error, 'bravoric-hear-read-write: conversione tasto stream fallita');
                 return false;
             }
             if (!Number.isInteger(keyval) || keyval === 0)
@@ -1183,7 +1183,7 @@ class BravoricIndicator extends PanelMenu.Button {
                 // to the user.
                 if (this._streamPasteBlocked) {
                     logError(new Error(`fine sessione stream ${sessionId} abbandonata: coda bloccata da un errore di invio, attesa infinita`),
-                        'bravoric-indicator: stream end abbandonato');
+                        'bravoric-hear-read-write: stream end abbandonato');
                     return finish();
                 }
                 if (Date.now() > deadline) {
@@ -1199,7 +1199,7 @@ class BravoricIndicator extends PanelMenu.Button {
                     // than to stay hung: the residual queue is discarded by the session change
                     // (_onStreamStateChanged).
                     logError(new Error(`fine sessione stream ${sessionId}: coda non svuotata entro ${endTimeoutMs} ms, chiusura forzata`),
-                        'bravoric-indicator: stream end forzato');
+                        'bravoric-hear-read-write: stream end forzato');
                     this._streamQueue = [];
                     this._streamEndTimerId = null;
                     spawnBackground('bravoric-stream-toggle', 'stop');
@@ -1258,7 +1258,7 @@ class BravoricIndicator extends PanelMenu.Button {
                     // Session already changed: closing that one would be harmful. It is not a
                     // failure: it is no longer ours to close.
                     logError(new Error(`sessione ${sessionId} non piu' attiva (ora ${state.session_id}): nessuna chiusura necessaria`),
-                        'bravoric-indicator: stream end già avvenuto');
+                        'bravoric-hear-read-write: stream end già avvenuto');
                     return finish();
                 }
                 spawnBackground('bravoric-stream-toggle', 'stop');
@@ -1289,7 +1289,7 @@ class BravoricIndicator extends PanelMenu.Button {
             this._virtualDevice = seat.create_virtual_device(
                 Clutter.InputDeviceType.KEYBOARD_DEVICE);
         } catch (e) {
-            logError(e, 'bravoric-indicator: impossibile creare tastiera virtuale');
+            logError(e, 'bravoric-hear-read-write: impossibile creare tastiera virtuale');
             this._virtualDevice = null;
         }
     }
@@ -1320,7 +1320,7 @@ class BravoricIndicator extends PanelMenu.Button {
                 Clutter.get_current_event_time() * EVENT_TIME_MS_TO_US, keyval, state);
             return true;
         } catch (e) {
-            logError(e, 'bravoric-indicator: errore invio tasto');
+            logError(e, 'bravoric-hear-read-write: errore invio tasto');
             return false;
         }
     }
@@ -1381,11 +1381,11 @@ class BravoricIndicator extends PanelMenu.Button {
                         // fallisce il backend usa last_chunks, nessun errore utente.
                         // The context file is an improvement: if the write fails the backend uses
                         // last_chunks, no user error.
-                        logError(e, 'bravoric-indicator: scrittura contesto vivo fallita');
+                        logError(e, 'bravoric-hear-read-write: scrittura contesto vivo fallita');
                     }
                 });
         } catch (e) {
-            logError(e, 'bravoric-indicator: scrittura contesto vivo fallita');
+            logError(e, 'bravoric-hear-read-write: scrittura contesto vivo fallita');
         }
     }
 
@@ -1502,7 +1502,7 @@ class BravoricIndicator extends PanelMenu.Button {
                         : _('Last output: (none)');
                 }
             } catch (e) {
-                logError(e, 'bravoric-indicator: status.json malformato');
+                logError(e, 'bravoric-hear-read-write: status.json malformato');
                 this._statusParseErrors = (this._statusParseErrors || 0) + 1;
                 if (this._statusParseErrors === 3) {
                     notifyErrorIfEnabled(_('Status file error'), _('Check config.toml'));
@@ -1608,7 +1608,7 @@ export default class BravoricIndicatorExtension extends Extension {
             try {
                 this._quick?.sync();
             } catch (e) {
-                logError(e, 'bravoric-indicator: bottoni rapidi non creati');
+                logError(e, 'bravoric-hear-read-write: bottoni rapidi non creati');
             }
             this._indicator?._refreshStatus();
         };
@@ -1636,7 +1636,7 @@ export default class BravoricIndicatorExtension extends Extension {
         const schema = this._settings.settings_schema;
         for (const [name, command] of bindings) {
             if (!schema?.has_key(name)) {
-                console.error(`bravoric-indicator: schema GSettings privo di ${name}; scorciatoia ignorata`);
+                console.error(`bravoric-hear-read-write: schema GSettings privo di ${name}; scorciatoia ignorata`);
                 continue;
             }
             Main.wm.addKeybinding(

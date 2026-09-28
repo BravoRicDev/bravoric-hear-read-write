@@ -22,7 +22,7 @@ const path = require('path');
 const vm = require('vm');
 const { matchBrace } = require('./lib/brace-match.cjs');
 
-const EXT_DIR = path.join(__dirname, '..', 'gnome-extension', 'bravoric-indicator@local');
+const EXT_DIR = path.join(__dirname, '..', 'gnome-extension', 'bravoric-hear-read-write@riccardomurru.it');
 const SRC = path.join(EXT_DIR, 'extension.js');
 const src = fs.readFileSync(SRC, 'utf8');
 

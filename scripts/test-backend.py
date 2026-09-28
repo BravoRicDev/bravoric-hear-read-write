@@ -495,14 +495,45 @@ def main() -> int:
     good_override = tmp / "icon.png"
     good_override.write_bytes(b"icon")
     check("resolver accepts existing user override", notify.resolve_icon("error_general", str(good_override)) == str(good_override))
-    # I due slot sotto hanno un asset incluso (stream-session-start.png /
-    # error-general.png), quindi non cadono piu' sull'icona a tema: qui si
-    # verifica il fallback tematico su slot che restano senza asset.
-    # The two slots below have a bundled asset (stream-session-start.png /
-    # error-general.png), so they no longer fall back on the theme icon: here
-    # the theme fallback is verified on slots that remain without an asset.
-    check("resolver missing override uses themed category fallback", notify.resolve_icon("stream_session_end", str(tmp / "missing")) == notify.ICON_READY)
-    check("resolver invalid override remains non-fatal", notify.resolve_icon("stt_recording_start", "\\0bad") == notify.ICON_RECORDING)
+    # Simula l'assenza del packaged asset mantenendo lo slot reale: nessuno
+    # slot registrato resta senza icona dopo il montaggio.
+    # Simulate a missing packaged asset while retaining a real slot: all
+    # registered slots have an icon after this installation.
+    with mock.patch.dict(notify._PACKAGED_DEFAULTS, {"stream_session_end": "missing.png"}):
+        check("resolver missing override uses themed category fallback", notify.resolve_icon("stream_session_end", str(tmp / "missing")) == notify.ICON_READY)
+    # Il fallback di TEMA si esercita su un soggetto SINTETICO: lo slot reale
+    # non puo' piu' dimostrarlo, perche' il montaggio ha dato un asset a tutti
+    # e 12 gli slot, quindi _PACKAGED_DEFAULTS vince SEMPRE e l'override
+    # invalido cade sull'asset pacchettato (premessa falsa per costruzione,
+    # non un difetto di resolve_icon). Qui il soggetto e' uno slot reale ma
+    # privato del suo asset per la sola durata del blocco, cosi' l'override
+    # invalido deve davvero attraversare il livello utente E quello
+    # pacchettato prima di approdare sull'icona del tema. clear=True e
+    # try/finally: il dizionario globale viene ripristinato bit per bit anche
+    # se l'asserzione solleva, altrimenti il test avvelenerebbe tutti i
+    # successivi che contano su _PACKAGED_DEFAULTS.
+    # The THEME fallback is exercised on a SYNTHETIC subject: a real slot can
+    # no longer demonstrate it, because the installation gave an asset to all
+    # 12 slots, so _PACKAGED_DEFAULTS always wins and an invalid override falls
+    # back to the bundled asset (a premise false by construction, not a defect
+    # in resolve_icon). Here the subject is a real slot stripped of its asset
+    # for the block only, so the invalid override must really cross the user
+    # level AND the packaged level before landing on the theme icon. clear=True
+    # and try/finally: the global dict is restored bit for bit even if the
+    # assertion raises, otherwise the test would poison every later test that
+    # relies on _PACKAGED_DEFAULTS.
+    theme_slot = "stt_recording_start"
+    theme_icon = notify.ICON_RECORDING
+    original_defaults = notify._PACKAGED_DEFAULTS
+    defaults_before = dict(original_defaults)
+    try:
+        notify._PACKAGED_DEFAULTS = dict(original_defaults)
+        notify._PACKAGED_DEFAULTS.pop(theme_slot, None)
+        theme_fallback = notify.resolve_icon(theme_slot, "\\0bad")
+    finally:
+        notify._PACKAGED_DEFAULTS = original_defaults
+    check("resolver invalid override remains non-fatal", theme_fallback == theme_icon)
+    check("synthetic subject restores packaged defaults", notify._PACKAGED_DEFAULTS is original_defaults and notify._PACKAGED_DEFAULTS == defaults_before)
     check("resolver existing packaged default", notify.resolve_icon("stt_start").endswith("mic-neutral.png"))
     check("legacy key meaning remains processing start", next(s for s in config.ICON_SLOT_REGISTRY if s.key == "stt_start").meaning.startswith("STT processing start"))
     icon_config_path = tmp / "icon_editor.toml"
@@ -4090,14 +4121,10 @@ def main() -> int:
     check("budget stop: non tronca la somma dei timeout",
           _stop_drain_budget(_Lv(40, 40, 40)) > sum((40, 40, 40)))
 
-    # 8. Le due icone mancanti (stream_session_start, error_general): i PNG
-    #    esistono, sono 128x128 sRGBA e sono i default dei due slot nuovi.
-    #    Le dimensioni/alpha si leggono dall'intestazione PNG con struct: il
-    #    progetto non dipende da Pillow ne' da ImageMagick.
-    # 8. The two missing icons (stream_session_start, error_general): the PNGs
-    #    exist, are 128x128 sRGBA and are the defaults of the two new slots. The
-    #    dimensions/alpha are read from the PNG header with struct: the project
-    #    depends neither on Pillow nor on ImageMagick.
+    # 8. Le sei icone montate: PNG presenti, 128x128 con alpha, default e
+    #    risoluzione corretta per ogni slot. Parsing header senza dipendenze.
+    # 8. The six installed icons: PNGs present, 128x128 with alpha, configured
+    #    defaults and correct resolution for every slot; parse headers directly.
     def _png_size_has_alpha(path: Path) -> bool:
         raw = path.read_bytes()
         if raw[:8] != b"\x89PNG\r\n\x1a\n" or raw[12:16] != b"IHDR":
@@ -4107,22 +4134,24 @@ def main() -> int:
         return (width, height) == (128, 128) and color_type in (4, 6)
 
     icons_dir = Path(notify.ICONS_DIR)
-    for filename in ("stream-session-start.png", "error-general.png"):
+    mounted = {
+        "stt_recording_start": "stt-recording-start.png",
+        "stream_session_start": "stream-session-start.png",
+        "stream_processing_start": "stream-processing-start.png",
+        "stream_session_end": "stream-session-end.png",
+        "stream_chunk_delivered": "stream-chunk-delivered.png",
+        "error_general": "error-general.png",
+    }
+    for slot, filename in mounted.items():
         png = icons_dir / filename
         check(f"icona presente e non vuota: {filename}",
               png.is_file() and png.stat().st_size > 0)
         check(f"icona 128x128 con canale alpha: {filename}",
               _png_size_has_alpha(png))
-
-    check("default stream_session_start punta al nuovo PNG",
-          notify._PACKAGED_DEFAULTS.get("stream_session_start") == "stream-session-start.png")
-    check("default error_general punta al nuovo PNG",
-          notify._PACKAGED_DEFAULTS.get("error_general") == "error-general.png")
-
-    check("resolve_icon stream_session_start restituisce il nuovo PNG",
-          notify.resolve_icon("stream_session_start", "") == str(icons_dir / "stream-session-start.png"))
-    check("resolve_icon error_general restituisce il nuovo PNG",
-          notify.resolve_icon("error_general", "") == str(icons_dir / "error-general.png"))
+        check(f"default {slot} punta a {filename}",
+              notify._PACKAGED_DEFAULTS.get(slot) == filename)
+        check(f"resolve_icon {slot} restituisce {filename}",
+              notify.resolve_icon(slot, "") == str(png))
 
     # 9. Nessuna regressione sui 6 slot storici: devono continuare a
     #    risolvere ai packaged asset di sempre, non alle icone a tema.
@@ -6064,7 +6093,7 @@ def main() -> int:
     check("P4: il sottocomando 'stop' esiste nel sorgente di cli.py",
           'command[0] == "stop"' in _cli_src
           and "if not session.is_active():" in _cli_src)
-    _ext_src = (ROOT / "gnome-extension" / "bravoric-indicator@local" / "extension.js").read_text(encoding="utf-8")
+    _ext_src = (ROOT / "gnome-extension" / "bravoric-hear-read-write@riccardomurru.it" / "extension.js").read_text(encoding="utf-8")
     _end_body = _ext_src.split("_requestStreamEnd(sessionId) {")[1].split("\n    _startVirtualDevice")[0]
     check("P4: l'estensione chiude con il sottocomando 'stop', non col toggle",
           "spawnBackground('bravoric-stream-toggle', 'stop')" in _end_body)
@@ -7197,7 +7226,7 @@ max_entries = 20
     # lock any more, and the keys it builds must all be known to the backend (if
     # a new row used a key outside the list, the write would fail at runtime —
     # this test intercepts it beforehand).
-    _prefs_src = (ROOT / "gnome-extension" / "bravoric-indicator@local" / "prefs.js").read_text(encoding="utf-8")
+    _prefs_src = (ROOT / "gnome-extension" / "bravoric-hear-read-write@riccardomurru.it" / "prefs.js").read_text(encoding="utf-8")
     check("P5: prefs.js non chiama piu' writeBool per gli switch (scrittura fuori dal lock)",
           "editor.writeBool(startKey" not in _prefs_src
           and "editor.writeBool(enabledKey" not in _prefs_src
@@ -7802,7 +7831,7 @@ max_entries = 20
     # must be created PRIVATE (0600). Verified live with gjs under umask 022:
     # without the flag it is born 0644. Here we only guard that the flag does not
     # disappear.
-    _ext_js = (ROOT / "gnome-extension" / "bravoric-indicator@local" / "extension.js").read_text(encoding="utf-8")
+    _ext_js = (ROOT / "gnome-extension" / "bravoric-hear-read-write@riccardomurru.it" / "extension.js").read_text(encoding="utf-8")
     _live_at = _ext_js.index("_writeStreamLiveText() {")
     _live_block = _ext_js[_live_at:_ext_js.index("_refreshStatus() {", _live_at)]
     check("extension.js: stream_live_text.json creato con Gio.FileCreateFlags.PRIVATE (0600)",
@@ -8034,7 +8063,7 @@ max_entries = 20
     # Project rule: no notification that cannot be configured from the GUI. The
     # keys that prefs.js builds (processing_start + contentRows with _content +
     # extraRows) must coincide EXACTLY with NOTIFICATION_KEYS.
-    _prefs_nt = (ROOT / "gnome-extension" / "bravoric-indicator@local" / "prefs.js").read_text(encoding="utf-8")
+    _prefs_nt = (ROOT / "gnome-extension" / "bravoric-hear-read-write@riccardomurru.it" / "prefs.js").read_text(encoding="utf-8")
     _groups_nt = _prefs_nt[_prefs_nt.index("const NOTIFICATION_GROUPS = ["):]
     _groups_nt = _groups_nt[:_groups_nt.index("\n];")]
     _gui_keys: set[str] = set()
@@ -8052,8 +8081,8 @@ max_entries = 20
           config_editor.NOTIFICATION_KEYS - _gui_keys == set())
     check("GUI: nessuna riga di notifica punta a una chiave sconosciuta al backend",
           _gui_keys - config_editor.NOTIFICATION_KEYS == set())
-    _schema_txt = (ROOT / "gnome-extension" / "bravoric-indicator@local" / "schemas"
-                   / "org.gnome.shell.extensions.bravoric-indicator.gschema.xml").read_text(encoding="utf-8")
+    _schema_txt = (ROOT / "gnome-extension" / "bravoric-hear-read-write@riccardomurru.it" / "schemas"
+                   / "org.gnome.shell.extensions.bravoric-hear-read-write.gschema.xml").read_text(encoding="utf-8")
     _ext_keys = set(re.findall(r"key: '(notify-[a-z]+)'", _prefs_nt))
     check("GUI: ogni interruttore di notifica dell'estensione e' nello schema GSettings",
           bool(_ext_keys) and all(f'name="{_k}"' in _schema_txt for _k in _ext_keys))
@@ -8076,7 +8105,7 @@ max_entries = 20
     _wav_ico.write_bytes(b"dati")
     for _label_ico, _override_ico, _expect_ico in (
             ("con override utente", str(_ico_custom), str(_ico_custom)),
-            ("senza override (fallback tema)", "", "content-loading-symbolic")):
+            ("senza override (fallback tema simulato)", "", "content-loading-symbolic")):
         _cfg_ico = _dc_nt.replace(
             cfg_stream_min, notifications=True,
             icons=_dc_nt.replace(cfg_stream_min.icons, stream_processing_start=_override_ico))
@@ -8086,7 +8115,9 @@ max_entries = 20
              mock.patch.object(stream_mod.status, "write_status"), \
              mock.patch.object(stream_mod, "_write_state"), \
              mock.patch.object(stream_mod.notify, "maybe_send"), \
-             mock.patch.object(_sess_ico, "_record_history"):
+             mock.patch.object(_sess_ico, "_record_history"), \
+             mock.patch.dict(stream_mod.notify._PACKAGED_DEFAULTS,
+                             {"stream_processing_start": "missing.png"} if not _override_ico else {}):
             _sess_ico._stop_at_end_transcribe(_wav_ico, "s-ico", "")
         _icons_used = [c.kwargs.get("icon") for c in _mss_ico.call_args_list]
         check(f"stream at_end 'Transcribing...': icona dallo slot ({_label_ico})",
@@ -8149,7 +8180,7 @@ max_entries = 20
     # GUI/backend anti-drift: every field writable via set-general has a row in
     # prefs.js that writes it, and conversely prefs.js does not write fields
     # that the backend would reject.
-    _prefs_gen = (ROOT / "gnome-extension" / "bravoric-indicator@local" / "prefs.js").read_text(encoding="utf-8")
+    _prefs_gen = (ROOT / "gnome-extension" / "bravoric-hear-read-write@riccardomurru.it" / "prefs.js").read_text(encoding="utf-8")
     _gui_fields = set(re.findall(r"setGeneralField\('(\w+)', '(\w+)'", _prefs_gen))
     check("GENERAL_FIELDS == campi scritti dalla GUI (nessun campo senza riga, nessuna riga orfana)",
           _gui_fields == set(config_editor.GENERAL_FIELDS))
@@ -8301,8 +8332,8 @@ max_entries = 20
     # Indicator settings anti-drift: GSettings schema, GUI list
     # (INDICATOR_SETTINGS) and the keys read by extension.js must agree, with
     # the same bounds and the historical defaults of the former constants.
-    _ext_dir = ROOT / "gnome-extension" / "bravoric-indicator@local"
-    _schema_xml = (_ext_dir / "schemas" / "org.gnome.shell.extensions.bravoric-indicator.gschema.xml").read_text(encoding="utf-8")
+    _ext_dir = ROOT / "gnome-extension" / "bravoric-hear-read-write@riccardomurru.it"
+    _schema_xml = (_ext_dir / "schemas" / "org.gnome.shell.extensions.bravoric-hear-read-write.gschema.xml").read_text(encoding="utf-8")
     _schema_ints = {
         m_.group(1): (int(m_.group(2)), int(m_.group(3)), int(m_.group(4)))
         for m_ in re.finditer(
@@ -8379,7 +8410,7 @@ max_entries = 20
     finally:
         config_editor.CONFIG_PATH = _saved_af
     _gui_presets = re.findall(r"\{ preset: '([\w-]+)', label: '[^']+' \}",
-                              (ROOT / "gnome-extension" / "bravoric-indicator@local" / "prefs.js").read_text(encoding="utf-8"))
+                              (ROOT / "gnome-extension" / "bravoric-hear-read-write@riccardomurru.it" / "prefs.js").read_text(encoding="utf-8"))
     check("GUI: i preset di formato == AUDIO_FORMATS del backend (stesso ordine di importanza)",
           set(_gui_presets) == set(config_editor.AUDIO_FORMATS) and _gui_presets[0] == "ogg-opus")
 

@@ -92,12 +92,12 @@ const VENV_BIN = GLib.build_filenamev([
 const CONFIG_EDITOR_BIN = GLib.build_filenamev([VENV_BIN, 'bravoric-config-editor']);
 
 // Scorciatoie globali: schema GSettings proprio dell'estensione
-// (schemas/org.gnome.shell.extensions.bravoric-indicator.gschema.xml),
+// (schemas/org.gnome.shell.extensions.bravoric-hear-read-write.gschema.xml),
 // gestite in extension.js via Main.wm.addKeybinding — non più scritte nella
 // lista globale org.gnome.settings-daemon...media-keys (approccio precedente,
 // vedi cleanupLegacyMediaKeysShortcuts sotto per la migrazione automatica).
 // Global shortcuts: the extension's own GSettings schema
-// (schemas/org.gnome.shell.extensions.bravoric-indicator.gschema.xml),
+// (schemas/org.gnome.shell.extensions.bravoric-hear-read-write.gschema.xml),
 // managed in extension.js via Main.wm.addKeybinding — no longer written in
 // the global list org.gnome.settings-daemon...media-keys (previous approach,
 // see cleanupLegacyMediaKeysShortcuts below for the automatic migration).
@@ -122,7 +122,7 @@ function cleanupLegacyMediaKeysShortcuts() {
             Gio.Settings.sync();
         }
     } catch (e) {
-        logError(e, 'bravoric-indicator: impossibile pulire scorciatoie legacy');
+        logError(e, 'bravoric-hear-read-write: impossibile pulire scorciatoie legacy');
     }
 }
 
@@ -1963,7 +1963,7 @@ export default class BravoricPreferences extends ExtensionPreferences {
                         folderRow.subtitle = path;
                 } catch (e) {
                     if (!e.matches(Gio.IOErrorEnum, Gio.IOErrorEnum.CANCELLED))
-                        logError(e, 'bravoric-indicator: errore selezione cartella');
+                        logError(e, 'bravoric-hear-read-write: errore selezione cartella');
                 }
             });
         });
@@ -2094,7 +2094,7 @@ export default class BravoricPreferences extends ExtensionPreferences {
                             row.subtitle = path;
                     } catch (e) {
                         if (!e.matches(Gio.IOErrorEnum, Gio.IOErrorEnum.CANCELLED))
-                            logError(e, 'bravoric-indicator: errore selezione icona');
+                            logError(e, 'bravoric-hear-read-write: errore selezione icona');
                     }
                 });
             });

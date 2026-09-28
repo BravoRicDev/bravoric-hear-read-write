@@ -1,8 +1,8 @@
-# Traduzione italiana di bravoric-indicator.
+# Traduzione italiana di bravoric-hear-read-write.
 #
 msgid ""
 msgstr ""
-"Project-Id-Version: bravoric-indicator\n"
+"Project-Id-Version: bravoric-hear-read-write\n"
 "Report-Msgid-Bugs-To: \n"
 "POT-Creation-Date: 2026-09-25 23:46+0200\n"
 "PO-Revision-Date: 2026-09-23 13:04+0200\n"
@@ -14,271 +14,271 @@ msgstr ""
 "Content-Transfer-Encoding: 8bit\n"
 "Plural-Forms: nplurals=2; plural=(n != 1);\n"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js:68
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:68
 msgid "Dictation shortcut"
 msgstr "Scorciatoia dettatura"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js:69
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:69
 msgid "OCR shortcut"
 msgstr "Scorciatoia OCR"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js:70
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:70
 msgid "Streaming dictation shortcut"
 msgstr "Scorciatoia dettatura streaming"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js:124
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:124
 msgid "STT — Audio transcription"
 msgstr "STT — Trascrizione audio"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js:125
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:125
 msgid "STT — LLM cleanup"
 msgstr "STT — Pulizia LLM"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js:126
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:126
 msgid "OCR — Extraction (Vision)"
 msgstr "OCR — Estrazione (Vision)"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js:127
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:127
 msgid "OCR — LLM cleanup"
 msgstr "OCR — Pulizia LLM"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js:131
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:131
 msgid "Endpoint"
 msgstr "Endpoint"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js:132
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:132
 msgid "Model"
 msgstr "Modello"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js:133
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:133
 msgid "API key environment variable"
 msgstr "Variabile d'ambiente chiave API"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js:134
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:134
 msgid "CA certificate (path)"
 msgstr "Certificato CA (percorso)"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js:138
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:138
 msgid "STT — Original audio file"
 msgstr "STT — File audio originale"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js:139
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:139
 msgid "STT — Raw transcription"
 msgstr "STT — Trascrizione grezza"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js:140
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:140
 msgid "STT — LLM-cleaned transcription"
 msgstr "STT — Trascrizione pulita da LLM"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js:141
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:141
 msgid "OCR — Original screenshot"
 msgstr "OCR — Screenshot originale"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js:142
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:142
 msgid "OCR — Raw extraction"
 msgstr "OCR — Estrazione grezza"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js:143
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:143
 msgid "OCR — LLM-cleaned extraction"
 msgstr "OCR — Estrazione pulita da LLM"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js:151
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:151
 msgid "STT — Processing started"
 msgstr "STT — Elaborazione avviata"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js:152
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:152
 msgid "STT — Raw text ready"
 msgstr "STT — Testo grezzo pronto"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js:153
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:153
 msgid "STT — Cleaned text ready"
 msgstr "STT — Testo pulito pronto"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js:154
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:154
 msgid "OCR — Processing started"
 msgstr "OCR — Elaborazione avviata"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js:155
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:155
 msgid "OCR — Raw text ready"
 msgstr "OCR — Testo grezzo pronto"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js:156
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:156
 msgid "OCR — Cleaned text ready"
 msgstr "OCR — Testo pulito pronto"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js:157
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:157
 msgid "STT — Recording started"
 msgstr "STT — Registrazione avviata"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js:158
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:158
 msgid "Stream — Session started"
 msgstr "Stream — Sessione avviata"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js:159
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:159
 msgid "Stream — Session ended"
 msgstr "Stream — Sessione terminata"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js:160
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:160
 msgid "Stream — Text delivered"
 msgstr "Stream — Testo consegnato"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js:161
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:161
 msgid "General — Error"
 msgstr "Generale — Errore"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js:222
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:222
 msgid "Sequential: one level at a time, in order."
 msgstr "Sequenziale: un livello alla volta, in ordine."
 
-#: gnome-extension/bravoric-indicator@local/prefs.js:224
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:224
 #, javascript-format
 msgid "Ignored in sequential mode: %s"
 msgstr "Ignorati in modalità sequenziale: %s"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js:232
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:232
 msgid "Sequential (no level marked parallel)."
 msgstr "Sequenziale (nessun livello segnato come parallelo)."
 
-#: gnome-extension/bravoric-indicator@local/prefs.js:240
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:240
 #, javascript-format
 msgid "Parallel: %d endpoints in the pool, up to %d workers."
 msgstr "Parallelo: %d endpoint nel pool, fino a %d worker."
 
-#: gnome-extension/bravoric-indicator@local/prefs.js:245
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:245
 msgid ""
 "The worker cap is automatic: it is recalculated at each session from the "
 "endpoints not in cooldown, so the real number can be lower."
 msgstr "Il limite di worker è automatico: viene ricalcolato a ogni sessione sugli endpoint non in cooldown, quindi il numero reale può essere inferiore."
 
-#: gnome-extension/bravoric-indicator@local/prefs.js:249
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:249
 #, javascript-format
 msgid "Not in the pool, unreachable while another level is parallel: %s"
 msgstr "Fuori dal pool, irraggiungibili finché un altro livello è parallelo: %s"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js:259
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:259
 msgid ""
 "Ignored: the global Dispatch mode is Sequential. This level takes no part in "
 "the parallel pool."
 msgstr "Ignorato: la Modalità di dispatch globale è Sequenziale. Questo livello non partecipa al pool parallelo."
 
-#: gnome-extension/bravoric-indicator@local/prefs.js:260
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:260
 msgid ""
 "Send chunks to this endpoint at the same time as the other levels marked "
 "parallel, up to the slot limit below. Levels not marked here are NOT used as "
 "fallback."
 msgstr "Invia i chunk a questo endpoint contemporaneamente agli altri livelli segnati come paralleli, fino al limite di slot qui sotto. I livelli non segnati NON sono usati come ripiego."
 
-#: gnome-extension/bravoric-indicator@local/prefs.js:328
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:328
 msgid "STT notifications (voice dictation)"
 msgstr "Notifiche STT (dettatura vocale)"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js:330
-#: gnome-extension/bravoric-indicator@local/prefs.js:342
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:330
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:342
 msgid "Processing started"
 msgstr "Elaborazione avviata"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js:331
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:331
 msgid "Notify when transcription starts (no text available at this point)"
 msgstr ""
 "Notifica all'avvio della trascrizione (a questo punto nessun testo "
 "disponibile)"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js:334
-#: gnome-extension/bravoric-indicator@local/prefs.js:346
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:334
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:346
 msgid "Raw text ready"
 msgstr "Testo grezzo pronto"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js:334
-#: gnome-extension/bravoric-indicator@local/prefs.js:346
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:334
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:346
 msgid "Notify when the raw text is in the clipboard"
 msgstr "Notifica quando il testo grezzo è negli appunti"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js:335
-#: gnome-extension/bravoric-indicator@local/prefs.js:347
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:335
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:347
 msgid "Cleaned text ready"
 msgstr "Testo pulito pronto"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js:335
-#: gnome-extension/bravoric-indicator@local/prefs.js:347
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:335
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:347
 msgid "Notify when the LLM-corrected text is in the clipboard"
 msgstr "Notifica quando il testo corretto dall'LLM è negli appunti"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js:340
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:340
 msgid "OCR notifications (screenshot)"
 msgstr "Notifiche OCR (screenshot)"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js:343
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:343
 msgid "Notify when extraction starts (no text available at this point)"
 msgstr ""
 "Notifica all'avvio dell'estrazione (a questo punto nessun testo disponibile)"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js:352
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:352
 msgid "Streaming notifications"
 msgstr "Notifiche streaming"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js:354
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:354
 msgid "Streaming session started"
 msgstr "Sessione streaming avviata"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js:355
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:355
 msgid "Notify when streaming dictation starts"
 msgstr "Notifica quando inizia la dettatura streaming"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js:358
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:358
 msgid "Transcribed text ready"
 msgstr "Testo trascritto pronto"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js:358
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:358
 msgid "Notify when streamed text is ready"
 msgstr "Notifica quando il testo streaming è pronto"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js:447
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:447
 msgid "Notifications"
 msgstr "Notifiche"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js:480
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:480
 msgid "Show content in notification text"
 msgstr "Mostra il contenuto nel testo della notifica"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js:481
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:481
 msgid "If off, shows only the title (no transcribed text)"
 msgstr "Se disattivato, mostra solo il titolo (nessun testo trascritto)"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js:514
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:514
 msgid "Shortcuts"
 msgstr "Scorciatoie"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js:520
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:520
 msgid "Global keyboard shortcuts"
 msgstr "Scorciatoie da tastiera globali"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js:521
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:521
 msgid ""
 "Format: <Alt><Super>r (modifier names between angle brackets, then the key)"
 msgstr ""
 "Formato: <Alt><Super>r (nomi dei modificatori tra parentesi angolari, poi il "
 "tasto)"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js:551
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:551
 #, javascript-format
 msgid "Already used by: %s"
 msgstr "Già usata da: %s"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js:592
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:592
 #, javascript-format
 msgid "Not a valid shortcut: %s"
 msgstr "Non è una scorciatoia valida: %s"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js:570
-#: gnome-extension/bravoric-indicator@local/extension.js:188
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:570
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/extension.js:188
 msgid "Streaming"
 msgstr "Streaming"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js:584
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:584
 msgid "Streaming dictation (experimental)"
 msgstr "Dettatura in streaming (sperimentale)"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js:585
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:585
 msgid ""
 "Direct typing into the focused field. \"At end\": single recording "
 "transcribed when stopped. \"Per chunk\": continuous segmentation on pauses."
@@ -286,105 +286,105 @@ msgstr ""
 "Scrittura diretta nel campo attivo. \"Alla fine\": registrazione unica "
 "trascritta allo stop. \"Per chunk\": segmentazione continua sulle pause."
 
-#: gnome-extension/bravoric-indicator@local/prefs.js:590
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:590
 msgid "Mode"
 msgstr "Modalità"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js:592
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:592
 msgid "Per chunk (transcribe on pauses)"
 msgstr "Per chunk (trascrive sulle pause)"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js:592
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:592
 msgid "At end (transcribe when stopped)"
 msgstr "Alla fine (trascrive quando fermo)"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js:613
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:613
 msgid "Dispatch mode (per-chunk mode only)"
 msgstr "Modalità di dispatch (solo per modalità per-chunk)"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js:614
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:614
 msgid ""
 "Auto uses the pool of endpoints marked parallel; sequential ignores every "
 "per-level switch and walks the levels in order. Not applied to a running "
 "session: it takes effect at the next one."
 msgstr "Usa in automatico il pool degli endpoint segnati come paralleli; sequenziale ignora ogni interruttore per livello e percorre i livelli in ordine. Non vale a caldo: ha effetto dalla sessione successiva."
 
-#: gnome-extension/bravoric-indicator@local/prefs.js:616
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:616
 msgid "Auto (parallel if any level is marked)"
 msgstr "Automatico (parallelo se un livello è segnato)"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js:616
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:616
 msgid "Sequential (one level at a time)"
 msgstr "Sequenziale (un livello alla volta)"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js:624
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:624
 msgid "Current dispatch"
 msgstr "Dispatch attuale"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js:652
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:652
 msgid "Paste channel"
 msgstr "Canale di inserimento"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js:653
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:653
 msgid "Choose clipboard insertion or simulated keystrokes."
 msgstr "Scegli l'inserimento dagli appunti o tramite tasti simulati."
 
-#: gnome-extension/bravoric-indicator@local/prefs.js:654
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:654
 msgid "Clipboard"
 msgstr "Appunti"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js:654
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:654
 msgid "Keystrokes"
 msgstr "Tasti simulati"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js:658
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:658
 msgid "Paste shortcut"
 msgstr "Scorciatoia di incolla"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js:659
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:659
 msgid "Use Ctrl+Shift+V for terminals/TUIs such as opencode."
 msgstr "Usa Ctrl+Shift+V per terminali/TUI come opencode."
 
-#: gnome-extension/bravoric-indicator@local/prefs.js:678
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:678
 msgid "Paste delay (ms)"
 msgstr "Ritardo di incolla (ms)"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js:679
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:679
 msgid "Pause before pasting to ensure clipboard is ready (default 250 ms)"
 msgstr ""
 "Pausa prima di incollare per garantire che gli appunti siano pronti (default "
 "250 ms)"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js:691
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:691
 msgid "Chunk segmentation (per-chunk mode only)"
 msgstr "Segmentazione per chunk (solo modalità per chunk)"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js:692
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:692
 msgid "Fine-tune how pauses in speech are detected to split chunks."
 msgstr "Regola come rilevare le pause nel parlato per dividere i chunk."
 
-#: gnome-extension/bravoric-indicator@local/prefs.js:697
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:697
 msgid "Silence duration (seconds)"
 msgstr "Durata del silenzio (secondi)"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js:698
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:698
 msgid "Length of silence that triggers transcription of the current chunk"
 msgstr "Durata del silenzio che avvia la trascrizione del chunk corrente"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js:711
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:711
 msgid "Silence noise threshold (dB)"
 msgstr "Soglia rumore del silenzio (dB)"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js:712
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:712
 msgid "Audio level below which sound is considered silence (e.g. -30 dB)"
 msgstr ""
 "Livello audio sotto il quale il suono è considerato silenzio (es. -30 dB)"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js:724
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:724
 msgid "Adaptive VAD margin (dB)"
 msgstr "Margine VAD adattivo (dB)"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js:725
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:725
 msgid ""
 "How far above the measured adaptive noise floor speech must be to count as "
 "voice. Distinct from the initial silence threshold above; the VAD re-"
@@ -394,161 +394,161 @@ msgstr ""
 "considerata tale. Distinto dalla soglia di silenzio iniziale qui sopra; il "
 "VAD stima di nuovo il floor durante l'ascolto."
 
-#: gnome-extension/bravoric-indicator@local/prefs.js:738
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:738
 msgid "Min utterance (seconds)"
 msgstr "Enunciato minimo (secondi)"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js:739
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:739
 msgid "Shorter audio fragments are discarded as noise"
 msgstr "I frammenti audio più brevi vengono scartati come rumore"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js:752
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:752
 msgid "Max utterance (seconds)"
 msgstr "Enunciato massimo (secondi)"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js:753
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:753
 msgid "Forces chunk transcription if you speak continuously without pauses"
 msgstr "Forza la trascrizione del chunk se si parla continuamente senza pause"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js:766
-#: gnome-extension/bravoric-indicator@local/prefs.js:1377
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:766
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:1377
 msgid "Language"
 msgstr "Lingua"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js:767
-#: gnome-extension/bravoric-indicator@local/prefs.js:1378
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:767
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:1378
 msgid "ISO 639-1 language code for transcription (e.g. \"it\" for Italian)"
 msgstr ""
 "Codice lingua ISO 639-1 per la trascrizione (es. \"it\" per l'italiano)"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js:777
-#: gnome-extension/bravoric-indicator@local/prefs.js:1412
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:777
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:1412
 msgid "Initial prompt"
 msgstr "Prompt iniziale"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js:778
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:778
 msgid "Optional prompt to guide the transcription (context for Whisper)"
 msgstr "Prompt opzionale per guidare la trascrizione (contesto per Whisper)"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js:788
-#: gnome-extension/bravoric-indicator@local/prefs.js:1395
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:788
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:1395
 msgid "Hotwords"
 msgstr "Parole chiave"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js:789
-#: gnome-extension/bravoric-indicator@local/prefs.js:1396
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:789
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:1396
 msgid "Bias transcription toward these words (space-separated)"
 msgstr "Biases la trascrizione verso queste parole (separate da spazi)"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js:799
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:799
 msgid "Context"
 msgstr "Contesto"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js:800
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:800
 msgid "Append the last 3 transcribed chunks to the prompt for better context"
 msgstr ""
 "Aggiunge gli ultimi 3 chunk trascritti al prompt per migliorare il contesto"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js:810
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:810
 msgid "Voice commands"
 msgstr "Comandi vocali"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js:811
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:811
 msgid "Exact spoken keywords can press a key or delete the last word/chunk."
 msgstr ""
 "Le parole chiave esatte possono premere un tasto o eliminare l'ultima parola/"
 "porzione."
 
-#: gnome-extension/bravoric-indicator@local/prefs.js:816
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:816
 msgid "Command validation failed"
 msgstr "Validazione del comando non riuscita"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js:816
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:816
 msgid "Check that keywords are unique and command settings are valid."
 msgstr ""
 "Verificare che le parole chiave siano univoche e le impostazioni valide."
 
-#: gnome-extension/bravoric-indicator@local/prefs.js:840
-#: gnome-extension/bravoric-indicator@local/prefs.js:1003
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:840
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:1003
 msgid "Command keyword"
 msgstr "Parola chiave del comando"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js:848
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:848
 msgid "Remove"
 msgstr "Rimuovi"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js:853
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:853
 msgid "Keyword"
 msgstr "Parola chiave"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js:857
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:857
 msgid "Aliases / Alternative phrases"
 msgstr "Alias / Frasi alternative"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js:859
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:859
 msgid "Comma-separated equivalent phrases that trigger this command."
 msgstr "Frasi equivalenti separate da virgole che attivano questo comando."
 
-#: gnome-extension/bravoric-indicator@local/prefs.js:863
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:863
 msgid "Action"
 msgstr "Azione"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js:865
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:865
 msgid "Press key"
 msgstr "Premi tasto"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js:865
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:865
 msgid "Delete text"
 msgstr "Elimina testo"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js:870
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:870
 msgid "Key (e.g. Return)"
 msgstr "Tasto (es. Return)"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js:884
-#: gnome-extension/bravoric-indicator@local/prefs.js:911
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:884
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:911
 msgid "Record key"
 msgstr "Registra tasto"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js:890
-#: gnome-extension/bravoric-indicator@local/prefs.js:1322
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:890
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:1322
 msgid "Cancel"
 msgstr "Annulla"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js:933
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:933
 msgid "Press a key…"
 msgstr "Premi un tasto…"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js:954
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:954
 msgid "Modifier combinations are not supported; press a single key"
 msgstr ""
 "Le combinazioni di modificatori non sono supportate; premi un singolo tasto"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js:960
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:960
 msgid "Key not supported for voice commands"
 msgstr "Tasto non supportato per i comandi vocali"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js:972
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:972
 msgid "word or chunk"
 msgstr "parola o porzione"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js:973
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:973
 msgid "Single word"
 msgstr "Una parola"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js:973
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:973
 msgid "Whole chunk"
 msgstr "Intera porzione"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js:978
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:978
 msgid "End session"
 msgstr "Termina sessione"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js:1030
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:1030
 msgid "Chunk blacklist"
 msgstr "Blacklist dei chunk"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js:1032
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:1032
 msgid ""
 "Comma-separated phrases; a transcription that matches a whole phrase is "
 "discarded (streaming chunks and dictation), ignoring case and trailing "
@@ -558,61 +558,61 @@ msgstr ""
 "una frase viene scartata (chunk dello streaming e dettatura), ignorando "
 "maiuscole e punteggiatura finale."
 
-#: gnome-extension/bravoric-indicator@local/prefs.js:1042
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:1042
 msgid "Add command"
 msgstr "Aggiungi comando"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js:1050
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:1050
 msgid "Streaming STT endpoint"
 msgstr "Endpoint STT per lo streaming"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js:1051
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:1051
 msgid ""
 "Dedicated endpoint for stream transcription (independent of standard STT)."
 msgstr ""
 "Endpoint dedicato per la trascrizione in streaming (indipendente dall'STT "
 "standard)."
 
-#: gnome-extension/bravoric-indicator@local/prefs.js:1063
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:1063
 msgid "Storage"
 msgstr "Archiviazione"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js:1074
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:1074
 msgid "History folder"
 msgstr "Cartella cronologia"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js:1078
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:1078
 msgid "Save location"
 msgstr "Posizione di salvataggio"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js:1081
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:1081
 msgid "Choose…"
 msgstr "Scegli…"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js:1083
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:1083
 msgid "Choose history folder"
 msgstr "Scegli la cartella cronologia"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js:1108
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:1108
 msgid "What to save"
 msgstr "Cosa salvare"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js:1109
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:1109
 msgid ""
 "Everything is off by default. Retention 0 hours means never auto-delete."
 msgstr ""
 "Tutto è disattivato per impostazione predefinita. Conservazione 0 ore "
 "significa nessuna cancellazione automatica."
 
-#: gnome-extension/bravoric-indicator@local/prefs.js:1126
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:1126
 msgid "Auto-delete after (hours, 0 = never)"
 msgstr "Cancellazione automatica dopo (ore, 0 = mai)"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js:1141
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:1141
 msgid "Output history (tray menu)"
 msgstr "Cronologia output (menu della tray)"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js:1142
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:1142
 msgid ""
 "Quick-access list of recent STT/OCR outputs shown in the tray menu, separate "
 "from the on-disk storage above."
@@ -620,28 +620,28 @@ msgstr ""
 "Elenco ad accesso rapido degli output STT/OCR recenti mostrato nel menu "
 "della tray, separato dall'archiviazione su disco qui sopra."
 
-#: gnome-extension/bravoric-indicator@local/prefs.js:1147
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:1147
 msgid "Max history entries"
 msgstr "Voci massime cronologia"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js:1158
-#: gnome-extension/bravoric-indicator@local/extension.js:324
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:1158
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/extension.js:324
 msgid "Clear history"
 msgstr "Svuota cronologia"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js:1163
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:1163
 msgid "History cleared"
 msgstr "Cronologia svuotata"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js:1176
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:1176
 msgid "Icons"
 msgstr "Icone"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js:1188
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:1188
 msgid "Custom notification icons"
 msgstr "Icone di notifica personalizzate"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js:1189
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:1189
 msgid ""
 "Choose an image override for backend notifications. Empty uses a packaged "
 "icon when available, then a category-appropriate GNOME themed icon. "
@@ -653,15 +653,15 @@ msgstr ""
 "GNOME adatta alla categoria. Gli avvisi dell'estensione mantengono la "
 "presentazione standard di GNOME Shell e non consentono icone personalizzate."
 
-#: gnome-extension/bravoric-indicator@local/prefs.js:1202
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:1202
 msgid "Choose icon image"
 msgstr "Scegli immagine icona"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js:1242
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:1242
 msgid "Unable to read the configuration"
 msgstr "Impossibile leggere la configurazione"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js:1244
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:1244
 #, javascript-format
 msgid ""
 "Backend not installed. Run: bash scripts/install.sh from the project repo.\n"
@@ -671,38 +671,38 @@ msgstr ""
 "progetto.\n"
 "(previsto in: %s)"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js:1245
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:1245
 #, javascript-format
 msgid "%s not found or invalid."
 msgstr "%s non trovato o non valido."
 
-#: gnome-extension/bravoric-indicator@local/prefs.js:1252
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:1252
 msgid "Services"
 msgstr "Servizi"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js:1270
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:1270
 msgid "Configuration file"
 msgstr "File di configurazione"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js:1274
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:1274
 msgid "Edit configuration file"
 msgstr "Modifica file di configurazione"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js:1297
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:1297
 msgid "Reset to default"
 msgstr "Ripristina predefiniti"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js:1298
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:1298
 msgid "Overwrites all customizations (endpoints, keys, prompts) with defaults"
 msgstr ""
 "Sovrascrive tutte le personalizzazioni (endpoint, chiavi, prompt) con i "
 "valori predefiniti"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js:1307
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:1307
 msgid "Reset to default?"
 msgstr "Ripristinare i predefiniti?"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js:1308
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:1308
 msgid ""
 "This overwrites all your customizations (endpoints, keys, prompts) with the "
 "default configuration. This cannot be undone."
@@ -710,78 +710,78 @@ msgstr ""
 "Questa operazione sovrascrive tutte le tue personalizzazioni (endpoint, "
 "chiavi, prompt) con la configurazione predefinita. Non può essere annullata."
 
-#: gnome-extension/bravoric-indicator@local/prefs.js:1323
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:1323
 msgid "Reset"
 msgstr "Ripristina"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js:1339
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:1339
 msgid "Reset failed"
 msgstr "Ripristino non riuscito"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js:1340
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:1340
 msgid "Check the system log (journalctl) for details."
 msgstr "Controlla il log di sistema (journalctl) per dettagli."
 
-#: gnome-extension/bravoric-indicator@local/prefs.js:1344
-#: gnome-extension/bravoric-indicator@local/extension.js:232
-#: gnome-extension/bravoric-indicator@local/extension.js:810
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:1344
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/extension.js:232
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/extension.js:810
 msgid "OK"
 msgstr "OK"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js:1366
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:1366
 msgid "Enabled"
 msgstr "Attivo"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js:1633
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:1633
 msgid "Take screenshot on capture"
 msgstr "Scatta screenshot alla cattura"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js:1634
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:1634
 msgid "Select a screen area (gnome-screenshot) instead of reading an image already in the clipboard."
 msgstr "Seleziona un'area dello schermo (gnome-screenshot) invece di leggere un'immagine già presente negli appunti."
 
-#: gnome-extension/bravoric-indicator@local/prefs.js:1412
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:1412
 msgid "System prompt"
 msgstr "Prompt di sistema"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js:1425
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:1425
 msgid "Save prompt"
 msgstr "Salva prompt"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js:1436
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:1436
 msgid "Saved ✓"
 msgstr "Salvato ✓"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js:1436
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:1436
 msgid "Error"
 msgstr "Errore"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js:1450
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:1450
 msgid "Direct API key (optional)"
 msgstr "Chiave API diretta (facoltativa)"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js:1468
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:1468
 #, javascript-format
 msgid "Level %d"
 msgstr "Livello %d"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js:1469
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:1469
 msgid "(empty)"
 msgstr "(vuoto)"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js:1474
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:1474
 msgid "API key environment variable (used if the direct key is empty)"
 msgstr "Variabile d'ambiente chiave API (usata se la chiave diretta è vuota)"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js:1489
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:1489
 msgid "Timeout (seconds)"
 msgstr "Timeout (secondi)"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js:1507
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:1507
 msgid "Add hotwords to the prompt"
 msgstr "Aggiungi le hotwords al prompt"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js:1508
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:1508
 msgid ""
 "Send this level's hotwords inside the prompt as proper nouns, in addition to "
 "the hotwords field"
@@ -789,15 +789,15 @@ msgstr ""
 "Manda le hotwords di questo livello dentro il prompt come nomi propri, oltre "
 "al campo hotwords"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js:1529
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:1529
 msgid "Use this endpoint in parallel"
 msgstr "Usa questo endpoint in parallelo"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js:1534
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:1534
 msgid "Concurrent requests for this endpoint"
 msgstr "Richieste concorrenti per questo endpoint"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js:1535
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:1535
 msgid ""
 "How many chunks this endpoint may process at the same time. 1 means requests "
 "are serialized, as whisper.cpp does. It applies in the parallel pool, and in "
@@ -807,156 +807,156 @@ msgstr ""
 "richieste in serie, come fa whisper.cpp. Vale nel pool parallelo e, in "
 "modalità sequenziale, solo se il numero globale di worker è maggiore di 1."
 
-#: gnome-extension/bravoric-indicator@local/extension.js:75
-#: gnome-extension/bravoric-indicator@local/extension.js:104
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/extension.js:75
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/extension.js:104
 msgid "Bravoric backend not installed"
 msgstr "Backend Bravoric non installato"
 
-#: gnome-extension/bravoric-indicator@local/extension.js:76
-#: gnome-extension/bravoric-indicator@local/extension.js:105
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/extension.js:76
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/extension.js:105
 msgid "Run scripts/install.sh from the project repo first."
 msgstr "Esegui prima scripts/install.sh dal repo del progetto."
 
-#: gnome-extension/bravoric-indicator@local/extension.js:84
-#: gnome-extension/bravoric-indicator@local/extension.js:113
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/extension.js:84
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/extension.js:113
 msgid "Bravoric error"
 msgstr "Errore Bravoric"
 
-#: gnome-extension/bravoric-indicator@local/extension.js:90
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/extension.js:90
 msgid "Copied to clipboard"
 msgstr "Copiato negli appunti"
 
-#: gnome-extension/bravoric-indicator@local/extension.js:146
-msgid "Bravoric STT/OCR indicator"
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/extension.js:146
+msgid "Bravoric Hear, Read & Write indicator"
 msgstr "Indicatore STT/OCR Bravoric"
 
-#: gnome-extension/bravoric-indicator@local/extension.js:157
-#: gnome-extension/bravoric-indicator@local/extension.js:861
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/extension.js:157
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/extension.js:861
 msgid "Last output: (none)"
 msgstr "Ultimo output: (nessuno)"
 
-#: gnome-extension/bravoric-indicator@local/extension.js:172
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/extension.js:172
 msgid "Dictation"
 msgstr "Dettatura"
 
-#: gnome-extension/bravoric-indicator@local/extension.js:176
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/extension.js:176
 msgid "OCR"
 msgstr "OCR"
 
-#: gnome-extension/bravoric-indicator@local/extension.js:180
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/extension.js:180
 msgid "Configuration"
 msgstr "Configurazione"
 
-#: gnome-extension/bravoric-indicator@local/extension.js:185
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/extension.js:185
 msgid "History"
 msgstr "Cronologia"
 
-#: gnome-extension/bravoric-indicator@local/extension.js:231
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/extension.js:231
 msgid "Diagnostics"
 msgstr "Diagnostica"
 
-#: gnome-extension/bravoric-indicator@local/extension.js:232
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/extension.js:232
 msgid "MISSING"
 msgstr "MANCANTE"
 
-#: gnome-extension/bravoric-indicator@local/extension.js:238
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/extension.js:238
 #, javascript-format
 msgid "Venv: %s"
 msgstr "Venv: %s"
 
-#: gnome-extension/bravoric-indicator@local/extension.js:239
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/extension.js:239
 #, javascript-format
 msgid "Schema: %s"
 msgstr "Schema: %s"
 
-#: gnome-extension/bravoric-indicator@local/extension.js:240
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/extension.js:240
 #, javascript-format
 msgid "Status file: %s"
 msgstr "File di stato: %s"
 
-#: gnome-extension/bravoric-indicator@local/extension.js:241
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/extension.js:241
 #, javascript-format
 msgid "History file: %s"
 msgstr "File cronologia: %s"
 
-#: gnome-extension/bravoric-indicator@local/extension.js:249
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/extension.js:249
 msgid "Copy diagnostics"
 msgstr "Copia diagnostica"
 
-#: gnome-extension/bravoric-indicator@local/extension.js:261
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/extension.js:261
 msgid "STT raw"
 msgstr "STT grezzo"
 
-#: gnome-extension/bravoric-indicator@local/extension.js:263
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/extension.js:263
 msgid "STT clean"
 msgstr "STT pulito"
 
-#: gnome-extension/bravoric-indicator@local/extension.js:265
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/extension.js:265
 msgid "OCR raw"
 msgstr "OCR grezzo"
 
-#: gnome-extension/bravoric-indicator@local/extension.js:267
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/extension.js:267
 msgid "OCR clean"
 msgstr "OCR pulito"
 
-#: gnome-extension/bravoric-indicator@local/extension.js:300
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/extension.js:300
 #, javascript-format
 msgid "History (%d)"
 msgstr "Cronologia (%d)"
 
-#: gnome-extension/bravoric-indicator@local/extension.js:304
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/extension.js:304
 msgid "No history yet"
 msgstr "Nessuna cronologia"
 
-#: gnome-extension/bravoric-indicator@local/extension.js:316
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/extension.js:316
 #, javascript-format
 msgid "[%s] %s"
 msgstr "[%s] %s"
 
-#: gnome-extension/bravoric-indicator@local/extension.js:359
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/extension.js:359
 msgid "Recording timed out"
 msgstr "Registrazione scaduta"
 
-#: gnome-extension/bravoric-indicator@local/extension.js:361
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/extension.js:361
 msgid "Error state reset"
 msgstr "Stato di errore azzerato"
 
-#: gnome-extension/bravoric-indicator@local/extension.js:362
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/extension.js:362
 msgid "Processing timed out"
 msgstr "Elaborazione scaduta"
 
-#: gnome-extension/bravoric-indicator@local/extension.js:367
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/extension.js:367
 msgid "Current state: idle"
 msgstr "Stato attuale: inattivo"
 
-#: gnome-extension/bravoric-indicator@local/extension.js:368
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/extension.js:368
 msgid "Current state: recording"
 msgstr "Stato attuale: registrazione"
 
-#: gnome-extension/bravoric-indicator@local/extension.js:369
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/extension.js:369
 msgid "Current state: processing"
 msgstr "Stato attuale: elaborazione"
 
-#: gnome-extension/bravoric-indicator@local/extension.js:370
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/extension.js:370
 msgid "Current state: error"
 msgstr "Stato attuale: errore"
 
-#: gnome-extension/bravoric-indicator@local/extension.js:490
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/extension.js:490
 msgid "Streaming paste unavailable"
 msgstr "Incolla streaming non disponibile"
 
-#: gnome-extension/bravoric-indicator@local/extension.js:491
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/extension.js:491
 msgid ""
 "The virtual keyboard is unavailable; pending chunks were kept in memory."
 msgstr ""
 "La tastiera virtuale non è disponibile; i chunk in attesa sono conservati in "
 "memoria."
 
-#: gnome-extension/bravoric-indicator@local/extension.js:559
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/extension.js:559
 msgid "Streaming paste incomplete"
 msgstr "Incolla streaming incompleto"
 
-#: gnome-extension/bravoric-indicator@local/extension.js:560
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/extension.js:560
 msgid ""
 "A chunk could not be sent. Check the focused field before restarting to "
 "avoid duplicates."
@@ -964,11 +964,11 @@ msgstr ""
 "Impossibile inviare un chunk. Controlla il campo attivo prima di riprovare "
 "per evitare duplicati."
 
-#: gnome-extension/bravoric-indicator@local/extension.js:582
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/extension.js:582
 msgid "Streaming typing unavailable"
 msgstr "Digitazione streaming non disponibile"
 
-#: gnome-extension/bravoric-indicator@local/extension.js:582
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/extension.js:582
 msgid ""
 "Unicode key conversion or the virtual keyboard is unavailable; pending "
 "chunks were kept in memory."
@@ -976,11 +976,11 @@ msgstr ""
 "La conversione Unicode o la tastiera virtuale non è disponibile; i chunk in "
 "attesa sono stati mantenuti in memoria."
 
-#: gnome-extension/bravoric-indicator@local/extension.js:623
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/extension.js:623
 msgid "Streaming typing incomplete"
 msgstr "Digitazione streaming incompleta"
 
-#: gnome-extension/bravoric-indicator@local/extension.js:623
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/extension.js:623
 msgid ""
 "A keystroke could not be sent. Check the focused field before restarting to "
 "avoid duplicates."
@@ -988,459 +988,459 @@ msgstr ""
 "Non è stato possibile inviare un tasto. Controlla il campo attivo prima di "
 "riavviare per evitare duplicati."
 
-#: gnome-extension/bravoric-indicator@local/extension.js:662
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/extension.js:662
 msgid "Streaming command failed"
 msgstr "Comando streaming non riuscito"
 
-#: gnome-extension/bravoric-indicator@local/extension.js:662
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/extension.js:662
 msgid "The key command could not be completed; the queue is blocked."
 msgstr "Impossibile completare il comando tasto; la coda è bloccata."
 
-#: gnome-extension/bravoric-indicator@local/extension.js:667
-#: gnome-extension/bravoric-indicator@local/extension.js:686
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/extension.js:667
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/extension.js:686
 msgid "Invalid streaming command"
 msgstr "Comando streaming non valido"
 
-#: gnome-extension/bravoric-indicator@local/extension.js:667
-#: gnome-extension/bravoric-indicator@local/extension.js:686
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/extension.js:667
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/extension.js:686
 msgid "The configured key or delete scope is invalid; the queue is blocked."
 msgstr "Tasto o ambito di eliminazione non valido; la coda è bloccata."
 
-#: gnome-extension/bravoric-indicator@local/extension.js:677
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/extension.js:677
 msgid "Streaming delete failed"
 msgstr "Eliminazione streaming non riuscita"
 
-#: gnome-extension/bravoric-indicator@local/extension.js:677
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/extension.js:677
 msgid ""
 "Deletion was partial; restart the extension to avoid deleting the wrong text."
 msgstr ""
 "Eliminazione parziale; riavviare l'estensione per evitare di cancellare il "
 "testo sbagliato."
 
-#: gnome-extension/bravoric-indicator@local/extension.js:810
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/extension.js:810
 msgid "Status file restored"
 msgstr "File di stato ripristinato"
 
-#: gnome-extension/bravoric-indicator@local/extension.js:822
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/extension.js:822
 msgid "Check the backend"
 msgstr "Controlla il backend"
 
-#: gnome-extension/bravoric-indicator@local/extension.js:846
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/extension.js:846
 msgid "STT: transcribing…"
 msgstr "STT: trascrizione…"
 
-#: gnome-extension/bravoric-indicator@local/extension.js:846
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/extension.js:846
 msgid "OCR: extracting text…"
 msgstr "OCR: estrazione testo…"
 
-#: gnome-extension/bravoric-indicator@local/extension.js:851
-#: gnome-extension/bravoric-indicator@local/extension.js:860
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/extension.js:851
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/extension.js:860
 #, javascript-format
 msgid "Last output: %s"
 msgstr "Ultimo output: %s"
 
-#: gnome-extension/bravoric-indicator@local/extension.js:867
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/extension.js:867
 msgid "Status file error"
 msgstr "Errore file di stato"
 
-#: gnome-extension/bravoric-indicator@local/extension.js:867
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/extension.js:867
 msgid "Check config.toml"
 msgstr "Controlla config.toml"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js:838
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:838
 msgid "Blacklist conflicts with a voice command"
 msgstr "La blacklist è in conflitto con un comando vocale"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js:839
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:839
 #, javascript-format
 msgid "The phrase \"%s\" is already a command keyword or alias. Remove it from the blacklist, or rename the command."
 msgstr "La frase \"%s\" è già una keyword o un alias di un comando. Rimuovila dalla blacklist, oppure rinomina il comando."
 
-#: gnome-extension/bravoric-indicator@local/prefs.js:723
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:723
 msgid "Max parallel workers"
 msgstr "Worker paralleli massimi"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js:724
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js:724
 msgid "Upper bound of chunks pasted at the same time (auto mode; sequential always uses one)"
 msgstr "Tetto massimo di chunk incollati contemporaneamente (modalità auto; sequenziale ne usa sempre uno)"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js
 msgid "Recording started"
 msgstr "Registrazione avviata"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js
 msgid "Errors"
 msgstr "Errori"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js
 msgid "Notify when the microphone starts recording"
 msgstr "Notifica quando il microfono inizia a registrare"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js
 msgid "Notify when transcription or clipboard writing fails"
 msgstr "Notifica quando la trascrizione o la scrittura negli appunti fallisce"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js
 msgid "Notify when screenshot capture, text extraction or clipboard writing fails"
 msgstr "Notifica quando la cattura dello screenshot, l'estrazione del testo o la scrittura negli appunti fallisce"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js
 msgid "Streaming session ended"
 msgstr "Sessione di streaming terminata"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js
 msgid "Notify when the streaming session ends"
 msgstr "Notifica quando la sessione di streaming termina"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js
 msgid "Notify about streaming errors, a busy microphone or a failed transcription"
 msgstr "Notifica errori dello streaming, microfono occupato o trascrizione fallita"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js
 msgid "Extension notifications"
 msgstr "Notifiche dell'estensione"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js
 msgid "Status messages"
 msgstr "Messaggi di stato"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js
 msgid "Notify about streaming paste/typing failures, invalid voice commands, a missing backend and status file errors"
 msgstr "Notifica errori di incolla/digitazione dello streaming, comandi vocali non validi, backend mancante ed errori del file di stato"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js
 msgid "Notify when the status file is restored or the backend times out"
 msgstr "Notifica quando il file di stato viene ripristinato o il backend va in timeout"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js
 msgid "Stream — Transcribing"
 msgstr "Stream — Trascrizione in corso"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js
 msgid "General"
 msgstr "Generale"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js
 msgid "Audio recording"
 msgstr "Registrazione audio"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js
 msgid "Toggle debounce (seconds)"
 msgstr "Antirimbalzo del comando (secondi)"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js
 msgid "Ignore a second press within this time after a recording starts"
 msgstr "Ignora una seconda pressione entro questo tempo dall'avvio della registrazione"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js
 msgid "Retry on error"
 msgstr "Riprova in caso di errore"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js
 msgid "Run the whole transcription chain again when every endpoint fails"
 msgstr "Rilancia tutta la catena di trascrizione quando falliscono tutti gli endpoint"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js
 msgid "Attempts"
 msgstr "Tentativi"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js
 msgid "Total attempts of the transcription chain when retry is on"
 msgstr "Tentativi totali della catena di trascrizione quando il riprova è attivo"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js
 msgid "Bitrate (kbps)"
 msgstr "Velocità di codifica (kbps)"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js
 msgid "Audio bitrate of the recording sent for transcription"
 msgstr "Bitrate audio della registrazione inviata alla trascrizione"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js
 msgid "Sample rate"
 msgstr "Frequenza di campionamento"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js
 msgid "Only rates supported by the Opus encoder are offered"
 msgstr "Sono proposte solo le frequenze supportate dall'encoder Opus"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js
 msgid "Write raw text first"
 msgstr "Scrivi prima il testo grezzo"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js
 msgid "Copy the raw text right away, then replace it with the cleaned text when ready. Off: only the final text is copied"
 msgstr "Copia subito il testo grezzo, poi lo sostituisce con il testo pulito quando è pronto. Disattivo: viene copiato solo il testo finale"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js
 msgid "Copy command"
 msgstr "Comando di copia"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js
 msgid "Must behave like wl-copy: reads the text on stdin and puts it in the clipboard (default: wl-copy)"
 msgstr "Deve comportarsi come wl-copy: legge il testo da stdin e lo mette negli appunti (predefinito: wl-copy)"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js
 msgid "Paste command"
 msgstr "Comando di incolla"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js
 msgid "Must behave like wl-paste: called with -t image/png to read a screenshot for OCR (default: wl-paste)"
 msgstr "Deve comportarsi come wl-paste: viene chiamato con -t image/png per leggere lo screenshot dell'OCR (predefinito: wl-paste)"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js
 msgid "Chunk log size (lines)"
 msgstr "Dimensione log dei chunk (righe)"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js
 msgid "Lines kept in the streaming chunk log; 0 uses the default (2000)"
 msgstr "Righe conservate nel log dei chunk dello streaming; 0 usa il predefinito (2000)"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js
 msgid "All notifications"
 msgstr "Tutte le notifiche"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js
 msgid "Show notifications"
 msgstr "Mostra le notifiche"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js
 msgid "Master switch for every notification sent by the backend. Notifications from the extension itself are controlled in the group below."
 msgstr "Interruttore generale per ogni notifica inviata dal backend. Le notifiche dell'estensione stessa si controllano nel gruppo sottostante."
 
-#: gnome-extension/bravoric-indicator@local/prefs.js
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js
 msgid "An LLM cleanup shorter than this fraction of the raw text is discarded and retried; 0 accepts any length"
 msgstr "Una pulizia LLM più corta di questa frazione del testo grezzo viene scartata e rifatta; 0 accetta qualsiasi lunghezza"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js
 msgid "Area selection timeout (seconds)"
 msgstr "Timeout selezione area (secondi)"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js
 msgid "Clipboard command timeout (seconds)"
 msgstr "Timeout comando appunti (secondi)"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js
 msgid "Delay between simulated keystrokes when streaming types instead of pasting"
 msgstr "Pausa tra i tasti simulati quando lo streaming scrive invece di incollare"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js
 msgid "Dictation processing watchdog (minutes)"
 msgstr "Watchdog elaborazione dettatura (minuti)"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js
 msgid "Error state duration (minutes)"
 msgstr "Durata dello stato di errore (minuti)"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js
 msgid "Frames needed before the noise estimate is trusted; applies from the next session"
 msgstr "Frame necessari prima di fidarsi della stima del rumore; vale dalla sessione successiva"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js
 msgid "Give up on notify-send after this long"
 msgstr "Rinuncia a notify-send dopo questo tempo"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js
 msgid "Give up on the copy/paste command after this long"
 msgstr "Rinuncia al comando di copia/incolla dopo questo tempo"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js
 msgid "Half-period of the indicator blink while recording"
 msgstr "Semiperiodo del lampeggio dell'indicatore durante la registrazione"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js
 msgid "History preview length (characters)"
 msgstr "Lunghezza anteprima cronologia (caratteri)"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js
 msgid "How long OCR waits for you to select a screen area before giving up"
 msgstr "Quanto l'OCR attende la selezione di un'area dello schermo prima di rinunciare"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js
 msgid "How long to wait for pending text before a voice command ends the session"
 msgstr "Quanto attendere il testo in coda prima che un comando vocale chiuda la sessione"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js
 msgid "How much of each history entry the menu shows"
 msgstr "Quanta parte di ogni voce della cronologia mostra il menu"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js
 msgid "How much of the last output the menu shows"
 msgstr "Quanta parte dell'ultimo output mostra il menu"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js
 msgid "How often the status is re-checked when the backend stops writing"
 msgstr "Ogni quanto viene ricontrollato lo stato quando il backend smette di scrivere"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js
 msgid "Indicator"
 msgstr "Indicatore"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js
 msgid "Last output preview length (characters)"
 msgstr "Lunghezza anteprima ultimo output (caratteri)"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js
 msgid "Longest piece of transcribed text put in a notification body"
 msgstr "Porzione massima di testo trascritto inserita nel corpo di una notifica"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js
 msgid "Longest prompt sent to the transcription model (vocabulary and context are trimmed to fit)"
 msgstr "Prompt più lungo inviato al modello di trascrizione (vocabolario e contesto vengono ridotti per entrarci)"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js
 msgid "Minimum cleaned length (fraction)"
 msgstr "Lunghezza minima dopo la pulizia (frazione)"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js
 msgid "Noise floor minimum (frames)"
 msgstr "Minimo per il rumore di fondo (frame)"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js
 msgid "Noise floor window (frames)"
 msgstr "Finestra del rumore di fondo (frame)"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js
 msgid "Notification delivery"
 msgstr "Consegna delle notifiche"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js
 msgid "Notification timeout (seconds)"
 msgstr "Timeout notifiche (secondi)"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js
 msgid "OCR processing watchdog (minutes)"
 msgstr "Watchdog elaborazione OCR (minuti)"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js
 msgid "Recent ~30 ms frames used to estimate the background noise; applies from the next session"
 msgstr "Ultimi frame da ~30 ms usati per stimare il rumore di fondo; vale dalla sessione successiva"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js
 msgid "Recording blink interval (ms)"
 msgstr "Intervallo del lampeggio in registrazione (ms)"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js
 msgid "Recording watchdog (minutes)"
 msgstr "Watchdog registrazione (minuti)"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js
 msgid "Reset a recording state that stops updating after this long"
 msgstr "Riporta a riposo una registrazione che non si aggiorna più dopo questo tempo"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js
 msgid "Reset a stuck OCR processing state after this long"
 msgstr "Riporta a riposo un'elaborazione OCR bloccata dopo questo tempo"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js
 msgid "Reset a stuck dictation processing state after this long"
 msgstr "Riporta a riposo un'elaborazione di dettatura bloccata dopo questo tempo"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js
 msgid "Return to idle this long after an error"
 msgstr "Torna a riposo dopo questo tempo da un errore"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js
 msgid "Streaming end wait (seconds)"
 msgstr "Attesa fine streaming (secondi)"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js
 msgid "Text cleanup and OCR"
 msgstr "Pulizia del testo e OCR"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js
 msgid "Text shown in notifications (characters)"
 msgstr "Testo mostrato nelle notifiche (caratteri)"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js
 msgid "Typing key interval (ms)"
 msgstr "Intervallo tra i tasti (ms)"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js
 msgid "Watchdog check interval (seconds)"
 msgstr "Intervallo controllo watchdog (secondi)"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js
 msgid "Whisper prompt limit (characters)"
 msgstr "Limite del prompt Whisper (caratteri)"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js
 #, javascript-format
 msgid "%s (recommended)"
 msgstr "%s (consigliato)"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js
 msgid "Custom (set in config.toml)"
 msgstr "Personalizzato (impostato in config.toml)"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js
 msgid "Recording format"
 msgstr "Formato di registrazione"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js
 msgid "The ffmpeg encoder for the chosen format must be installed; it applies from the next recording"
 msgstr "L'encoder ffmpeg del formato scelto deve essere installato; vale dalla prossima registrazione"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js
 msgid "Streaming reliability"
 msgstr "Affidabilità dello streaming"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js
 msgid "Endpoint cooldown (seconds)"
 msgstr "Pausa endpoint (secondi)"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js
 msgid "How long an endpoint stays out of the pool after repeated failures; 0 never pauses one. Applies from the next session"
 msgstr "Per quanto tempo un endpoint resta fuori dal pool dopo errori ripetuti; 0 non ne sospende mai. Vale dalla sessione successiva"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js
 msgid "Start dictation"
 msgstr "Avvia la dettatura"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js
 msgid "Stop dictation"
 msgstr "Ferma la dettatura"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js
 msgid "Read text with OCR"
 msgstr "Leggi il testo con l'OCR"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js
 msgid "Start streaming dictation"
 msgstr "Avvia la dettatura in streaming"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js
 msgid "Stop streaming dictation"
 msgstr "Ferma la dettatura in streaming"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js
 msgid "Dictation button"
 msgstr "Pulsante dettatura"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js
 msgid "One-click start/stop of dictation, next to the indicator"
 msgstr "Avvio e arresto della dettatura con un click, accanto all'indicatore"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js
 msgid "OCR button"
 msgstr "Pulsante OCR"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js
 msgid "One-click text capture from the screen, next to the indicator"
 msgstr "Cattura del testo dallo schermo con un click, accanto all'indicatore"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js
 msgid "Streaming button"
 msgstr "Pulsante streaming"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js
 msgid "One-click start/stop of streaming dictation, next to the indicator"
 msgstr "Avvio e arresto della dettatura in streaming con un click, accanto all'indicatore"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js
 msgid "Quick buttons"
 msgstr "Pulsanti rapidi"
 
-#: gnome-extension/bravoric-indicator@local/prefs.js
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js
 msgid "Buttons in the top bar, separate from the menu: one click or tap starts or stops the action. All off by default."
 msgstr "Pulsanti nella barra superiore, separati dal menu: un click o un tocco avvia o ferma l'azione. Tutti spenti per impostazione predefinita."

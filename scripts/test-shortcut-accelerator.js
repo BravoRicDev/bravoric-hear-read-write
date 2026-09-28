@@ -56,7 +56,7 @@ imports.gi.versions.Gtk = '4.0';
 const { Gtk } = imports.gi;
 
 const PREFS_PATH = GLib.build_filenamev([
-    GLib.get_current_dir(), 'gnome-extension', 'bravoric-indicator@local', 'prefs.js',
+    GLib.get_current_dir(), 'gnome-extension', 'bravoric-hear-read-write@riccardomurru.it', 'prefs.js',
 ]);
 
 let passed = 0;
@@ -195,9 +195,9 @@ const newMsg = 'Not a valid shortcut: %s';
 check('la nuova stringa e\' passata da _() nel prodotto',
     prefsSrc.includes(`_('${newMsg}')`));
 const poDir = GLib.build_filenamev([
-    GLib.get_current_dir(), 'gnome-extension', 'bravoric-indicator@local', 'po',
+    GLib.get_current_dir(), 'gnome-extension', 'bravoric-hear-read-write@riccardomurru.it', 'po',
 ]);
-for (const file of ['bravoric-indicator.pot', 'it.po']) {
+for (const file of ['bravoric-hear-read-write.pot', 'it.po']) {
     const [pok, pbytes] = GLib.file_get_contents(GLib.build_filenamev([poDir, file]));
     const txt = new TextDecoder().decode(pbytes);
     check(`"${newMsg}" presente in ${file}`, pok && txt.includes(`msgid "${newMsg}"`));

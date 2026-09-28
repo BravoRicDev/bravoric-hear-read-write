@@ -26,8 +26,8 @@ ROOT = Path(__file__).resolve().parents[1]
 # File soggetti alla regola / files under the rule.
 GLOBS = [
     "src/bravoric_stt_clipboard/*.py",
-    "gnome-extension/bravoric-indicator@local/*.js",
-    "gnome-extension/bravoric-indicator@local/*.mjs",
+    "gnome-extension/bravoric-hear-read-write@riccardomurru.it/*.js",
+    "gnome-extension/bravoric-hear-read-write@riccardomurru.it/*.mjs",
     "scripts/*.py", "scripts/*.js", "scripts/*.sh", "scripts/lib/*.mjs", "scripts/lib/*.cjs",
     "scripts/lib/*/extension.js",
     "bin/whisper-server.py", "bin/whisper-server.sh",

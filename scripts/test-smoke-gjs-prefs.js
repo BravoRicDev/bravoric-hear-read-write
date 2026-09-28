@@ -94,7 +94,7 @@ const debouncedSaveCommands = debounce(saveCommands);
 // brace-matching and evaluated in this module, where all the dependencies
 // are already defined.
 const PREFS_PATH = GLib.build_filenamev([
-    GLib.get_current_dir(), 'gnome-extension', 'bravoric-indicator@local', 'prefs.js',
+    GLib.get_current_dir(), 'gnome-extension', 'bravoric-hear-read-write@riccardomurru.it', 'prefs.js',
 ]);
 const [prefsOk, prefsBytes] = GLib.file_get_contents(PREFS_PATH);
 if (!prefsOk)

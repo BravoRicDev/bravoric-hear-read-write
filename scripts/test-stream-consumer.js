@@ -24,18 +24,18 @@ const NOTIFY_PRELUDE = 'const notifyErrorIfEnabled = (t, b) => Main.notifyError(
     + 'const settingInt = (key, fallback) => fallback;\n';
 
 (async () => {
-    const extensionPath = path.join(__dirname, '..', 'gnome-extension', 'bravoric-indicator@local', 'extension.js');
-    const helperPath = path.join(__dirname, '..', 'gnome-extension', 'bravoric-indicator@local', 'stream-consumer.mjs');
+    const extensionPath = path.join(__dirname, '..', 'gnome-extension', 'bravoric-hear-read-write@riccardomurru.it', 'extension.js');
+    const helperPath = path.join(__dirname, '..', 'gnome-extension', 'bravoric-hear-read-write@riccardomurru.it', 'stream-consumer.mjs');
     const source = fs.readFileSync(extensionPath, 'utf8');
     const { consumeStreamSnapshot, classifyStreamItem, normalizeCommandKeyword, computeStreamDelete, parseBlacklist } = await import(pathToFileURL(helperPath));
     // S4: il modulo puro del monitor di cache, importato ed ESEGUITO come stream-consumer.mjs
     // S4: the pure module of the cache monitor, imported and RUN like
     // stream-consumer.mjs
-    const watchPath = path.join(__dirname, '..', 'gnome-extension', 'bravoric-indicator@local', 'watch-cache.mjs');
+    const watchPath = path.join(__dirname, '..', 'gnome-extension', 'bravoric-hear-read-write@riccardomurru.it', 'watch-cache.mjs');
     const { watchCacheFile, watchStatusFile, watchStreamStateFile } = await import(pathToFileURL(watchPath));
     // S4: il modulo puro del lampeggio, importato ed ESEGUITO come gli altri
     // S4: the pure module of the blink, imported and RUN like the others
-    const blinkPath = path.join(__dirname, '..', 'gnome-extension', 'bravoric-indicator@local', 'recording-blink.mjs');
+    const blinkPath = path.join(__dirname, '..', 'gnome-extension', 'bravoric-hear-read-write@riccardomurru.it', 'recording-blink.mjs');
     const { setRecordingBlink } = await import(pathToFileURL(blinkPath));
     let pass = 0;
     function check(name, condition) {
@@ -682,7 +682,7 @@ const NOTIFY_PRELUDE = 'const notifyErrorIfEnabled = (t, b) => Main.notifyError(
         'STREAM_DEBOUNCE_MS', 'STREAM_END_TIMEOUT_MS',
         'consumeStreamSnapshot', 'classifyStreamItem', 'parseBlacklist', 'computeStreamDelete',
         `${NOTIFY_PRELUDE}return class extends PanelMenu.Button {
-            _init(extension) { super._init(0.0, 'Bravoric STT/OCR');${initBody}
+            _init(extension) { super._init(0.0, 'Bravoric Hear, Read & Write');${initBody}
             }
             _setAccessibleState(state) {${sibling('_setAccessibleState(state)')}}
             _idleGicon() {${sibling('_idleGicon()')}}
@@ -1297,7 +1297,7 @@ const NOTIFY_PRELUDE = 'const notifyErrorIfEnabled = (t, b) => Main.notifyError(
         wcIndE._monitor === null && wcStale.cancelled === 1);
     check('S4: monitor non creato: l\'avviso porta l\'etichetta di MONITORAGGIO, distinta dalla creazione',
         wcIoE.calls.filter(c => c[0] === 'logError').length === 1
-        && wcIoE.calls.some(c => c[1] === 'bravoric-indicator: impossibile monitorare stream_state dir'));
+        && wcIoE.calls.some(c => c[1] === 'bravoric-hear-read-write: impossibile monitorare stream_state dir'));
 
     // --- debounce del refresh ------------------------------------------
     // --- refresh debounce ----------------------------------------------

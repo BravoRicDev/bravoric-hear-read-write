@@ -64,14 +64,14 @@ export function watchCacheFile(instance, deps, filePath, onChanged,
         dir.make_directory_with_parents(null);
     } catch (e) {
         if (!e.matches(deps.Gio.IOErrorEnum, deps.Gio.IOErrorEnum.EXISTS))
-            deps.logError(e, `bravoric-indicator: impossibile creare ${createLabel} dir`);
+            deps.logError(e, `bravoric-hear-read-write: impossibile creare ${createLabel} dir`);
     }
     try {
         const monitor = dir.monitor_directory(deps.Gio.FileMonitorFlags.NONE, null);
         instance[monitorField] = monitor;
         instance[monitorIdField] = monitor.connect('changed', onChanged);
     } catch (e) {
-        deps.logError(e, `bravoric-indicator: impossibile monitorare ${watchLabel} dir`);
+        deps.logError(e, `bravoric-hear-read-write: impossibile monitorare ${watchLabel} dir`);
         if (instance[monitorField]) { instance[monitorField].cancel(); instance[monitorField] = null; }
     }
 }

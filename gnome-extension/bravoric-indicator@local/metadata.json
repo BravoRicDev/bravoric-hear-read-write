@@ -1,9 +1,0 @@
-{
-  "uuid": "bravoric-indicator@local",
-  "name": "Bravoric STT/OCR Indicator",
-  "description": "STT/OCR status indicator in the top bar (idle/recording/processing). Writes the transcribed or recognized text to the clipboard only on an explicit user action (indicator click, user-defined shortcut or voice command). The extension itself sends no data anywhere and shares nothing with third parties; transcription is done by the separate backend, using only the endpoints you configure.",
-  "shell-version": ["45", "46", "47", "48", "49", "50"],
-  "settings-schema": "org.gnome.shell.extensions.bravoric-indicator",
-  "gettext-domain": "bravoric-indicator",
-  "url": ""
-}

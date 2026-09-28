@@ -26,7 +26,7 @@ const path = require('path');
 const assert = require('assert');
 const { matchBrace } = require('./lib/brace-match.cjs');
 
-const PREFS_PATH = path.join(__dirname, '..', 'gnome-extension', 'bravoric-indicator@local', 'prefs.js');
+const PREFS_PATH = path.join(__dirname, '..', 'gnome-extension', 'bravoric-hear-read-write@riccardomurru.it', 'prefs.js');
 const prefsSrc = fs.readFileSync(PREFS_PATH, 'utf-8');
 
 console.log('1. Verifica assenza di pattern errati nel sorgente prefs.js...');
@@ -90,7 +90,7 @@ console.log('1c-bis. Parità keyMap di _runStreamCommand con COMMAND_KEYS di pre
 // the whitelist and not translated by the product, i.e. a command that the
 // user configures and that executes nothing, without a single test noticing.
 // Add (do not replace): 1c stays as it is.
-const EXT_PATH = path.join(REPO_ROOT, 'gnome-extension', 'bravoric-indicator@local', 'extension.js');
+const EXT_PATH = path.join(REPO_ROOT, 'gnome-extension', 'bravoric-hear-read-write@riccardomurru.it', 'extension.js');
 const extSrc = fs.readFileSync(EXT_PATH, 'utf-8');
 const runCmdAt = extSrc.indexOf('_runStreamCommand(item) {');
 assert(runCmdAt !== -1, '_runStreamCommand non trovato in extension.js');

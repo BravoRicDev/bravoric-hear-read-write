@@ -45,7 +45,7 @@ function finish() {
 
 const here = GLib.path_get_dirname(import.meta.url.replace('file://', ''));
 const repo = GLib.path_get_dirname(here);
-const extDir = `${repo}/gnome-extension/bravoric-indicator@local`;
+const extDir = `${repo}/gnome-extension/bravoric-hear-read-write@riccardomurru.it`;
 const dataHome = GLib.getenv('XDG_DATA_HOME');
 
 if (!dataHome || !dataHome.includes('/brv-prefs-') || GLib.getenv('GSETTINGS_BACKEND') !== 'memory') {
@@ -81,7 +81,7 @@ export class ExtensionPreferences {
     getSettings() {
         const source = Gio.SettingsSchemaSource.new_from_directory(
             '${extDir}/schemas', Gio.SettingsSchemaSource.get_default(), false);
-        return new Gio.Settings({ settings_schema: source.lookup('org.gnome.shell.extensions.bravoric-indicator', false) });
+        return new Gio.Settings({ settings_schema: source.lookup('org.gnome.shell.extensions.bravoric-hear-read-write', false) });
     }
 }
 `);
@@ -131,7 +131,7 @@ if (logged.length)
 // The General page uses the real schema: the quick-button keys must be there.
 const source2 = Gio.SettingsSchemaSource.new_from_directory(
     `${extDir}/schemas`, Gio.SettingsSchemaSource.get_default(), false);
-const schema = source2.lookup('org.gnome.shell.extensions.bravoric-indicator', false);
+const schema = source2.lookup('org.gnome.shell.extensions.bravoric-hear-read-write', false);
 check('lo schema compilato ha le chiavi dei tre bottoni rapidi',
     ['show-dictation-button', 'show-ocr-button', 'show-stream-button'].every(k => schema.has_key(k)));
 

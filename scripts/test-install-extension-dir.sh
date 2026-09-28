@@ -35,7 +35,7 @@ set -uo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 INSTALL_SH="$REPO/scripts/install.sh"
-SRC_EXT="$REPO/gnome-extension/bravoric-indicator@local"
+SRC_EXT="$REPO/gnome-extension/bravoric-hear-read-write@riccardomurru.it"
 FAIL=0
 
 # check <nome> <0|1>
@@ -120,11 +120,11 @@ echo "== F1/F2: blocco estensione di install.sh eseguito in XDG finto =="
 # --- Caso 1: destinazione REALE (la copia di `gnome-extensions install`) ---
 # --- Case 1: REAL destination (the copy of `gnome-extensions install`) ---
 W1="$WORK/caso1"
-EXT1="$W1/xdg/gnome-shell/extensions/bravoric-indicator@local"
+EXT1="$W1/xdg/gnome-shell/extensions/bravoric-hear-read-write@riccardomurru.it"
 # PROJECT_DIR = radice del checkout, quindi la sorgente vive sotto proj/.
 # PROJECT_DIR = root of the checkout, so the source lives under proj/.
 mkdir -p "$W1/proj/gnome-extension"
-cp -r "$SRC_EXT" "$W1/proj/gnome-extension/bravoric-indicator@local"
+cp -r "$SRC_EXT" "$W1/proj/gnome-extension/bravoric-hear-read-write@riccardomurru.it"
 # Copia REALE, come la produce `gnome-extensions install`: l'intera estensione
 # (schemas compresi, altrimenti il gate delle chiavi fallirebbe per motivi
 # sbagliati e non misurerebbe nulla) piu' un file che prova l'antichita'.
@@ -156,10 +156,10 @@ check "F1: avvisa anche che la copia e' ancora reale dopo la ln" "$(grepany 'anc
 # --- Case 2: missing destination (normal path, symlink) -------------
 W2="$WORK/caso2"
 mkdir -p "$W2/proj/gnome-extension"
-cp -r "$SRC_EXT" "$W2/proj/gnome-extension/bravoric-indicator@local"
+cp -r "$SRC_EXT" "$W2/proj/gnome-extension/bravoric-hear-read-write@riccardomurru.it"
 run_block "$W2/xdg" "$W2/proj"
 rc=$?
-EXT2="$W2/xdg/gnome-shell/extensions/bravoric-indicator@local"
+EXT2="$W2/xdg/gnome-shell/extensions/bravoric-hear-read-write@riccardomurru.it"
 
 ok_rc2=0
 [ "$rc" -eq 0 ] && ok_rc2=1
@@ -210,13 +210,13 @@ check "F1: il meccanismo e' reale — ln -sfn su directory non la sostituisce" "
 export TEST_LANG=en
 E1="$WORK/en1"
 mkdir -p "$E1/proj/gnome-extension" "$E1/xdg/gnome-shell/extensions"
-cp -r "$SRC_EXT" "$E1/proj/gnome-extension/bravoric-indicator@local"
-cp -r "$SRC_EXT" "$E1/xdg/gnome-shell/extensions/bravoric-indicator@local"
+cp -r "$SRC_EXT" "$E1/proj/gnome-extension/bravoric-hear-read-write@riccardomurru.it"
+cp -r "$SRC_EXT" "$E1/xdg/gnome-shell/extensions/bravoric-hear-read-write@riccardomurru.it"
 run_block "$E1/xdg" "$E1/proj"
 EO1="$(outof "$E1/xdg" out.txt)"; EE1="$(outof "$E1/xdg" err.txt)"
 E2="$WORK/en2"
 mkdir -p "$E2/proj/gnome-extension"
-cp -r "$SRC_EXT" "$E2/proj/gnome-extension/bravoric-indicator@local"
+cp -r "$SRC_EXT" "$E2/proj/gnome-extension/bravoric-hear-read-write@riccardomurru.it"
 run_block "$E2/xdg" "$E2/proj"
 EO2="$(outof "$E2/xdg" out.txt)"; EE2="$(outof "$E2/xdg" err.txt)"
 unset TEST_LANG

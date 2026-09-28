@@ -64,7 +64,7 @@ export default class ShellProbe extends Extension {
                     GLib.unlink(cmdPath);
                     let result = 'unknown command';
                     if (cmd === 'monitor-info') {
-                        const ind = Main.panel.statusArea['bravoric-indicator@local'];
+                        const ind = Main.panel.statusArea['bravoric-hear-read-write@riccardomurru.it'];
                         if (ind._monitor && !this._counting) {
                             this._counting = true;
                             this._events = 0;
@@ -77,7 +77,7 @@ export default class ShellProbe extends Extension {
                     // Opens the indicator menu, also opens the submenus and lists their
                     // entries (label and sensitivity), then closes it again.
                     if (cmd === 'menu') {
-                        const ind = Main.panel.statusArea['bravoric-indicator@local'];
+                        const ind = Main.panel.statusArea['bravoric-hear-read-write@riccardomurru.it'];
                         ind.menu.open(false);
                         const rows = [];
                         for (const item of ind.menu._getMenuItems()) {
@@ -103,7 +103,7 @@ export default class ShellProbe extends Extension {
                         }
                     }
                     if (cmd === 'labels') {
-                        const ind = Main.panel.statusArea['bravoric-indicator@local'];
+                        const ind = Main.panel.statusArea['bravoric-hear-read-write@riccardomurru.it'];
                         result = JSON.stringify({
                             dictation: ind._dictationItem.label.text,
                             ocr: ind._ocrItem.label.text,
@@ -111,7 +111,7 @@ export default class ShellProbe extends Extension {
                         });
                     }
                     if (cmd === 'refresh') {
-                        Main.panel.statusArea['bravoric-indicator@local']._refreshStatus();
+                        Main.panel.statusArea['bravoric-hear-read-write@riccardomurru.it']._refreshStatus();
                         result = 'refreshed';
                     }
                     const m = cmd.match(/^click (\w+)$/);

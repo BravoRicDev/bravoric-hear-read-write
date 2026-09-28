@@ -14,7 +14,7 @@ sys.path.insert(0, str(ROOT / "src"))
 from bravoric_stt_clipboard import notify
 from bravoric_stt_clipboard.config import ICON_SLOT_KEYS
 
-prefs = (ROOT / "gnome-extension/bravoric-indicator@local/prefs.js").read_text()
+prefs = (ROOT / "gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js").read_text()
 rows = set(re.findall(r"slot: '([^']+)'", prefs))
 assert rows == set(ICON_SLOT_KEYS), (set(ICON_SLOT_KEYS) - rows, rows - set(ICON_SLOT_KEYS))
 for filename in ("config/config.example.toml", "config/config.example.it.toml"):

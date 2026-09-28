@@ -162,7 +162,7 @@ say "== estensione GNOME Shell ==" "== GNOME Shell extension =="
 # ~/.local/share, with a different XDG_DATA_HOME the symlink ended up in a
 # path GNOME Shell never looks at. Same resolution already used for
 # DATA_DIR.
-EXT_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/gnome-shell/extensions/bravoric-indicator@local"
+EXT_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/gnome-shell/extensions/bravoric-hear-read-write@riccardomurru.it"
 mkdir -p "$(dirname "$EXT_DIR")"
 
 # F1 (giro 4): `ln -sfn` è silenziosamente INERTE quando la destinazione è una
@@ -215,7 +215,7 @@ else
     EXT_DIR_IS_COPY=0
 fi
 
-ln -sfn "$PROJECT_DIR/gnome-extension/bravoric-indicator@local" "$EXT_DIR"
+ln -sfn "$PROJECT_DIR/gnome-extension/bravoric-hear-read-write@riccardomurru.it" "$EXT_DIR"
 
 # La `ln` può anche riuscire su una directory reale senza toccarla (il caso
 # appena descritto): lo si constata DOPO, sul filesystem, e non sull'esito
@@ -239,7 +239,7 @@ glib-compile-schemas --strict "$EXT_DIR/schemas"
 # just generated exposes all the keys used by extension.js. A stale copy of
 # gschemas.compiled lacking stream-shortcut caused a GNOME Shell crash at
 # login (Main.wm.addKeybinding hits a fatal Mutter assertion).
-SCHEMA_ID="org.gnome.shell.extensions.bravoric-indicator"
+SCHEMA_ID="org.gnome.shell.extensions.bravoric-hear-read-write"
 COMPILED_KEYS="$(gsettings --schemadir "$EXT_DIR/schemas" list-keys "$SCHEMA_ID")"
 for key in dictation-shortcut ocr-shortcut stream-shortcut; do
     if ! grep -Fxq "$key" <<<"$COMPILED_KEYS"; then
@@ -248,16 +248,16 @@ for key in dictation-shortcut ocr-shortcut stream-shortcut; do
     fi
 done
 
-# Traduzioni dell'estensione GNOME (dominio bravoric-indicator): i .po vivono
+# Traduzioni dell'estensione GNOME (dominio bravoric-hear-read-write): i .po vivono
 # nel repo, non nella cartella linkata, quindi si compilano dalla sorgente.
 # gettext non è obbligatorio (senza, l'estensione resta in inglese, il sorgente
 # msgid), quindi la mancanza di msgfmt avvisa ma non blocca.
-# Translations of the GNOME extension (domain bravoric-indicator): the .po
+# Translations of the GNOME extension (domain bravoric-hear-read-write): the .po
 # files live in the repo, not in the linked folder, so they are compiled from
 # the source. gettext is not mandatory (without it, the extension stays in
 # English, the source msgid), so the lack of msgfmt warns but does not block.
 if command -v msgfmt >/dev/null 2>&1; then
-    for po in "$PROJECT_DIR"/gnome-extension/bravoric-indicator@local/po/*.po; do
+    for po in "$PROJECT_DIR"/gnome-extension/bravoric-hear-read-write@riccardomurru.it/po/*.po; do
         [ -e "$po" ] || continue
         lang="$(basename "$po" .po)"
         mkdir -p "$EXT_DIR/locale/$lang/LC_MESSAGES"
@@ -277,13 +277,13 @@ if command -v msgfmt >/dev/null 2>&1; then
         # broken .po is the same case, not a fatal error. -o on a temporary file: if
         # msgfmt fails halfway, no corrupt .mo is left that gettext would read in
         # place of the original strings.
-        mo_tmp="$EXT_DIR/locale/$lang/LC_MESSAGES/.bravoric-indicator.mo.tmp"
+        mo_tmp="$EXT_DIR/locale/$lang/LC_MESSAGES/.bravoric-hear-read-write.mo.tmp"
         if ! msgfmt -o "$mo_tmp" "$po"; then
             rm -f "$mo_tmp"
             say "ATTENZIONE: $(basename "$po") non valido, non compilato — l'estensione resterà in inglese." "WARNING: $(basename "$po") is invalid, not compiled — the extension will stay in English." >&2
             continue
         fi
-        mv -f "$mo_tmp" "$EXT_DIR/locale/$lang/LC_MESSAGES/bravoric-indicator.mo"
+        mv -f "$mo_tmp" "$EXT_DIR/locale/$lang/LC_MESSAGES/bravoric-hear-read-write.mo"
     done
 else
     say "ATTENZIONE: msgfmt (gettext) assente — traduzioni non compilate, l'estensione resterà in inglese." "WARNING: msgfmt (gettext) is missing — translations not compiled, the extension will stay in English." >&2
@@ -333,7 +333,7 @@ if [ "$EXT_DIR_IS_COPY" -eq 1 ]; then
 else
     say "Estensione linkata, schema e traduzioni compilati." "Extension linked, schema and translations compiled."
 fi
-say "Abilita con: gnome-extensions enable bravoric-indicator@local" "Enable with: gnome-extensions enable bravoric-indicator@local"
+say "Abilita con: gnome-extensions enable bravoric-hear-read-write@riccardomurru.it" "Enable with: gnome-extensions enable bravoric-hear-read-write@riccardomurru.it"
 # F2 (giro 4): qui sotto c'era la riga «(su Wayland serve logout/login per
 # caricarla la prima volta)», che parla solo della PRIMA installazione e dice
 # quindi esattamente il contrario di quello che serve a chi ha appena fatto
@@ -359,4 +359,4 @@ say " serve anche dopo un aggiornamento, non solo alla prima installazione)" " t
 say "== fatto ==" "== done =="
 say "venv installato in: $VENV_DIR" "venv installed in: $VENV_DIR"
 say "Prossimo passo: imposta le scorciatoie dalle preferenze dell'estensione" "Next step: set the shortcuts from the extension preferences"
-say "  gnome-extensions prefs bravoric-indicator@local   (default: Alt+Super+R dettatura, Alt+Super+O OCR, Alt+Super+S streaming)" "  gnome-extensions prefs bravoric-indicator@local   (default: Alt+Super+R dictation, Alt+Super+O OCR, Alt+Super+S streaming)"
+say "  gnome-extensions prefs bravoric-hear-read-write@riccardomurru.it   (default: Alt+Super+R dettatura, Alt+Super+O OCR, Alt+Super+S streaming)" "  gnome-extensions prefs bravoric-hear-read-write@riccardomurru.it   (default: Alt+Super+R dictation, Alt+Super+O OCR, Alt+Super+S streaming)"

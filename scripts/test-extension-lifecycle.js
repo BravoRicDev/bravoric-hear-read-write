@@ -28,7 +28,7 @@ const os = require('os');
 const path = require('path');
 const { pathToFileURL } = require('url');
 
-const EXT_DIR = path.join(__dirname, '..', 'gnome-extension', 'bravoric-indicator@local');
+const EXT_DIR = path.join(__dirname, '..', 'gnome-extension', 'bravoric-hear-read-write@riccardomurru.it');
 let pass = 0;
 let fail = 0;
 function check(name, cond) {
@@ -69,7 +69,7 @@ const any = makeAny();
 // Fake settings with the REAL schema defaults (read from the XML).
 function makeSettings(keysPresent) {
     const xml = fs.readFileSync(
-        path.join(EXT_DIR, 'schemas', 'org.gnome.shell.extensions.bravoric-indicator.gschema.xml'), 'utf8');
+        path.join(EXT_DIR, 'schemas', 'org.gnome.shell.extensions.bravoric-hear-read-write.gschema.xml'), 'utf8');
     const values = {};
     for (const m of xml.matchAll(/<key name="([^"]+)" type="(\w+)">\s*<default>([^<]*)<\/default>/g)) {
         const [, name, type, def] = m;
@@ -238,7 +238,7 @@ async function loadExtensionModule() {
     const quickRoles = () => panelRoles.filter(r => r.includes('-quick-'));
     const build = (keysPresent = () => true) => {
         const settings = makeSettings(keysPresent);
-        const ext = new ExtensionClass({ uuid: 'bravoric-indicator@local', path: EXT_DIR, settings });
+        const ext = new ExtensionClass({ uuid: 'bravoric-hear-read-write@riccardomurru.it', path: EXT_DIR, settings });
         return { ext, settings };
     };
 
@@ -246,7 +246,7 @@ async function loadExtensionModule() {
     {
         const { ext, settings } = build();
         ext.enable();
-        check('l\'indicatore principale e\' aggiunto alla top bar', panelRoles.includes('bravoric-indicator@local'));
+        check('l\'indicatore principale e\' aggiunto alla top bar', panelRoles.includes('bravoric-hear-read-write@riccardomurru.it'));
         check('con i default nessun bottone rapido viene creato', quickRoles().length === 0);
         check('le tre scorciatoie sono registrate', keybindings.join(',') === 'dictation-shortcut,ocr-shortcut,stream-shortcut');
         check('un segnale changed:: per ciascuna delle tre chiavi dei bottoni',
@@ -255,7 +255,7 @@ async function loadExtensionModule() {
         console.log('== accendere i bottoni dalla GUI (segnale changed::) / turning buttons on ==');
         settings.values['show-dictation-button'] = true;
         settings.fire('changed::show-dictation-button');
-        check('accesa la dettatura: compare solo il suo bottone', quickRoles().join(',') === 'bravoric-indicator@local-quick-dictation');
+        check('accesa la dettatura: compare solo il suo bottone', quickRoles().join(',') === 'bravoric-hear-read-write@riccardomurru.it-quick-dictation');
         const dictation = widgets.filter(w => w.style_class === 'bravoric-quick-button').at(-1);
         check('il bottone e\' un St.Button con stile touch e nome accessibile',
             dictation && dictation.accessible_name === 'Start dictation' && dictation.reactive === true);
@@ -269,9 +269,9 @@ async function loadExtensionModule() {
         settings.fire('changed::show-ocr-button');
         check('accese tutte e tre: ricostruite in ordine inverso (il primo resta a sinistra)',
             quickRoles().join(',') === [
-                'bravoric-indicator@local-quick-stream',
-                'bravoric-indicator@local-quick-ocr',
-                'bravoric-indicator@local-quick-dictation',
+                'bravoric-hear-read-write@riccardomurru.it-quick-stream',
+                'bravoric-hear-read-write@riccardomurru.it-quick-ocr',
+                'bravoric-hear-read-write@riccardomurru.it-quick-dictation',
             ].join(','));
         const byName = name => widgets.filter(w => w.style_class === 'bravoric-quick-button' && !w.isDestroyed
             && (w.accessible_name ?? '').includes(name)).at(-1);
@@ -299,7 +299,7 @@ async function loadExtensionModule() {
             destroyed.filter(n => n.includes(' dictation') || n.includes(' ocr') || n.includes(' stream')).length === 3);
         check('disable() disconnette tutti i segnali delle impostazioni', settings.handlers.size === 0);
         check('disable() rimuove le tre scorciatoie', removedKeybindings.join(',') === 'dictation-shortcut,ocr-shortcut,stream-shortcut');
-        check('disable() distrugge anche l\'indicatore principale', destroyed.includes('Bravoric STT/OCR'));
+        check('disable() distrugge anche l\'indicatore principale', destroyed.includes('Bravoric Hear, Read & Write'));
     }
 
     console.log('== schema stantio (chiavi dei bottoni assenti) / stale schema ==');

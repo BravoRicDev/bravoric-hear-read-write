@@ -20,3 +20,7 @@ config/config.toml
 # Log/scratch di verifica gate, mai contenuto del progetto.
 *.log
 /plans/*.bak
+
+# README is the only Markdown file published; keep all other notes local.
+*.md
+!README.md

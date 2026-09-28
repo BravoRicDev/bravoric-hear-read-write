@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <schemalist>
-  <schema id="org.gnome.shell.extensions.bravoric-indicator" path="/org/gnome/shell/extensions/bravoric-indicator/">
+  <schema id="org.gnome.shell.extensions.bravoric-hear-read-write" path="/org/gnome/shell/extensions/bravoric-hear-read-write/">
     <key name="dictation-shortcut" type="as">
       <default>['&lt;Alt&gt;&lt;Super&gt;r']</default>
       <summary>Dictation toggle shortcut</summary>

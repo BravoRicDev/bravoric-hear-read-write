@@ -30,6 +30,10 @@ _PACKAGED_DEFAULTS = {
     "ocr_raw": "camera-wood.png", "ocr_clean": "camera-cyberpunk.png",
     "stream_session_start": "stream-session-start.png",
     "error_general": "error-general.png",
+    "stt_recording_start": "stt-recording-start.png",
+    "stream_processing_start": "stream-processing-start.png",
+    "stream_session_end": "stream-session-end.png",
+    "stream_chunk_delivered": "stream-chunk-delivered.png",
 }
 _FALLBACKS = {
     "processing": ICON_PROCESSING, "ready": ICON_READY,

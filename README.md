@@ -1,173 +1,296 @@
-# Bravoric STT/OCR Clipboard
+# Bravoric Hear, Read & Write
 
-A GNOME Shell extension + Python backend for voice dictation and screenshot OCR on
-Wayland, with a resilient multi-endpoint fallback chain for speech-to-text and
-LLM cleanup — including a fully local, offline path via a self-hosted Whisper server.
+**Voice and OCR input for GNOME terminals and applications**
 
-Three ways to get text into the clipboard without typing it:
+Bravoric Hear, Read & Write is a GNOME Shell extension plus a Python backend for
+real-world dictation, OCR, and text entry on GNOME/Wayland. Many extensions do
+only one part of this job, do not let you choose the provider, or offer weak
+local OCR. This project exists because a tool that works in a terminal, a web
+form, tmux, SSH, and ordinary applications is more useful than a demo.
 
-- **STT (push-to-talk dictation)** — press a shortcut, speak, press again: the
-  recording is transcribed and written to the clipboard.
-- **OCR (screenshot capture)** — select a region of the screen, get the text
-  it contains. By default it reads whatever image is already in the
-  clipboard (e.g. from your own screenshot tool); optionally, it can trigger
-  an interactive area selection itself (`gnome-screenshot`) on the same
-  shortcut.
-- **Streaming dictation** — continuous, low-latency dictation that types
-  directly into the focused field as you speak, with voice commands
-  ("new line", "delete last word", …) and live context so the model sees
-  what was already typed.
+## English
 
-Mouse and touch friendly: optional one-click buttons in the top bar (dictation,
-OCR, streaming; Preferences → General → Quick buttons, all off by default) start
-and stop the actions without opening the menu.
+### What it does
 
-A top-bar indicator shows the current state (idle / recording / processing)
-and a preferences window (GTK4/Adw) configures every part of it — no config
-file editing required for day-to-day use.
+The goal is practical productivity with tailor-made control, not another
+one-size-fits-all voice widget:
 
-## Why the fallback chain
+1. **Streaming dictation.** Words are segmented and delivered directly to the
+   focused field while you speak, like the familiar macOS experience but on
+   GNOME and Wayland.
+2. **One character at a time.** The `type` channel sends keystrokes instead of
+   pasting. It works in terminals, tmux/SSH, web forms, and applications where
+   clipboard paste is unavailable or undesirable. It does not depend on a
+   shared clipboard and does not look like a simple intercepted paste.
+3. **Explicit voice commands.** Configure commands such as `invio` (Enter),
+   `cancella` (delete a word or chunk), Backspace, and other actions. The user
+   decides which words trigger which actions.
+4. **OCR and complete dictation.** Read text from an image already in the
+   clipboard or select a screenshot interactively; push-to-talk STT copies a
+   complete transcription to the clipboard.
+5. **Configurable providers.** Use OpenAI-compatible endpoints that are local,
+   cloud, or mixed. Ordered fallback is automatic: choose the backends and the
+   system keeps trying the next usable one.
+6. **Deep customization.** The GUI and TOML configuration expose endpoints,
+   models, fallback order, timeouts, VAD, hotwords, prompts, blacklist rules,
+   voice commands, shortcuts, paste channel, notifications, icons, and
+   streaming behaviour.
+7. **User-controlled computer actions.** This is explicit voice control, not an
+   autonomous AI agent. The AI never takes over the computer: the user chooses
+   what to say and when to send it.
+8. **Privacy by choice.** Select local or remote endpoints yourself; no service
+   is imposed by the project.
 
-Every transcription/cleanup call goes through an ordered list of
-OpenAI-compatible endpoints (`[[stt.fallback]]` in the config): if one is
-unreachable, in cooldown after repeated failures, or returns an empty result,
-the next one is tried automatically. This is what makes a completely
-**offline** setup practical: point the first level at a local
-[`bin/whisper-server.py`](bin/whisper-server.py) (a `faster-whisper` model
-served behind an OpenAI-compatible HTTP API) with cloud endpoints as
-lower-priority fallback,
-or run any mix of local/remote/free-tier endpoints in whatever order fits.
-Streaming dictation additionally supports a parallel dispatch mode across
-endpoints marked `parallel = true`, with a per-endpoint concurrency gate and
-circuit-breaker cooldowns (see `endpoint_breaker.py`) so an endpoint that
-starts failing doesn't stall the whole session.
+### Modes and interface
 
-## Architecture
+- **Push-to-talk STT:** press the shortcut, speak, press it again; the backend
+  records, transcribes, and copies the result.
+- **Streaming per chunk:** voice activity detection closes chunks, transcribes
+  them, and delivers them in order to the focused field.
+- **OCR:** process the current clipboard image or select a screen region.
+- **Quick buttons and indicators:** optional top-bar buttons start dictation, OCR,
+  or streaming, while the GNOME indicator shows idle, recording, and processing
+  state.
+- **Fallback log:** persistent chunk and endpoint logs record the selected
+  endpoint, result, and timings, so a failed provider is diagnosable rather than
+  mysterious.
 
-Two processes, one shared state directory:
+### Architecture and requirements
 
-- **`gnome-extension/bravoric-indicator@local/`** — the GNOME Shell extension
-  (GJS/ESM): top-bar indicator, preferences UI, and the streaming-dictation
-  keystroke/paste worker. Talks to the backend only through files (status,
-  config, stream context) and by spawning the CLI entry points below —
-  never a direct in-process dependency.
-- **`src/bravoric_stt_clipboard/`** — the Python backend: audio capture,
-  the fallback/circuit-breaker chain, OCR, clipboard/paste, notifications,
-  atomic config editing, and the streaming-dictation supervisor
-  (VAD-based chunk segmentation, per-endpoint dispatch, in-order delivery).
+The repository contains two cooperating parts:
 
-Every write to shared state (config, status, history, chunk log) is atomic
-(`tempfile.mkstemp` + `fsync` + `os.replace`) and lock-protected
-(`fcntl.flock`), so a crash or a killed process never leaves a half-written
-file behind.
+- `gnome-extension/bravoric-hear-read-write@riccardomurru.it/` is the GNOME Shell
+  portion: indicator, preferences, quick buttons, OCR/STT controls, and the
+  streaming input worker.
+- `src/bravoric_stt_clipboard/` is the Python backend: audio capture, STT/OCR,
+  provider fallback, clipboard and typing output, notifications, and logs.
 
-## Requirements
+The E.G.O. catalog submission for the GNOME extension portion is currently under
+review and is not yet available; the Python backend is required for the complete
+feature set.
 
-- GNOME Shell 45–50 on Wayland
-- Python ≥ 3.11
-- `ffmpeg` (with `libopus`), `wl-clipboard`, `notify-send`,
-  `glib-compile-schemas`, `gsettings`
-- Optional: `gnome-screenshot`, only if you enable *Take screenshot on
-  capture* (`[ocr] capture_screenshot = true`). If it is missing the OCR
-  shortcut shows a clear notification instead of failing silently.
+Requirements: GNOME Shell 45–50 on Wayland, Python 3.11+, `ffmpeg` with
+`libopus`, `wl-clipboard`, `notify-send`, `glib-compile-schemas`, and
+`gsettings`. `gnome-screenshot` is optional for interactive OCR capture.
 
-## Install
+### Installation and first configuration
 
 ```sh
 scripts/install.sh
 ```
 
-Checks dependencies, creates a dedicated venv under
-`$XDG_DATA_HOME/bravoric-stt-clipboard`, installs the backend into it,
-copies a starter config to `~/.config/bravoric-stt-clipboard/config.toml`
-(locale-aware: Italian or English template), and links the extension into
-GNOME Shell's extensions directory. Idempotent — safe to re-run after a
-`git pull`.
+The installer creates a Python virtual environment under
+`$XDG_DATA_HOME/bravoric-stt-clipboard`, installs the backend, creates
+`~/.config/bravoric-stt-clipboard/config.toml` from the language-appropriate
+example when needed, and links the extension into GNOME Shell. It is safe to
+run again after a pull. It never overwrites an existing personal config.
 
-Default shortcuts (changeable in the preferences): `Alt+Super+R` dictation,
-`Alt+Super+O` OCR, `Alt+Super+S` streaming dictation.
-
-Then enable the extension (`gnome-extensions enable bravoric-indicator@local`,
-or via the Extensions app) and open its preferences to point the fallback
-chain at your endpoints.
-
-## Language and customization
-
-- **English and Italian** everywhere a user can read text: the preferences
-  window, the indicator menu, notifications, `install.sh` and the
-  `bravoric-chunk-log` help. The language follows `LANGUAGE`/`LC_ALL`/
-  `LC_MESSAGES`/`LANG`; anything not Italian falls back to English. The
-  config template installed on first run follows the same rule.
-- **Everything is configurable from the preferences window**: fallback
-  levels, notification switches (one master switch, plus one per event and
-  service), notification icons (one slot per event), audio, clipboard
-  commands, streaming behaviour and diagnostics. The TOML file stays the
-  source of truth; the window edits it in place.
-- **Bilingual comments**: every code comment and docstring is written twice,
-  Italian first and English second, in the same block. `scripts/check-extension.sh`
-  fails on a substantial comment block that is clearly single-language, so new
-  code follows the same convention.
-- **Debugging the streaming chain**: `bravoric-chunk-log --summary` shows
-  which endpoint served each chunk, failure counts and latency percentiles
-  (`--last N`, `--session ID`, `--since MINUTES` narrow it down).
-
-## Testing
+Enable the extension and open its preferences:
 
 ```sh
-scripts/check-extension.sh
+gnome-extensions enable bravoric-hear-read-write@riccardomurru.it
+gnome-extensions prefs bravoric-hear-read-write@riccardomurru.it
 ```
 
-One command, no running GNOME session required: JS/Python syntax, i18n
-coverage (every UI string resolves in both locales, placeholders match),
-GSettings schema sync, and the full test suite — including GJS smoke tests
-that execute real extracted functions/classes from the extension source
-(not hand-written copies), and 800+ backend assertions covering the fallback
-chain, circuit breaker, atomic writes, and the streaming VAD/dispatch logic.
+The default shortcuts are `Alt+Super+R` for STT, `Alt+Super+O` for OCR, and
+`Alt+Super+S` for streaming. Wayland may require logging out and in, or
+restarting the shell, after an extension update.
 
-End-to-end tests run the real commands (`stt_toggle_main`, `ocr_capture_main`,
-`stream_toggle_main`) against fake `ffmpeg`/`wl-copy`/`wl-paste`/`notify-send`/
-`gnome-screenshot` executables and a local OpenAI-compatible HTTP server, in a
-temporary HOME/runtime/TMPDIR: recording lock, real VAD, fallback between
-endpoints, LLM cleanup, clipboard writes, translated notifications, and the
-config switches (master notification switch, double injection, cleanup ratio,
-blacklist, clipboard and screenshot timeouts) are checked as behaviour, not
-just as values.
+A minimal OpenAI-compatible STT provider in `config.toml` looks like this:
 
-It also loads the whole extension and the whole preferences window (real
-widgets, real backend on a temporary config) and, when headless `gnome-shell`
-is available, runs the extension inside a real GNOME Shell on an isolated D-Bus
-session with temporary directories, in English and in Italian: quick buttons
-appearing from the settings, their order and size, clicks launching the backend
-binary, state changes, disable/enable, translations. It skips itself when
-headless Shell is unavailable; `BRV_SKIP_E2E=1` skips the end-to-end tests and
-`BRV_SKIP_SHELL=1` skips it explicitly (about 40 s
-per language), `BRV_LANG=it scripts/test-shell-real.sh` runs one language alone.
+```toml
+[[stt.fallback]]
+name = "local-whisper"
+endpoint = "http://127.0.0.1:8000/v1"
+model = "whisper-1"
+api_key_env = ""
+api_key = ""
+timeout_seconds = 120
+```
 
-## Security and privacy
+Add further `[[stt.fallback]]` entries for automatic fallback. Equivalent
+fallback lists exist for OCR and optional text cleanup. Keep API keys in the
+personal config or an environment variable; do not commit them.
 
-Dictated text and audio are sensitive, so the backend treats them that way
-(each point below has a regression test):
+### Output channels and voice commands
 
-- Everything under `~/.cache/bravoric-stt-clipboard/` and the config file
-  are `0600`, including after log rotation; runtime directories holding
-  streaming audio are created `0700`, owned by you, never a symlink.
-- API keys never reach logs or notifications: error bodies, URLs and
-  `Authorization: Bearer …` values are redacted (pattern-based and by the
-  exact configured key) and truncated before they become an error message.
-- Signals (`SIGINT`/`SIGTERM`/`SIGKILL`) are only sent to processes whose
-  command line still matches ffmpeg or the streaming supervisor, so a stale
-  lock with a reused PID can never kill an unrelated process.
-- Config writes are atomic, locked and validated as TOML before replacing
-  the file; user text is escaped, including control characters.
-- One phrase blacklist (Preferences → Streaming) discards known Whisper
-  hallucinations on silence, for both streaming and push-to-talk dictation.
+Streaming has two deliberately different output channels:
 
-## Development history
+- `paste_channel = "clipboard"` puts each chunk in the clipboard and sends the
+  configured paste shortcut (`Ctrl+V`, or `Ctrl+Shift+V` for terminals). This is
+  fast and compatible with normal GUI fields.
+- `paste_channel = "type"` injects each character as a key event. The clipboard
+  is not used, which makes it suitable for terminals, tmux/SSH, and fields that
+  reject paste.
 
-[`docs/`](docs/) has the working notes from building this: bug write-ups,
-measured trade-offs, and the reasoning behind trickier decisions (mostly in
-Italian). Not required reading to use the extension.
+Example explicit commands in the `[stream]` section:
 
-## License
+```toml
+[[stream.command]]
+keyword = "invio"
+action = "key"
+key = "Return"
 
-TBD.
+[[stream.command]]
+keyword = "cancella"
+action = "delete"
+scope = "word" # or "chunk"
+```
+
+Commands are user-defined exact matches (case-insensitive), and aliases can be
+added. They are actions requested by the user, not autonomous decisions.
+
+### Checks and development
+
+Run targeted checks while developing, for example:
+
+```sh
+node --input-type=module --check < gnome-extension/bravoric-hear-read-write@riccardomurru.it/extension.js
+python3 -m py_compile src/bravoric_stt_clipboard/*.py
+```
+
+The repository gate is `scripts/check-extension.sh`; it checks JavaScript and
+Python syntax, metadata, schema synchronization, translations, and the test
+suite. Run it when you are ready for the complete validation.
+
+## Italiano
+
+### Cosa fa
+
+L'obiettivo è la produttività reale con un controllo sartoriale, non l'ennesimo
+widget vocale standard:
+
+1. **Dettatura in streaming.** Le parole vengono segmentate e inviate al campo
+   focalizzato mentre si parla, come su macOS ma su GNOME e Wayland.
+2. **Un carattere alla volta.** Il canale `type` invia tasti invece di incollare.
+   Funziona in terminali, tmux/SSH, form web e applicazioni in cui il paste da
+   clipboard non funziona o non è desiderato. Non dipende da una clipboard
+   condivisa e non appare come un semplice paste intercettabile.
+3. **Comandi vocali espliciti.** Si possono configurare `invio`, `cancella`
+   (parola o chunk), Backspace e altre azioni. È l'utente a decidere quali
+   parole attivano quali azioni.
+4. **OCR e dettatura completa.** Si legge un'immagine già nella clipboard o si
+   seleziona uno screenshot; la STT push-to-talk copia una trascrizione completa
+   nella clipboard.
+5. **Provider configurabili.** Si possono usare endpoint OpenAI-compatible
+   locali, cloud o misti. Il fallback ordinato è automatico: si scelgono i
+   backend e il sistema continua con il primo disponibile.
+6. **Configurabilità estrema.** GUI e TOML espongono endpoint, modelli, fallback,
+   timeout, VAD, hotword, prompt, blacklist, comandi vocali, shortcut, canale
+   di paste, notifiche, icone e comportamento dello streaming.
+7. **Azioni sempre decise dall'utente.** È controllo vocale esplicito, non un
+   agente AI autonomo. L'AI non prende il controllo del computer: l'utente
+   decide cosa dire e quando inviarlo.
+8. **Privacy e scelta.** Gli endpoint locali o remoti li sceglie l'utente; il
+   progetto non impone alcun servizio.
+
+### Modalità e interfaccia
+
+- **STT push-to-talk:** si preme la shortcut, si parla, si ripreme; il backend
+  registra, trascrive e copia il risultato.
+- **Streaming per chunk:** il rilevamento dell'attività vocale chiude i chunk,
+  li trascrive e li consegna in ordine al campo focalizzato.
+- **OCR:** elabora l'immagine nella clipboard oppure seleziona una regione dello
+  schermo.
+- **Quick button e indicatori:** pulsanti opzionali nella barra superiore
+  avviano STT, OCR o streaming; l'indicatore GNOME mostra inattività,
+  registrazione ed elaborazione.
+- **Log persistente del fallback:** registra endpoint usato, esito e tempi, per
+  capire subito dove si è fermato un provider.
+
+### Architettura e requisiti
+
+Il repository contiene due parti che collaborano:
+
+- `gnome-extension/bravoric-hear-read-write@riccardomurru.it/` è la parte GNOME Shell:
+  indicatore, preferenze, quick button, controlli OCR/STT e worker di input.
+- `src/bravoric_stt_clipboard/` è il backend Python: acquisizione audio,
+  STT/OCR, fallback dei provider, output clipboard e typing, notifiche e log.
+
+La sottomissione al catalogo E.G.O. della parte GNOME dell'estensione è
+attualmente in revisione e non è ancora disponibile; il backend Python è
+necessario per le funzioni complete.
+
+Requisiti: GNOME Shell 45–50 su Wayland, Python 3.11+, `ffmpeg` con `libopus`,
+`wl-clipboard`, `notify-send`, `glib-compile-schemas` e `gsettings`.
+`gnome-screenshot` è opzionale per la cattura OCR interattiva.
+
+### Installazione e prima configurazione
+
+```sh
+scripts/install.sh
+```
+
+Lo script crea un virtualenv Python in
+`$XDG_DATA_HOME/bravoric-stt-clipboard`, installa il backend, crea
+`~/.config/bravoric-stt-clipboard/config.toml` dall'esempio nella lingua giusta
+se manca e collega l'estensione a GNOME Shell. È sicuro da rilanciare dopo un
+pull e non sovrascrive una configurazione personale esistente.
+
+```sh
+gnome-extensions enable bravoric-hear-read-write@riccardomurru.it
+gnome-extensions prefs bravoric-hear-read-write@riccardomurru.it
+```
+
+Le shortcut predefinite sono `Alt+Super+R` per STT, `Alt+Super+O` per OCR e
+`Alt+Super+S` per streaming. Dopo un aggiornamento Wayland può richiedere
+logout/login o il riavvio della shell.
+
+Esempio minimo di endpoint STT OpenAI-compatible in `config.toml`:
+
+```toml
+[[stt.fallback]]
+name = "whisper-locale"
+endpoint = "http://127.0.0.1:8000/v1"
+model = "whisper-1"
+api_key_env = ""
+api_key = ""
+timeout_seconds = 120
+```
+
+Si possono aggiungere altri blocchi `[[stt.fallback]]` per il fallback
+automatico; esistono liste equivalenti per OCR e pulizia testuale opzionale.
+Le chiavi API vanno nella configurazione personale o in una variabile d'ambiente,
+mai nel repository.
+
+### Canali di output e comandi vocali
+
+Lo streaming distingue due canali:
+
+- `paste_channel = "clipboard"` mette ogni chunk nella clipboard e invia la
+  shortcut configurata (`Ctrl+V`, oppure `Ctrl+Shift+V` nei terminali). È rapido
+  e compatibile con i normali campi GUI.
+- `paste_channel = "type"` invia ogni carattere come evento di tastiera. Non
+  usa la clipboard, quindi è adatto a terminali, tmux/SSH e campi che rifiutano
+  il paste.
+
+Esempio nella sezione `[stream]`:
+
+```toml
+[[stream.command]]
+keyword = "invio"
+action = "key"
+key = "Return"
+
+[[stream.command]]
+keyword = "cancella"
+action = "delete"
+scope = "word" # oppure "chunk"
+```
+
+I comandi sono match esatti definiti dall'utente, senza distinzione tra
+maiuscole e minuscole; si possono aggiungere alias. Sono azioni richieste
+dall'utente, non decisioni autonome.
+
+### Controlli e sviluppo
+
+Controlli mirati possibili durante lo sviluppo:
+
+```sh
+node --input-type=module --check < gnome-extension/bravoric-hear-read-write@riccardomurru.it/extension.js
+python3 -m py_compile src/bravoric_stt_clipboard/*.py
+```
+
+Il gate del repository è `scripts/check-extension.sh`: controlla sintassi
+JavaScript e Python, metadata, sincronizzazione dello schema, traduzioni e test.
+Va eseguito quando si è pronti alla validazione completa.

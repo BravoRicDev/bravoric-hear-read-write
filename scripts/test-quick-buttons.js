@@ -14,7 +14,7 @@ const fs = require('fs');
 const path = require('path');
 const { pathToFileURL } = require('url');
 
-const EXT = path.join(__dirname, '..', 'gnome-extension', 'bravoric-indicator@local');
+const EXT = path.join(__dirname, '..', 'gnome-extension', 'bravoric-hear-read-write@riccardomurru.it');
 let pass = 0;
 let fail = 0;
 function check(name, cond) {

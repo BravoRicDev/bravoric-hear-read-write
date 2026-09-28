@@ -25,7 +25,7 @@
 set -u
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-EXT_SRC="$REPO/gnome-extension/bravoric-indicator@local"
+EXT_SRC="$REPO/gnome-extension/bravoric-hear-read-write@riccardomurru.it"
 PROBE_SRC="$REPO/scripts/lib/shell-probe@local"
 
 for tool in gnome-shell dbus-run-session gdbus gsettings gnome-extensions python3; do
@@ -53,7 +53,7 @@ cleanup() {
 if [ -z "${BRV_KEEP:-}" ]; then trap cleanup EXIT; fi
 mkdir -p "$T/config" "$T/data/gnome-shell/extensions" "$T/cache" "$T/runtime" "$T/home" "$T/probe"
 chmod 700 "$T/runtime"
-ln -s "$EXT_SRC" "$T/data/gnome-shell/extensions/bravoric-indicator@local"
+ln -s "$EXT_SRC" "$T/data/gnome-shell/extensions/bravoric-hear-read-write@riccardomurru.it"
 ln -s "$PROBE_SRC" "$T/data/gnome-shell/extensions/shell-probe@local"
 
 # Finto venv: ogni binario registra il proprio nome in $T/calls.
@@ -99,10 +99,10 @@ esac
 # Runs inside the isolated D-Bus session: writes to the files in $T and prints PASS/FAIL.
 cat > "$T/inner.sh" <<'INNER'
 SCHEMADIR="$EXT_SRC/schemas"
-SCHEMA=org.gnome.shell.extensions.bravoric-indicator
+SCHEMA=org.gnome.shell.extensions.bravoric-hear-read-write
 setkey() { gsettings --schemadir "$SCHEMADIR" set "$SCHEMA" "$1" "$2"; }
 gsettings set org.gnome.shell disable-user-extensions false
-gsettings set org.gnome.shell enabled-extensions "['bravoric-indicator@local', 'shell-probe@local']"
+gsettings set org.gnome.shell enabled-extensions "['bravoric-hear-read-write@riccardomurru.it', 'shell-probe@local']"
 gnome-shell --headless --wayland --no-x11 --virtual-monitor 1280x720 > "$T/shell.log" 2>&1 &
 SHELL_PID=$!
 up=0
@@ -173,7 +173,7 @@ in_session() {
 }
 
 ext_state() { in_session "LC_ALL=C LANGUAGE=C gnome-extensions info $1" | awk '/State:/ {print $2}'; }
-setkey() { in_session "gsettings --schemadir '$EXT_SRC/schemas' set org.gnome.shell.extensions.bravoric-indicator $1 $2" >/dev/null; }
+setkey() { in_session "gsettings --schemadir '$EXT_SRC/schemas' set org.gnome.shell.extensions.bravoric-hear-read-write $1 $2" >/dev/null; }
 dump() { cat "$T/probe/dump.json" 2>/dev/null; }
 wait_dump() {  # wait_dump <python-condition on `items`>
     for i in $(seq 1 30); do
@@ -188,10 +188,10 @@ sys.exit(0 if ($1) else 1)" 2>/dev/null; then return 0; fi
 probe_cmd() { rm -f "$T/probe/cmd-result"; echo "$1" > "$T/probe/cmd"; for i in $(seq 1 20); do [ -e "$T/probe/cmd-result" ] && break; sleep 0.3; done; cat "$T/probe/cmd-result" 2>/dev/null; }
 
 echo "== estensione in GNOME Shell vero / extension in a real GNOME Shell =="
-[ "$(ext_state bravoric-indicator@local)" = ACTIVE ] && pass "l'estensione e' ACTIVE" || fail "l'estensione non e' ACTIVE ($(ext_state bravoric-indicator@local))"
+[ "$(ext_state bravoric-hear-read-write@riccardomurru.it)" = ACTIVE ] && pass "l'estensione e' ACTIVE" || fail "l'estensione non e' ACTIVE ($(ext_state bravoric-hear-read-write@riccardomurru.it))"
 [ "$(ext_state shell-probe@local)" = ACTIVE ] && pass "la sonda di test e' ACTIVE" || fail "la sonda non e' ACTIVE"
 
-wait_dump "any(i['role']=='bravoric-indicator@local' for i in items)" \
+wait_dump "any(i['role']=='bravoric-hear-read-write@riccardomurru.it' for i in items)" \
     && pass "l'indicatore principale e' nella top bar" || fail "l'indicatore principale non e' nella top bar"
 wait_dump "not any(i['quick'] for i in items)" \
     && pass "di default nessun bottone rapido" || fail "bottoni rapidi presenti di default"
@@ -201,7 +201,7 @@ setkey show-dictation-button true; setkey show-ocr-button true; setkey show-stre
 wait_dump "[i['role'].rsplit('-',1)[-1] for i in items if i['quick']]==['dictation','ocr','stream']" \
     && pass "compaiono i tre bottoni nell'ordine dettatura, OCR, streaming (da sinistra)" \
     || { fail "ordine o presenza dei bottoni rapidi errati: $(dump)"; }
-wait_dump "max([n for n,i in enumerate(items) if i['quick']])<[n for n,i in enumerate(items) if i['role']=='bravoric-indicator@local'][0]" \
+wait_dump "max([n for n,i in enumerate(items) if i['quick']])<[n for n,i in enumerate(items) if i['role']=='bravoric-hear-read-write@riccardomurru.it'][0]" \
     && pass "i bottoni rapidi stanno a sinistra dell'indicatore principale" || fail "i bottoni rapidi non sono a sinistra dell'indicatore"
 wait_dump "all(i['width']>=32 and i['height']>=24 for i in items if i['quick'])" \
     && pass "area cliccabile adeguata (>= 32 x 24 px)" || fail "area cliccabile troppo piccola: $(dump)"
@@ -298,7 +298,7 @@ MENU_JSON="$(probe_cmd menu)"
 if python3 - "$EXT_SRC" "${BRV_LANG:-en}" "$MENU_JSON" <<'PY'
 import gettext, json, sys
 ext, lang, raw = sys.argv[1:4]
-tr = gettext.translation('bravoric-indicator', localedir=ext + '/locale', languages=[lang], fallback=True)
+tr = gettext.translation('bravoric-hear-read-write', localedir=ext + '/locale', languages=[lang], fallback=True)
 _ = tr.gettext if lang != 'en' else (lambda s: s)
 rows = json.loads(raw)
 labels = [r['label'] for r in rows]
@@ -326,26 +326,26 @@ else
 fi
 
 echo "== disabilita e riabilita l'estensione / disable and re-enable the extension =="
-in_session "gnome-extensions disable bravoric-indicator@local" >/dev/null
-wait_dump "not any(i['quick'] for i in items) and not any(i['role']=='bravoric-indicator@local' for i in items)" \
+in_session "gnome-extensions disable bravoric-hear-read-write@riccardomurru.it" >/dev/null
+wait_dump "not any(i['quick'] for i in items) and not any(i['role']=='bravoric-hear-read-write@riccardomurru.it' for i in items)" \
     && pass "disabilitata: spariscono indicatore e bottoni rapidi" || fail "dopo disable restano widget: $(dump)"
-in_session "gnome-extensions enable bravoric-indicator@local" >/dev/null
-wait_dump "[i['role'].rsplit('-',1)[-1] for i in items if i['quick']]==['dictation','stream'] and any(i['role']=='bravoric-indicator@local' for i in items)" \
+in_session "gnome-extensions enable bravoric-hear-read-write@riccardomurru.it" >/dev/null
+wait_dump "[i['role'].rsplit('-',1)[-1] for i in items if i['quick']]==['dictation','stream'] and any(i['role']=='bravoric-hear-read-write@riccardomurru.it' for i in items)" \
     && pass "riabilitata: tornano indicatore e i due bottoni ancora accesi" || fail "dopo enable stato errato: $(dump)"
-[ "$(ext_state bravoric-indicator@local)" = ACTIVE ] && pass "di nuovo ACTIVE dopo il ciclo" || fail "non ACTIVE dopo il ciclo"
+[ "$(ext_state bravoric-hear-read-write@riccardomurru.it)" = ACTIVE ] && pass "di nuovo ACTIVE dopo il ciclo" || fail "non ACTIVE dopo il ciclo"
 
 # Molti cicli di fila: il numero di widget nella top bar non deve crescere (nessuna perdita).
 # Many cycles in a row: the number of top-bar widgets must not grow (no leak).
 COUNT_BEFORE="$(python3 -c "import json; print(len(json.load(open('$T/probe/dump.json'))))")"
 for n in 1 2 3 4 5 6; do
-    in_session "gnome-extensions disable bravoric-indicator@local; gnome-extensions enable bravoric-indicator@local" >/dev/null
+    in_session "gnome-extensions disable bravoric-hear-read-write@riccardomurru.it; gnome-extensions enable bravoric-hear-read-write@riccardomurru.it" >/dev/null
 done
 wait_dump "[i['role'].rsplit('-',1)[-1] for i in items if i['quick']]==['dictation','stream']" || true
 COUNT_AFTER="$(python3 -c "import json; print(len(json.load(open('$T/probe/dump.json'))))")"
 [ "$COUNT_BEFORE" = "$COUNT_AFTER" ] \
     && pass "6 cicli disable/enable: il numero di widget nella top bar non cresce ($COUNT_BEFORE)" \
     || fail "widget nella top bar prima $COUNT_BEFORE, dopo $COUNT_AFTER: $(dump)"
-[ "$(ext_state bravoric-indicator@local)" = ACTIVE ] && pass "ACTIVE dopo i cicli ripetuti" || fail "non ACTIVE dopo i cicli ripetuti"
+[ "$(ext_state bravoric-hear-read-write@riccardomurru.it)" = ACTIVE ] && pass "ACTIVE dopo i cicli ripetuti" || fail "non ACTIVE dopo i cicli ripetuti"
 
 echo "== lingua / language (${BRV_LANG:-en}) =="
 LABELS="$(probe_cmd labels)"
@@ -358,7 +358,7 @@ wait_dump "any(i['accessible_name']=='${N_DICT_START}' for i in items if i['quic
     && pass "i nomi accessibili dei bottoni sono nella lingua attesa ($N_DICT_START)" || fail "nomi accessibili inattesi: $(dump)"
 
 echo "== finestra delle preferenze nel Shell vero / preferences window in the real Shell =="
-in_session "gnome-extensions prefs bravoric-indicator@local" >/dev/null
+in_session "gnome-extensions prefs bravoric-hear-read-write@riccardomurru.it" >/dev/null
 # Attende che compaia una finestra delle preferenze fra le finestre del Shell.
 # Waits for a preferences window to show up among the Shell's windows.
 PREFS_WINDOW=""

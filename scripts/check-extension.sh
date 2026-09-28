@@ -10,7 +10,7 @@
 set -uo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-EXT="$REPO/gnome-extension/bravoric-indicator@local"
+EXT="$REPO/gnome-extension/bravoric-hear-read-write@riccardomurru.it"
 FAIL=0
 ok()  { printf '  PASS  %s\n' "$1"; }
 bad() { printf '  FAIL  %s\n' "$1"; FAIL=$((FAIL + 1)); }
@@ -93,7 +93,7 @@ PY
 then ok "gschemas.compiled sincronizzato con XML"; else bad "schema GSettings compilato"; fi
 
 echo "== i18n =="
-if python3 - "$EXT/po/it.po" "$EXT/po/bravoric-indicator.pot" <<'PY'
+if python3 - "$EXT/po/it.po" "$EXT/po/bravoric-hear-read-write.pot" <<'PY'
 import re, sys
 po, pot = sys.argv[1], sys.argv[2]
 
@@ -171,7 +171,7 @@ for pat in (r"N_\(\s*'((?:[^'\\]|\\.)*)'", r"_\(\s*'((?:[^'\\]|\\.)*)'"):
         strings.add(js_unescape(m.group(1)))
 
 t = gettext.translation(
-    "bravoric-indicator",
+    "bravoric-hear-read-write",
     localedir=os.path.join(ext, "locale"),
     languages=["it"],
     fallback=True,
