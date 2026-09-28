@@ -97,8 +97,27 @@ One command, no running GNOME session required: JS/Python syntax, i18n
 coverage (every UI string resolves in both locales, placeholders match),
 GSettings schema sync, and the full test suite — including GJS smoke tests
 that execute real extracted functions/classes from the extension source
-(not hand-written copies), and ~700 backend assertions covering the fallback
+(not hand-written copies), and 800+ backend assertions covering the fallback
 chain, circuit breaker, atomic writes, and the streaming VAD/dispatch logic.
+
+## Security and privacy
+
+Dictated text and audio are sensitive, so the backend treats them that way
+(each point below has a regression test):
+
+- Everything under `~/.cache/bravoric-stt-clipboard/` and the config file
+  are `0600`, including after log rotation; runtime directories holding
+  streaming audio are created `0700`, owned by you, never a symlink.
+- API keys never reach logs or notifications: error bodies, URLs and
+  `Authorization: Bearer …` values are redacted (pattern-based and by the
+  exact configured key) and truncated before they become an error message.
+- Signals (`SIGINT`/`SIGTERM`/`SIGKILL`) are only sent to processes whose
+  command line still matches ffmpeg or the streaming supervisor, so a stale
+  lock with a reused PID can never kill an unrelated process.
+- Config writes are atomic, locked and validated as TOML before replacing
+  the file; user text is escaped, including control characters.
+- One phrase blacklist (Preferences → Streaming) discards known Whisper
+  hallucinations on silence, for both streaming and push-to-talk dictation.
 
 ## Development history
 
