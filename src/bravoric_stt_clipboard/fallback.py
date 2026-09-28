@@ -39,7 +39,8 @@ def try_with_fallback(levels: list[FallbackLevel], call: Callable[[FallbackLevel
 
 
 def cleanup_with_validation(
-    levels: list[FallbackLevel], system_prompt: str, raw_text: str, retry_count: int = 2
+    levels: list[FallbackLevel], system_prompt: str, raw_text: str, retry_count: int = 2,
+    min_length_ratio: float = CLEANUP_MIN_LENGTH_RATIO,
 ) -> str:
     """Il modello di cleanup a volte tronca parole in modo non deterministico
     (osservato: stesso input, stesso output atteso, esito variabile). Scarta
@@ -52,7 +53,8 @@ def cleanup_with_validation(
             last_error = exc
             continue
 
-        if len(result) >= CLEANUP_MIN_LENGTH_RATIO * len(raw_text):
+        # min_length_ratio = 0 disattiva il controllo / 0 disables the check.
+        if len(result) >= min_length_ratio * len(raw_text):
             return result
 
         logger.warning(

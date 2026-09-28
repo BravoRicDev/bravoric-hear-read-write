@@ -209,6 +209,7 @@ def transcribe_audio(
     hotwords: str | None = None,
     session: requests.Session | None = None,
     personal_prompt: str | None = None,
+    prompt_max_chars: int = PROMPT_MAX_CHARS,
 ) -> str:
     url = f"{level.endpoint.rstrip('/')}/audio/transcriptions"
     headers = {"Authorization": f"Bearer {level.resolved_api_key()}"}
@@ -236,9 +237,9 @@ def transcribe_audio(
         context = normalized_prompt if prompt is not None else ""
         if personal and context.startswith(personal):
             context = context[len(personal):].strip()
-        data["prompt"] = _build_vocabulary_prompt(personal, context, hotwords, PROMPT_MAX_CHARS)
+        data["prompt"] = _build_vocabulary_prompt(personal, context, hotwords, prompt_max_chars)
     elif normalized_prompt:
-        data["prompt"] = normalized_prompt[:PROMPT_MAX_CHARS]
+        data["prompt"] = normalized_prompt[:prompt_max_chars]
     if hotwords is not None and hotwords.strip():
         data["hotwords"] = hotwords.strip()
     try:

@@ -20,6 +20,7 @@ def stt_toggle_main() -> int:
     _setup_logging()
     try:
         cfg = load_config()
+        notify.configure(cfg)  # timeout e lunghezza corpo / timeout and body length
     except ConfigError as exc:
         print(_("Config error: {exc}").format(exc=exc), file=sys.stderr)
         notify.send(
@@ -73,6 +74,7 @@ def ocr_capture_main() -> int:
     _setup_logging()
     try:
         cfg = load_config()
+        notify.configure(cfg)  # timeout e lunghezza corpo / timeout and body length
     except ConfigError as exc:
         print(_("Config error: {exc}").format(exc=exc), file=sys.stderr)
         notify.send(
@@ -99,6 +101,7 @@ def stream_toggle_main(argv: list[str] | None = None) -> int:
     _setup_logging()
     try:
         cfg = load_config()
+        notify.configure(cfg)  # timeout e lunghezza corpo / timeout and body length
     except ConfigError as exc:
         print(_("Config error: {exc}").format(exc=exc), file=sys.stderr)
         notify.send(_("Config error"), str(exc), icon=notify.ICON_ERROR)

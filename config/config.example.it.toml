@@ -4,6 +4,10 @@
 notifications = true
 clipboard_tool = "wl-copy"
 clipboard_paste_tool = "wl-paste"
+clipboard_timeout_seconds = 5      # tempo massimo di wl-copy / wl-paste (1-60)
+notify_timeout_seconds = 10        # tempo massimo di notify-send (1-60)
+notification_content_max_chars = 80  # testo mostrato nel corpo di una notifica (10-500)
+cleanup_min_length_ratio = 0.7     # pulizia LLM piu' corta di questa frazione del testo grezzo: si riprova (0 = mai)
 
 [notifications]
 # STT (dettatura vocale) — avvio elaborazione, nessun contenuto possibile
@@ -147,6 +151,8 @@ system_prompt = "Estrai il testo presente nell'immagine, verbatim, senza markdow
 # Se true, seleziona interattivamente un'area dello schermo (gnome-screenshot)
 # invece di leggere un'immagine già presente negli appunti. Richiede gnome-screenshot.
 capture_screenshot = false
+# Secondi di attesa per la selezione dell'area prima di rinunciare (5-600).
+screenshot_timeout_seconds = 120
 
 # --- OCR cleanup: ripasso LLM opzionale sul testo estratto ---
 [ocr_cleanup]
@@ -302,6 +308,9 @@ chunk_timeout_seconds = 30.0      # OBSOLETO, ignorato: decide il timeout_second
 # output_history.json è voluta.
 # Si legge con: bravoric-chunk-log --summary
 chunk_log_max_lines = 0           # numero massimo di righe tenute (0 = default 2000)
+prompt_max_chars = 800            # tetto del prompt inviato a Whisper (100-4000)
+vad_floor_window_frames = 100     # frame da ~30 ms per stimare il noise floor (20-1000)
+vad_min_floor_frames = 20         # frame necessari prima di fidarsi della stima (5-200)
 blacklist = "grazie, thank you, sottotitoli a cura di, sottotitoli a cura di whisper, grazie per la visione"   # scarta la trascrizione intera (chunk streaming o dettatura) uguale a una voce; ignora maiuscole. Tipiche allucinazioni di Whisper sul silenzio.
 
 # Endpoint dedicato con 3 livelli di fallback (stessa struttura di [stt]/[ocr]).

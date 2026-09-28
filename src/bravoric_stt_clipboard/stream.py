@@ -545,6 +545,7 @@ def _transcribe(level, wav_path, stream, prompt) -> str:
         level, wav_path, language=stream.language or None, prompt=prompt,
         hotwords=stream.hotwords or None, session=_thread_session(),
         personal_prompt=stream.prompt,
+        prompt_max_chars=stream.prompt_max_chars,
     )
 
 
@@ -1731,6 +1732,7 @@ class StreamSession:
                         language=self._stream.language or None,
                         prompt=self._stream.prompt or None,
                         hotwords=self._stream.hotwords or None,
+                        prompt_max_chars=self._stream.prompt_max_chars,
                     ),
                 )
             except AllLevelsFailedError as exc:
@@ -1996,7 +1998,7 @@ class StreamSession:
         # poniamo la soglia MARGIN_DB sopra di esso. noise_db resta la soglia
         # iniziale finché non ci sono abbastanza campioni.
         MARGIN_DB = stream.vad_margin_db  # quanto sopra il noise floor = voce
-        floor_history: collections.deque[float] = collections.deque(maxlen=FLOOR_WINDOW_FRAMES)
+        floor_history: collections.deque[float] = collections.deque(maxlen=stream.vad_floor_window_frames)
         calibrated_threshold_db: float | None = None
         calib_logged = False
 
@@ -2151,7 +2153,7 @@ class StreamSession:
                         provisional_limit = calibrated_threshold_db if calibrated_threshold_db is not None else NOISE_DB
                         if _is_valid_floor_sample(rms_db, provisional_limit):
                             floor_history.append(rms_db)
-                            if len(floor_history) >= MIN_FLOOR_FRAMES:
+                            if len(floor_history) >= min(stream.vad_min_floor_frames, stream.vad_floor_window_frames):
                                 floor_db = _estimate_floor_db(floor_history)
                                 calibrated_threshold_db = _adaptive_threshold_db(
                                     floor_db, MARGIN_DB,
@@ -2292,7 +2294,7 @@ class StreamSession:
         # il caso viene loggato perche' l'utente sappia di dover verificare il
         # campo di destinazione prima di riprovare.
         try:
-            clipboard.write_text(chunk, self._cfg.clipboard_tool)
+            clipboard.write_text(chunk, self._cfg.clipboard_tool, self._cfg.clipboard_timeout_seconds)
         except Exception as exc:  # noqa: BLE001 - wl-copy puo' fallire in molti modi
             # (assente, timeout, exit!=0): tutti devono lasciare il chunk in coda, non
             # far propagare un'eccezione che fermerebbe paste_next senza registrare nulla.
@@ -2331,6 +2333,7 @@ def main(argv: list[str] | None = None) -> int:
         session_id = args[1] if len(args) > 1 else uuid.uuid4().hex
         try:
             cfg = load_config()
+            notify.configure(cfg)  # timeout e lunghezza corpo / timeout and body length
         except ConfigError as exc:
             logger.error("supervisor: config error: %s", exc)
             return 1

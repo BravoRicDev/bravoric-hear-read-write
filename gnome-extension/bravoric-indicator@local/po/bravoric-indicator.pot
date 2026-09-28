@@ -1156,3 +1156,159 @@ msgstr ""
 #: gnome-extension/bravoric-indicator@local/prefs.js
 msgid "Master switch for every notification sent by the backend. Notifications from the extension itself are controlled in the group below."
 msgstr ""
+
+#: gnome-extension/bravoric-indicator@local/prefs.js
+msgid "An LLM cleanup shorter than this fraction of the raw text is discarded and retried; 0 accepts any length"
+msgstr ""
+
+#: gnome-extension/bravoric-indicator@local/prefs.js
+msgid "Area selection timeout (seconds)"
+msgstr ""
+
+#: gnome-extension/bravoric-indicator@local/prefs.js
+msgid "Clipboard command timeout (seconds)"
+msgstr ""
+
+#: gnome-extension/bravoric-indicator@local/prefs.js
+msgid "Delay between simulated keystrokes when streaming types instead of pasting"
+msgstr ""
+
+#: gnome-extension/bravoric-indicator@local/prefs.js
+msgid "Dictation processing watchdog (minutes)"
+msgstr ""
+
+#: gnome-extension/bravoric-indicator@local/prefs.js
+msgid "Error state duration (minutes)"
+msgstr ""
+
+#: gnome-extension/bravoric-indicator@local/prefs.js
+msgid "Frames needed before the noise estimate is trusted; applies from the next session"
+msgstr ""
+
+#: gnome-extension/bravoric-indicator@local/prefs.js
+msgid "Give up on notify-send after this long"
+msgstr ""
+
+#: gnome-extension/bravoric-indicator@local/prefs.js
+msgid "Give up on the copy/paste command after this long"
+msgstr ""
+
+#: gnome-extension/bravoric-indicator@local/prefs.js
+msgid "Half-period of the indicator blink while recording"
+msgstr ""
+
+#: gnome-extension/bravoric-indicator@local/prefs.js
+msgid "History preview length (characters)"
+msgstr ""
+
+#: gnome-extension/bravoric-indicator@local/prefs.js
+msgid "How long OCR waits for you to select a screen area before giving up"
+msgstr ""
+
+#: gnome-extension/bravoric-indicator@local/prefs.js
+msgid "How long to wait for pending text before a voice command ends the session"
+msgstr ""
+
+#: gnome-extension/bravoric-indicator@local/prefs.js
+msgid "How much of each history entry the menu shows"
+msgstr ""
+
+#: gnome-extension/bravoric-indicator@local/prefs.js
+msgid "How much of the last output the menu shows"
+msgstr ""
+
+#: gnome-extension/bravoric-indicator@local/prefs.js
+msgid "How often the status is re-checked when the backend stops writing"
+msgstr ""
+
+#: gnome-extension/bravoric-indicator@local/prefs.js
+msgid "Indicator"
+msgstr ""
+
+#: gnome-extension/bravoric-indicator@local/prefs.js
+msgid "Last output preview length (characters)"
+msgstr ""
+
+#: gnome-extension/bravoric-indicator@local/prefs.js
+msgid "Longest piece of transcribed text put in a notification body"
+msgstr ""
+
+#: gnome-extension/bravoric-indicator@local/prefs.js
+msgid "Longest prompt sent to the transcription model (vocabulary and context are trimmed to fit)"
+msgstr ""
+
+#: gnome-extension/bravoric-indicator@local/prefs.js
+msgid "Minimum cleaned length (fraction)"
+msgstr ""
+
+#: gnome-extension/bravoric-indicator@local/prefs.js
+msgid "Noise floor minimum (frames)"
+msgstr ""
+
+#: gnome-extension/bravoric-indicator@local/prefs.js
+msgid "Noise floor window (frames)"
+msgstr ""
+
+#: gnome-extension/bravoric-indicator@local/prefs.js
+msgid "Notification delivery"
+msgstr ""
+
+#: gnome-extension/bravoric-indicator@local/prefs.js
+msgid "Notification timeout (seconds)"
+msgstr ""
+
+#: gnome-extension/bravoric-indicator@local/prefs.js
+msgid "OCR processing watchdog (minutes)"
+msgstr ""
+
+#: gnome-extension/bravoric-indicator@local/prefs.js
+msgid "Recent ~30 ms frames used to estimate the background noise; applies from the next session"
+msgstr ""
+
+#: gnome-extension/bravoric-indicator@local/prefs.js
+msgid "Recording blink interval (ms)"
+msgstr ""
+
+#: gnome-extension/bravoric-indicator@local/prefs.js
+msgid "Recording watchdog (minutes)"
+msgstr ""
+
+#: gnome-extension/bravoric-indicator@local/prefs.js
+msgid "Reset a recording state that stops updating after this long"
+msgstr ""
+
+#: gnome-extension/bravoric-indicator@local/prefs.js
+msgid "Reset a stuck OCR processing state after this long"
+msgstr ""
+
+#: gnome-extension/bravoric-indicator@local/prefs.js
+msgid "Reset a stuck dictation processing state after this long"
+msgstr ""
+
+#: gnome-extension/bravoric-indicator@local/prefs.js
+msgid "Return to idle this long after an error"
+msgstr ""
+
+#: gnome-extension/bravoric-indicator@local/prefs.js
+msgid "Streaming end wait (seconds)"
+msgstr ""
+
+#: gnome-extension/bravoric-indicator@local/prefs.js
+msgid "Text cleanup and OCR"
+msgstr ""
+
+#: gnome-extension/bravoric-indicator@local/prefs.js
+msgid "Text shown in notifications (characters)"
+msgstr ""
+
+#: gnome-extension/bravoric-indicator@local/prefs.js
+msgid "Typing key interval (ms)"
+msgstr ""
+
+#: gnome-extension/bravoric-indicator@local/prefs.js
+msgid "Watchdog check interval (seconds)"
+msgstr ""
+
+#: gnome-extension/bravoric-indicator@local/prefs.js
+msgid "Whisper prompt limit (characters)"
+msgstr ""

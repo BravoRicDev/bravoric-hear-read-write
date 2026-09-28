@@ -54,6 +54,26 @@ def resolve_icon(slot: str, override: str = "") -> str:
     return _FALLBACKS[metadata.fallback_category]
 
 
+# Impostazioni di runtime, fissate una volta per processo da configure()
+# dopo il caricamento della config ([general] notify_timeout_seconds e
+# notification_content_max_chars). I default sono i valori storici.
+# Runtime settings, set once per process by configure() after the config is
+# loaded ([general] notify_timeout_seconds and notification_content_max_chars).
+# The defaults are the historical values.
+_send_timeout_seconds: float = 10.0
+_content_max_chars: int = 80
+
+
+def configure(cfg) -> None:
+    """Applica le impostazioni di notifica della config a questo processo.
+
+    Apply the notification settings of the config to this process.
+    """
+    global _send_timeout_seconds, _content_max_chars
+    _send_timeout_seconds = float(getattr(cfg, "notify_timeout_seconds", 10.0))
+    _content_max_chars = int(getattr(cfg, "notification_content_max_chars", 80))
+
+
 def send(title: str, body: str = "", icon: str = ICON_READY) -> None:
     # B27a: usa -- per evitare che un titolo che inizia con `-` sia
     # interpretato come opzione di notify-send. Deve stare DOPO le opzioni
@@ -66,7 +86,7 @@ def send(title: str, body: str = "", icon: str = ICON_READY) -> None:
     # che non risponde blocca notify-send sul timeout D-Bus e con lui il
     # flusso chiamante. TimeoutExpired NON e' un OSError.
     with contextlib.suppress(OSError, subprocess.TimeoutExpired):
-        subprocess.run(["notify-send", "-i", icon, "--", title, body], check=False, timeout=10)
+        subprocess.run(["notify-send", "-i", icon, "--", title, body], check=False, timeout=_send_timeout_seconds)
 
 
 def maybe_send(
@@ -74,7 +94,7 @@ def maybe_send(
 ) -> None:
     if not master_enabled or not event.enabled:
         return
-    body = content[:80] if event.content and content else ""
+    body = content[:_content_max_chars] if event.content and content else ""
     send(title, body, icon)
 
 

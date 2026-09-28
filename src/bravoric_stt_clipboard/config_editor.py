@@ -92,6 +92,11 @@ STREAM_FIELDS = {
     # uno strumento di debug, non un archivio). "int" passa dal ramo intero
     # gia' presente, quindi il clamp resta in config.py/_coerce_int.
     "chunk_log_max_lines": "int",
+    # Ex costanti di modulo, ora regolabili (clamp in config.py/_coerce_int).
+    # Former module constants, now tunable (clamped in config.py/_coerce_int).
+    "prompt_max_chars": "int",
+    "vad_floor_window_frames": "int",
+    "vad_min_floor_frames": "int",
 }
 
 # Campi [stream] con clamp numerico esplicito (lo, hi): un valore finito fuori
@@ -555,6 +560,12 @@ GENERAL_FIELDS: dict[tuple[str, str], tuple] = {
     ("audio", "bitrate_kbps"): ("int", 8, 320),
     ("audio", "sample_rate"): ("choice", (8000, 12000, 16000, 24000, 48000)),
     ("clipboard", "double_injection"): ("bool",),
+    # Ex costanti di modulo, ora regolabili / former module constants, now tunable.
+    ("general", "clipboard_timeout_seconds"): ("float", 1.0, 60.0),
+    ("general", "notify_timeout_seconds"): ("float", 1.0, 60.0),
+    ("general", "notification_content_max_chars"): ("int", 10, 500),
+    ("general", "cleanup_min_length_ratio"): ("float", 0.0, 1.0),
+    ("ocr", "screenshot_timeout_seconds"): ("float", 5.0, 600.0),
 }
 
 
@@ -708,6 +719,16 @@ def get_state() -> dict:
             "bitrate_kbps": _coerce_int(raw.get("audio", {}).get("bitrate_kbps"), 16, 8, 320),
             "sample_rate": _coerce_int(raw.get("audio", {}).get("sample_rate"), 16000, 8000, 48000),
             "double_injection": _coerce_bool(raw.get("clipboard", {}).get("double_injection", True)),
+            "clipboard_timeout_seconds": _coerce_float_clamped(
+                raw.get("general", {}).get("clipboard_timeout_seconds"), 5.0, 1.0, 60.0),
+            "notify_timeout_seconds": _coerce_float_clamped(
+                raw.get("general", {}).get("notify_timeout_seconds"), 10.0, 1.0, 60.0),
+            "notification_content_max_chars": _coerce_int(
+                raw.get("general", {}).get("notification_content_max_chars"), 80, 10, 500),
+            "cleanup_min_length_ratio": _coerce_float_clamped(
+                raw.get("general", {}).get("cleanup_min_length_ratio"), 0.7, 0.0, 1.0),
+            "screenshot_timeout_seconds": _coerce_float_clamped(
+                raw.get("ocr", {}).get("screenshot_timeout_seconds"), 120.0, 5.0, 600.0),
         },
         "stream": {
             "commands": raw.get("stream", {}).get("command", []),
@@ -744,6 +765,11 @@ def get_state() -> dict:
             # scrive il file, non un secondo criterio qui.
             "chunk_log_max_lines": _coerce_int(
                 raw.get("stream", {}).get("chunk_log_max_lines"), 0, 0, 1_000_000),
+            "prompt_max_chars": _coerce_int(raw.get("stream", {}).get("prompt_max_chars"), 800, 100, 4000),
+            "vad_floor_window_frames": _coerce_int(
+                raw.get("stream", {}).get("vad_floor_window_frames"), 100, 20, 1000),
+            "vad_min_floor_frames": _coerce_int(
+                raw.get("stream", {}).get("vad_min_floor_frames"), 20, 5, 200),
             # I config pre-stream non hanno [[stream.fallback]]. Mostra comunque
             # tre righe editabili; set_level_field materializza i blocchi.
             "levels": levels_of("stream", minimum=3),

@@ -9,7 +9,6 @@ from .api_client import vision_extract
 from .config import Config
 from .fallback import AllLevelsFailedError, cleanup_with_validation, try_with_fallback
 from .i18n import _
-from .screenshot import SELECTION_TIMEOUT_SECONDS
 
 logger = logging.getLogger(__name__)
 
@@ -34,7 +33,7 @@ def handle_capture(cfg: Config) -> None:
             # watchdog dell'estensione (120 min per ocr).
             ts = current.get("timestamp")
             age = time.time() - ts if isinstance(ts, (int, float)) and not isinstance(ts, bool) else 0.0
-            if age < SELECTION_TIMEOUT_SECONDS:
+            if age < cfg.screenshot_timeout_seconds:
                 logger.info("cattura OCR gia' in corso, secondo tasto ignorato")
                 return
             logger.info("stato 'processing' OCR vecchio di %.0fs: residuo, si procede", age)
@@ -59,7 +58,7 @@ def handle_capture(cfg: Config) -> None:
     )
 
     if cfg.ocr_capture_screenshot:
-        image_bytes = screenshot.capture_area_png()
+        image_bytes = screenshot.capture_area_png(cfg.screenshot_timeout_seconds)
         if image_bytes is None:
             # Annullato (Esc) o nessuna risposta: un cambio idea dell'utente,
             # non un errore. Si torna a idle senza notifica, cosi' come non
@@ -71,7 +70,7 @@ def handle_capture(cfg: Config) -> None:
             return
     else:
         try:
-            image_bytes = clipboard.read_image_png(cfg.clipboard_paste_tool)
+            image_bytes = clipboard.read_image_png(cfg.clipboard_paste_tool, cfg.clipboard_timeout_seconds)
         except Exception as exc:  # noqa: BLE001 - fail fast con notifica utente
             status.write_status(status.STATE_ERROR)
             if cfg.notifications and cfg.notif_ocr.error:
@@ -107,7 +106,7 @@ def handle_capture(cfg: Config) -> None:
 
     if cfg.double_injection:
         try:
-            clipboard.write_text(raw_text, cfg.clipboard_tool)
+            clipboard.write_text(raw_text, cfg.clipboard_tool, cfg.clipboard_timeout_seconds)
         except Exception:
             # Non fatale: la scrittura finale (sotto) e' quella che conta. Se
             # anche quella fallisce l'utente viene avvisato esplicitamente.
@@ -132,13 +131,14 @@ def handle_capture(cfg: Config) -> None:
         try:
             final_text = cleanup_with_validation(
                 cfg.ocr_cleanup.fallback, cfg.ocr_cleanup.system_prompt, raw_text,
+                min_length_ratio=cfg.cleanup_min_length_ratio,
             )
             cleanup_ran = True
         except AllLevelsFailedError as exc:
             logger.warning("OCR LLM cleanup failed, keeping raw text: %s", exc)
 
     try:
-        clipboard.write_text(final_text, cfg.clipboard_tool)
+        clipboard.write_text(final_text, cfg.clipboard_tool, cfg.clipboard_timeout_seconds)
     except Exception as exc:  # noqa: BLE001 - fail fast con notifica utente
         # Senza questa guardia l'eccezione salterebbe write_status(IDLE)
         # lasciando lo stato bloccato su "processing" fino al timeout

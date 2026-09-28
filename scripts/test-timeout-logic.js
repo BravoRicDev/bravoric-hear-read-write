@@ -363,8 +363,8 @@ check('P4 la clausola stream sta DAVANTI al fallback generico sul limite',
     limitSrc.indexOf("service === 'stream'") > 0
     && limitSrc.indexOf("service === 'stream'") < limitSrc.indexOf('STATE_TIMEOUT_SECONDS[state]'));
 check('P4 il limite STT e il limite processing NON sono stati toccati',
-    limitSrc.includes("return service ? (PROCESSING_TIMEOUT_SECONDS[service] || null) : null;")
-    && limitSrc.includes('return STATE_TIMEOUT_SECONDS[state] || null;'));
+    limitSrc.includes('settingInt(PROCESSING_TIMEOUT_KEYS[service], PROCESSING_TIMEOUT_SECONDS[service] / 60) * 60')
+    && limitSrc.includes('settingInt(STATE_TIMEOUT_KEYS[state], STATE_TIMEOUT_SECONDS[state] / 60) * 60'));
 // Una sessione stream non deve nemmeno ARMARE il flag di avviso: senza
 // limite la porta entra nel ramo `else`, che lo tiene a false. Così se più
 // tardi la sessione finisce davvero e scatta un timeout vero, l'utente
@@ -430,9 +430,36 @@ if (atLimit !== -1) {
 }
 check('P4 il corpo di _timeoutLimitFor e\' stato estratto', realLimitSrc.length > 0);
 
+// Chiavi GSettings che ridefiniscono i limiti (in minuti), estratte dal
+// sorgente vero: `const NAME = { chiave: 'stringa', ... }`.
+// GSettings keys that override the limits (in minutes), extracted from the
+// real source: `const NAME = { key: 'string', ... }`.
+function extractKeyMap(name) {
+    const m = src.match(new RegExp(`const ${name} = \\{([^}]*)\\}`));
+    if (!m)
+        throw new Error(`costante ${name} non trovata in extension.js`);
+    const out = {};
+    for (const mm of m[1].matchAll(/(\w+)\s*:\s*'([^']+)'/g))
+        out[mm[1]] = mm[2];
+    return out;
+}
+const STATE_TIMEOUT_KEYS = extractKeyMap('STATE_TIMEOUT_KEYS');
+const PROCESSING_TIMEOUT_KEYS = extractKeyMap('PROCESSING_TIMEOUT_KEYS');
+// settingInt finto: registra le chiavi richieste e restituisce l'override
+// (in minuti) se presente, altrimenti il fallback come farebbe il vero.
+// Fake settingInt: records the requested keys and returns the override
+// (in minutes) when present, otherwise the fallback like the real one.
+const settingAsked = [];
+let settingOverrides = {};
 const limitSandbox = {
     STATE_TIMEOUT_SECONDS,
     PROCESSING_TIMEOUT_SECONDS,
+    STATE_TIMEOUT_KEYS,
+    PROCESSING_TIMEOUT_KEYS,
+    settingInt: (key, fallback) => {
+        settingAsked.push(key);
+        return key in settingOverrides ? settingOverrides[key] : fallback;
+    },
 };
 vm.createContext(limitSandbox);
 if (realLimitSrc) {
@@ -440,6 +467,36 @@ if (realLimitSrc) {
         + '\n}\nvar _realLimit = _LimitExt.prototype._timeoutLimitFor;', limitSandbox);
 }
 const realLimit = limitSandbox._realLimit;
+// Ogni limite e' regolabile da GUI: la chiave giusta viene chiesta e il valore
+// (in minuti) diventa secondi. Chiave assente = default storico.
+// Every limit is GUI-tunable: the right key is asked for and the value (in
+// minutes) becomes seconds. Missing key = historical default.
+if (realLimit) {
+    for (const [state, key] of Object.entries(STATE_TIMEOUT_KEYS)) {
+        settingAsked.length = 0;
+        settingOverrides = { [key]: 7 };
+        check(`GUI: ${state} legge ${key} e lo converte in secondi`,
+            realLimit.call({}, state, undefined) === 7 * 60 && settingAsked.includes(key));
+        settingOverrides = {};
+        check(`GUI: ${state} senza override = default storico`,
+            realLimit.call({}, state, undefined) === STATE_TIMEOUT_SECONDS[state]);
+    }
+    for (const [service, key] of Object.entries(PROCESSING_TIMEOUT_KEYS)) {
+        settingAsked.length = 0;
+        settingOverrides = { [key]: 11 };
+        check(`GUI: processing ${service} legge ${key} e lo converte in secondi`,
+            realLimit.call({}, 'processing', service) === 11 * 60 && settingAsked.includes(key));
+        settingOverrides = {};
+        check(`GUI: processing ${service} senza override = default storico`,
+            realLimit.call({}, 'processing', service) === PROCESSING_TIMEOUT_SECONDS[service]);
+    }
+    settingOverrides = { 'recording-timeout-minutes': 1 };
+    check('GUI: la sessione streaming resta senza limite anche con override',
+        realLimit.call({}, 'recording', 'stream') === null);
+    settingOverrides = {};
+    check('GUI: idle e servizio ignoto restano senza limite',
+        realLimit.call({}, 'idle') === null && realLimit.call({}, 'processing', 'boh') === null);
+}
 if (realLimit) {
     // Il caso del difetto, misurato sul codice vero.
     check('P4 REALE: recording con service stream -> nessun limite',

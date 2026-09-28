@@ -13,7 +13,8 @@ const { matchBrace } = require('./lib/brace-match.cjs');
 // helper inoltrano a quel Main. Il comportamento degli helper veri (interruttore
 // spento, chiave assente) e' provato a parte, estraendoli dal sorgente.
 const NOTIFY_PRELUDE = 'const notifyErrorIfEnabled = (t, b) => Main.notifyError(t, b);\n'
-    + 'const notifyStatusIfEnabled = (t, b) => Main.notify(t, b);\n';
+    + 'const notifyStatusIfEnabled = (t, b) => Main.notify(t, b);\n'
+    + 'const settingInt = (key, fallback) => fallback;\n';
 
 (async () => {
     const extensionPath = path.join(__dirname, '..', 'gnome-extension', 'bravoric-indicator@local', 'extension.js');
@@ -763,7 +764,7 @@ const NOTIFY_PRELUDE = 'const notifyErrorIfEnabled = (t, b) => Main.notifyError(
             collectError, s => s, 30);
         ind._requestStreamEnd = new Function('GLib', 'spawnBackground', 'logError', 'TextDecoder', 'JSON',
             'STREAM_STATE_PATH', 'STREAM_END_TIMEOUT_MS', 'STREAM_END_POLL_MS',
-            `return function (sessionId) {${endBody}\n};`)(
+            `${NOTIFY_PRELUDE}return function (sessionId) {${endBody}\n};`)(
             GLib, cmd => toggles.push(cmd), collectError,
             TextDecoder, JSON, '/tmp/stream_state.json', 5000, 100);
         return { ind, armed, removed, toggles, errors, notices, GLib, collectError };
@@ -1227,7 +1228,7 @@ const NOTIFY_PRELUDE = 'const notifyErrorIfEnabled = (t, b) => Main.notifyError(
         !/^\s*import\s/m.test(blinkCode) && !blinkCode.includes('gi://'));
     check('S4: extension.js importa recording-blink.mjs e gli delega _setRecordingBlink',
         source.includes("from './recording-blink.mjs'")
-        && source.includes('setRecordingBlink(this, ioDeps, active, BLINK_CLASS, BLINK_INTERVAL_MS)'));
+        && source.includes("setRecordingBlink(this, ioDeps, active, BLINK_CLASS, settingInt('blink-interval-ms', BLINK_INTERVAL_MS))"));
 
     // Stub fedele a GLib su un punto che conta: `source_remove` REVOCA la
     // sorgente, quindi `fire(id)` dopo la rimozione non deve eseguire nulla.
@@ -1369,7 +1370,7 @@ const NOTIFY_PRELUDE = 'const notifyErrorIfEnabled = (t, b) => Main.notifyError(
     const helpersEnd = matchBrace(source, source.indexOf('{', helpersEndAt)) + 1;
     const helpersSrc = source.slice(helpersStart, helpersEnd);
     const makeHelpers = (Main, logged) => new Function('Main', 'logError',
-        `${helpersSrc}\nreturn { setSettings: v => { notificationSettings = v; }, notifyErrorIfEnabled, notifyStatusIfEnabled };`)(
+        `${helpersSrc}\nreturn { setSettings: v => { notificationSettings = v; }, notifyErrorIfEnabled, notifyStatusIfEnabled, settingInt };`)(
         Main, (e, m) => logged.push(m));
     const mkSettings = (values, keys = Object.keys(values)) => ({
         settings_schema: { has_key: k => keys.includes(k) },
@@ -1402,6 +1403,28 @@ const NOTIFY_PRELUDE = 'const notifyErrorIfEnabled = (t, b) => Main.notifyError(
     H.notifyErrorIfEnabled('E', 'b'); H.notifyStatusIfEnabled('S', 'b');
     check('notifiche: schema STANTIO (chiave assente) non spegne nulla e non solleva',
         sent.length === 2);
+
+    // settingInt: valori numerici regolabili da GUI (helper REALE).
+    // settingInt: GUI-tunable numeric values (REAL helper).
+    const mkInts = (values, keys = Object.keys(values)) => ({
+        settings_schema: { has_key: k => keys.includes(k) },
+        get_int: k => values[k],
+    });
+    H.setSettings(mkInts({ 'history-preview-chars': 25 }));
+    check('settingInt: legge il valore impostato', H.settingInt('history-preview-chars', 50) === 25);
+    H.setSettings(mkInts({}, []));
+    check('settingInt: schema stantio (chiave assente) -> fallback', H.settingInt('history-preview-chars', 50) === 50);
+    H.setSettings(null);
+    check('settingInt: impostazioni non ancora create -> fallback', H.settingInt('x', 7) === 7);
+    H.setSettings(mkInts({ k: 0 }));
+    check('settingInt: valore 0 (non positivo) -> fallback', H.settingInt('k', 9) === 9);
+    H.setSettings(mkInts({ k: NaN }));
+    check('settingInt: valore non finito -> fallback', H.settingInt('k', 9) === 9);
+    logged.length = 0;
+    H.setSettings({ settings_schema: { has_key: () => true }, get_int: () => { throw new Error('boom'); } });
+    check('settingInt: lettura che solleva -> fallback e errore loggato',
+        H.settingInt('k', 4) === 4 && logged.length === 1);
+    logged.length = 0;  // stato pulito per i controlli seguenti / clean state for the next checks
 
     sent.length = 0;
     H.setSettings(null);

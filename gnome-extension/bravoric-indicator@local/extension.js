@@ -98,6 +98,18 @@ const PROCESSING_TIMEOUT_SECONDS = {
     stt: 30 * 60,
     ocr: 120 * 60,
 };
+// Chiave GSettings (in MINUTI) che ridefinisce ciascun limite qui sopra; i
+// valori sopra restano i default storici e il fallback.
+// GSettings key (in MINUTES) that overrides each limit above; the values
+// above stay the historical defaults and the fallback.
+const STATE_TIMEOUT_KEYS = {
+    recording: 'recording-timeout-minutes',
+    error: 'error-timeout-minutes',
+};
+const PROCESSING_TIMEOUT_KEYS = {
+    stt: 'stt-timeout-minutes',
+    ocr: 'ocr-timeout-minutes',
+};
 
 // Ogni notifica generata dall'estensione ha il suo interruttore GSettings
 // (GUI: pagina Notifiche > Extension notifications): `notify-errors` per gli
@@ -116,6 +128,25 @@ function notificationEnabled(key) {
         logError(e, `bravoric-indicator: lettura di ${key} fallita`);
     }
     return true;
+}
+
+// Valori numerici regolabili da GUI (pagina General > Indicator): stessa
+// difesa di notificationEnabled. Chiave assente (schema stantio), lettura
+// che fallisce o valore non positivo => `fallback`, il valore storico.
+// Numeric values tunable from the GUI (General page > Indicator): same
+// defence as notificationEnabled. Missing key (stale schema), failing read
+// or non-positive value => `fallback`, the historical value.
+function settingInt(key, fallback) {
+    try {
+        if (notificationSettings?.settings_schema?.has_key(key)) {
+            const value = notificationSettings.get_int(key);
+            if (Number.isFinite(value) && value > 0)
+                return value;
+        }
+    } catch (e) {
+        logError(e, `bravoric-indicator: lettura di ${key} fallita`);
+    }
+    return fallback;
 }
 
 function notifyErrorIfEnabled(title, body) {
@@ -288,7 +319,7 @@ class BravoricIndicator extends PanelMenu.Button {
         // in cui il backend muore senza più scrivere status.json (nessun evento
         // 'changed'), che altrimenti lascerebbe l'icona bloccata per sempre.
         this._timeoutCheckId = GLib.timeout_add_seconds(
-            GLib.PRIORITY_DEFAULT, TIMEOUT_CHECK_INTERVAL_SECONDS, () => {
+            GLib.PRIORITY_DEFAULT, settingInt('timeout-check-interval-seconds', TIMEOUT_CHECK_INTERVAL_SECONDS), () => {
                 this._refreshStatus();
                 return GLib.SOURCE_CONTINUE;
             });
@@ -412,7 +443,7 @@ class BravoricIndicator extends PanelMenu.Button {
                     continue;
                 const text = typeof entry.text === 'string' ? entry.text : '';
                 const tag = this._historyTagLabel(entry.service, entry.kind);
-                const preview = text.slice(0, HISTORY_PREVIEW_CHARS);
+                const preview = text.slice(0, settingInt('history-preview-chars', HISTORY_PREVIEW_CHARS));
                 const item = new PopupMenu.PopupMenuItem(_('[%s] %s').replace('%s', tag).replace('%s', preview));
                 item.connect('activate', () => {
                     St.Clipboard.get_default().set_text(St.ClipboardType.CLIPBOARD, text);
@@ -430,14 +461,17 @@ class BravoricIndicator extends PanelMenu.Button {
     // Il lampeggio vive in recording-blink.mjs, modulo puro eseguito dai test;
     // qui resta l'aggancio con i valori dichiarati in questo file.
     _setRecordingBlink(active) {
-        setRecordingBlink(this, ioDeps, active, BLINK_CLASS, BLINK_INTERVAL_MS);
+        setRecordingBlink(this, ioDeps, active, BLINK_CLASS, settingInt('blink-interval-ms', BLINK_INTERVAL_MS));
     }
 
     _timeoutLimitFor(state, service) {
         // Nessun limite per 'idle': è lo stato di riposo. Per il processing
         // il limite dipende dal servizio, che può mancare (status vecchio).
-        if (state === 'processing')
-            return service ? (PROCESSING_TIMEOUT_SECONDS[service] || null) : null;
+        if (state === 'processing') {
+            if (!service || !PROCESSING_TIMEOUT_SECONDS[service])
+                return null;
+            return settingInt(PROCESSING_TIMEOUT_KEYS[service], PROCESSING_TIMEOUT_SECONDS[service] / 60) * 60;
+        }
         // P4: il limite su 'recording' NON vale per una sessione streaming
         // per_chunk. I 15 minuti sono un watchdog pensato per una
         // registrazione STT, che occupa il microfono e va chiusa: qui il
@@ -451,7 +485,9 @@ class BravoricIndicator extends PanelMenu.Button {
         // finito scrive IDLE, e il lock stale viene ripulito da is_stream_active().
         if (state === 'recording' && service === 'stream')
             return null;
-        return STATE_TIMEOUT_SECONDS[state] || null;
+        if (!STATE_TIMEOUT_SECONDS[state])
+            return null;
+        return settingInt(STATE_TIMEOUT_KEYS[state], STATE_TIMEOUT_SECONDS[state] / 60) * 60;
     }
 
     _timeoutMessage(state) {
@@ -718,7 +754,7 @@ class BravoricIndicator extends PanelMenu.Button {
                 return GLib.SOURCE_REMOVE;
             }
             if (index < characters.length) {
-                this._streamTypeTimerId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, TYPE_KEY_INTERVAL_MS, tick);
+                this._streamTypeTimerId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, settingInt('type-key-interval-ms', TYPE_KEY_INTERVAL_MS), tick);
                 return GLib.SOURCE_REMOVE;
             }
             this._commitStreamItem(item);
@@ -731,7 +767,7 @@ class BravoricIndicator extends PanelMenu.Button {
             });
             return GLib.SOURCE_REMOVE;
         };
-        this._streamTypeTimerId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, TYPE_KEY_INTERVAL_MS, tick);
+        this._streamTypeTimerId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, settingInt('type-key-interval-ms', TYPE_KEY_INTERVAL_MS), tick);
     }
 
     // I 4 rami di uscita per errore qui sotto restano ESPLICITI e non vengono
@@ -840,7 +876,8 @@ class BravoricIndicator extends PanelMenu.Button {
         // quindi un primo tentativo a vuoto non blocca la sessione per sempre.
         if (this._streamEndRequested === sessionId) return;
         this._streamEndRequested = sessionId;
-        const deadline = Date.now() + STREAM_END_TIMEOUT_MS;
+        const endTimeoutMs = settingInt('stream-end-timeout-seconds', STREAM_END_TIMEOUT_MS / 1000) * 1000;
+        const deadline = Date.now() + endTimeoutMs;
         // Latch rilasciato a ogni uscita TERMINALE di check(): senza questo il
         // latch restava armato per tutta la sessione GNOME e un secondo
         // comando di fine sessione (o un ritento) non faceva NULLA. Con
@@ -880,7 +917,7 @@ class BravoricIndicator extends PanelMenu.Button {
                     // non veniva mai chiusa. Meglio chiudere con quello che c'e'
                     // che restare appesi: la coda residua viene scartata dal
                     // cambio di sessione (_onStreamStateChanged).
-                    logError(new Error(`fine sessione stream ${sessionId}: coda non svuotata entro ${STREAM_END_TIMEOUT_MS} ms, chiusura forzata`),
+                    logError(new Error(`fine sessione stream ${sessionId}: coda non svuotata entro ${endTimeoutMs} ms, chiusura forzata`),
                         'bravoric-indicator: stream end forzato');
                     this._streamQueue = [];
                     this._streamEndTimerId = null;
@@ -1091,14 +1128,14 @@ class BravoricIndicator extends PanelMenu.Button {
                 } else if (data.last_output) {
                     this._lastOutputText = data.last_output;
                     this._lastOutputItem.setSensitive(true);
-                    const preview = data.last_output.slice(0, LAST_OUTPUT_PREVIEW_CHARS);
+                    const preview = data.last_output.slice(0, settingInt('last-output-preview-chars', LAST_OUTPUT_PREVIEW_CHARS));
                     this._lastOutputItem.label.text = _('Last output: %s').replace('%s', preview);
                 } else {
                     // Errore/stop senza output (es. API giù): senza questo ramo la
                     // voce resterebbe bloccata su "transcribing…" e disabilitata,
                     // nascondendo l'ultimo output valido già copiabile.
                     const preview = this._lastOutputText
-                        ? this._lastOutputText.slice(0, LAST_OUTPUT_PREVIEW_CHARS) : null;
+                        ? this._lastOutputText.slice(0, settingInt('last-output-preview-chars', LAST_OUTPUT_PREVIEW_CHARS)) : null;
                     this._lastOutputItem.setSensitive(preview !== null);
                     this._lastOutputItem.label.text = preview !== null
                         ? _('Last output: %s').replace('%s', preview)

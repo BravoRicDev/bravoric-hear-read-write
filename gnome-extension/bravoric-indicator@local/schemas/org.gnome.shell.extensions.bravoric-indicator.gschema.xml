@@ -23,5 +23,65 @@
       <summary>Show extension status notifications</summary>
       <description>Status messages from the extension: status file restored, or the backend timed out.</description>
     </key>
+    <key name="recording-timeout-minutes" type="i">
+      <default>15</default>
+      <range min="1" max="600"/>
+      <summary>Recording watchdog (minutes)</summary>
+      <description>Minutes after which a recording state with no update is reset to idle.</description>
+    </key>
+    <key name="error-timeout-minutes" type="i">
+      <default>5</default>
+      <range min="1" max="120"/>
+      <summary>Error state duration (minutes)</summary>
+      <description>Minutes after which an error state is reset to idle.</description>
+    </key>
+    <key name="stt-timeout-minutes" type="i">
+      <default>30</default>
+      <range min="1" max="600"/>
+      <summary>Dictation processing watchdog (minutes)</summary>
+      <description>Minutes after which a stuck STT processing state is reset to idle.</description>
+    </key>
+    <key name="ocr-timeout-minutes" type="i">
+      <default>120</default>
+      <range min="1" max="1440"/>
+      <summary>OCR processing watchdog (minutes)</summary>
+      <description>Minutes after which a stuck OCR processing state is reset to idle.</description>
+    </key>
+    <key name="history-preview-chars" type="i">
+      <default>50</default>
+      <range min="10" max="500"/>
+      <summary>History preview length</summary>
+      <description>Characters of each history entry shown in the menu.</description>
+    </key>
+    <key name="last-output-preview-chars" type="i">
+      <default>60</default>
+      <range min="10" max="500"/>
+      <summary>Last output preview length</summary>
+      <description>Characters of the last output shown in the menu.</description>
+    </key>
+    <key name="blink-interval-ms" type="i">
+      <default>500</default>
+      <range min="100" max="2000"/>
+      <summary>Recording blink interval (ms)</summary>
+      <description>Half-period of the indicator blink while recording.</description>
+    </key>
+    <key name="type-key-interval-ms" type="i">
+      <default>3</default>
+      <range min="1" max="100"/>
+      <summary>Typing key interval (ms)</summary>
+      <description>Delay between two simulated keystrokes when the streaming paste channel is 'type'.</description>
+    </key>
+    <key name="stream-end-timeout-seconds" type="i">
+      <default>5</default>
+      <range min="1" max="60"/>
+      <summary>Streaming end wait (seconds)</summary>
+      <description>How long to wait for the paste queue to drain before a voice command ends the session.</description>
+    </key>
+    <key name="timeout-check-interval-seconds" type="i">
+      <default>30</default>
+      <range min="5" max="300"/>
+      <summary>Watchdog check interval (seconds)</summary>
+      <description>How often the indicator re-evaluates the status when the backend stops writing.</description>
+    </key>
   </schema>
 </schemalist>

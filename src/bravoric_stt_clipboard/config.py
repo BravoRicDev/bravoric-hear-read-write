@@ -280,6 +280,17 @@ class StreamConfig:
     # del modulo chunk_log (2000). APPESA IN CODA per non spostare i campi
     # posizionali, come tutti i campi aggiunti dopo.
     chunk_log_max_lines: int = 0
+    # Ex costanti di modulo, ora regolabili (GUI: pagina Streaming).
+    # Former module constants, now tunable (GUI: Streaming page).
+    # prompt_max_chars: tetto del prompt inviato a Whisper (api_client).
+    # prompt_max_chars: cap on the prompt sent to Whisper (api_client).
+    prompt_max_chars: int = 800
+    # Finestra (in frame da ~30 ms) per stimare il noise floor del VAD e
+    # minimo di frame prima di fidarsi della stima.
+    # Window (in ~30 ms frames) to estimate the VAD noise floor, and the
+    # minimum number of frames before the estimate is trusted.
+    vad_floor_window_frames: int = 100
+    vad_min_floor_frames: int = 20
 
 
 @dataclass
@@ -384,6 +395,17 @@ class Config:
     # -a) invece di leggere un'immagine già presente in clipboard. Default
     # False: comportamento di sempre, invariato per chi non lo attiva.
     ocr_capture_screenshot: bool = False
+    # Ex costanti di modulo ora regolabili da config.toml e GUI (pagina
+    # General). Default = valori di sempre. APPESI in coda (Config e'
+    # costruito anche per keyword dai test).
+    # Former module constants, now tunable from config.toml and the GUI
+    # (General page). Defaults = the historical values. Appended at the end
+    # (tests also build Config by keyword).
+    clipboard_timeout_seconds: float = 5.0        # wl-copy / wl-paste
+    notify_timeout_seconds: float = 10.0          # notify-send
+    notification_content_max_chars: int = 80      # testo nel corpo / text in body
+    cleanup_min_length_ratio: float = 0.7         # 0 = nessun controllo / no check
+    screenshot_timeout_seconds: float = 120.0     # selezione area / area selection
     # Retrocompatibilità: stt_fallback è un alias di stt.fallback
     stt_fallback: list[FallbackLevel] = field(init=False, repr=False)
 
@@ -613,7 +635,9 @@ def _build_config(raw: dict) -> Config:
             )
 
         cfg = Config(
-            notifications=general.get("notifications", True),
+            # _coerce_bool: la stringa "false" e' truthy in Python.
+            # _coerce_bool: the string "false" is truthy in Python.
+            notifications=_coerce_bool(general.get("notifications", True)),
             notif_stt=service_notif("stt"),
             notif_ocr=service_notif("ocr"),
             notif_stream=service_notif("stream"),
@@ -625,7 +649,7 @@ def _build_config(raw: dict) -> Config:
                 sample_rate=int(audio_raw.get("sample_rate", 16000)),
                 bitrate_kbps=int(audio_raw.get("bitrate_kbps", 16)),
                 toggle_debounce_seconds=max(0.1, float(audio_raw.get("toggle_debounce_seconds", 1))),
-                retry_on_error=audio_raw.get("retry_on_error", True),
+                retry_on_error=_coerce_bool(audio_raw.get("retry_on_error", True)),
                 retry_count=int(audio_raw.get("retry_count", 2)),
             ),
             stt=stt_cfg,
@@ -641,12 +665,22 @@ def _build_config(raw: dict) -> Config:
             # pressione per un refuso (o per un config.toml scritto prima
             # che config_editor serializzasse questo campo come bool vero).
             ocr_capture_screenshot=_coerce_bool(ocr_raw.get("capture_screenshot", False)),
+            clipboard_timeout_seconds=_coerce_float_clamped(
+                general.get("clipboard_timeout_seconds"), 5.0, 1.0, 60.0),
+            notify_timeout_seconds=_coerce_float_clamped(
+                general.get("notify_timeout_seconds"), 10.0, 1.0, 60.0),
+            notification_content_max_chars=_coerce_int(
+                general.get("notification_content_max_chars"), 80, 10, 500),
+            cleanup_min_length_ratio=_coerce_float_clamped(
+                general.get("cleanup_min_length_ratio"), 0.7, 0.0, 1.0),
+            screenshot_timeout_seconds=_coerce_float_clamped(
+                ocr_raw.get("screenshot_timeout_seconds"), 120.0, 5.0, 600.0),
             ocr_cleanup=CleanupConfig(
                 enabled=ocr_cleanup_raw.get("enabled", False),
                 system_prompt=ocr_cleanup_raw.get("system_prompt", ""),
                 fallback=_parse_fallback_list(ocr_cleanup_raw.get("fallback", [])),
             ),
-            double_injection=clipboard_raw.get("double_injection", True),
+            double_injection=_coerce_bool(clipboard_raw.get("double_injection", True)),
             storage=StorageConfig(
                 # `or DEFAULT`: una stringa vuota esplicita (config a mano, campo
                 # svuotato) diventerebbe Path("") = cwd del processo, cioe' di
@@ -703,6 +737,11 @@ def _build_config(raw: dict) -> Config:
                 chunk_log_max_lines=_coerce_int(
                     stream_raw.get("chunk_log_max_lines"), 0, 0, 1_000_000
                 ),
+                prompt_max_chars=_coerce_int(stream_raw.get("prompt_max_chars"), 800, 100, 4000),
+                vad_floor_window_frames=_coerce_int(
+                    stream_raw.get("vad_floor_window_frames"), 100, 20, 1000),
+                vad_min_floor_frames=_coerce_int(
+                    stream_raw.get("vad_min_floor_frames"), 20, 5, 200),
             ),
         )
         blacklist_phrases = parse_blacklist(cfg.stream.blacklist)

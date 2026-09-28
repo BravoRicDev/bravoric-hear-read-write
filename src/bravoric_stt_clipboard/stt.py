@@ -132,6 +132,7 @@ def _process_recording(cfg: Config, audio_path: Path) -> None:
                     language=cfg.stt.language or None,
                     prompt=cfg.stt.prompt or None,
                     hotwords=cfg.stt.hotwords or None,
+                    prompt_max_chars=cfg.stream.prompt_max_chars,
                 ),
             )
             break
@@ -166,7 +167,7 @@ def _process_recording(cfg: Config, audio_path: Path) -> None:
     # evitando che il raw compaia mai negli appunti.
     if cfg.double_injection:
         try:
-            clipboard.write_text(raw_text, cfg.clipboard_tool)
+            clipboard.write_text(raw_text, cfg.clipboard_tool, cfg.clipboard_timeout_seconds)
         except Exception:
             # Non fatale: la scrittura finale (sotto) e' quella che conta. Se
             # anche quella fallisce l'utente viene avvisato esplicitamente.
@@ -192,6 +193,7 @@ def _process_recording(cfg: Config, audio_path: Path) -> None:
             final_text = cleanup_with_validation(
                 cfg.stt_cleanup.fallback, cfg.stt_cleanup.system_prompt, raw_text,
                 retry_count=cfg.audio.retry_count if cfg.audio.retry_on_error else 1,
+                min_length_ratio=cfg.cleanup_min_length_ratio,
             )
             cleanup_ran = True
         except AllLevelsFailedError as exc:
@@ -201,7 +203,7 @@ def _process_recording(cfg: Config, audio_path: Path) -> None:
     # per double_injection=True è la seconda sovrascrittura; per False è
     # l'unica scrittura negli appunti.
     try:
-        clipboard.write_text(final_text, cfg.clipboard_tool)
+        clipboard.write_text(final_text, cfg.clipboard_tool, cfg.clipboard_timeout_seconds)
     except Exception as exc:  # noqa: BLE001 - fail fast con notifica utente
         # Senza questa guardia l'eccezione salterebbe write_status(IDLE)
         # lasciando lo stato bloccato su "processing" fino al timeout

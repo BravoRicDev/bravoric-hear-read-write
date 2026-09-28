@@ -1590,6 +1590,8 @@ def main() -> int:
             # Il backend lo legge da config.py StreamConfig, non da qui: questa
             # whitelist dichiara che get_state() lo ESPONE, non che lo usi.
             "chunk_log_max_lines",
+            # Ex costanti di modulo ora regolabili / former module constants.
+            "prompt_max_chars", "vad_floor_window_frames", "vad_min_floor_frames",
         }
         == set(state_pool.get("stream", {}).keys()),
     )
@@ -3424,7 +3426,8 @@ def main() -> int:
     #    il timeout solo implicito dal livello.
     cap_s = _Sess()
     st_stream = type("S", (), {"language": "it", "prompt": "", "hotwords": "",
-                               "fallback": [], "chunk_timeout_seconds": 30.0})()
+                               "fallback": [], "chunk_timeout_seconds": 30.0,
+                               "prompt_max_chars": 800})()
     with mock.patch.object(stream_mod, "_thread_session", return_value=cast(Any, cap_s)):
         stream_mod._transcribe(_lvl_to(5), _audio, st_stream, None)
     check("stream._transcribe usa il timeout del livello, non chunk_timeout",
@@ -3605,7 +3608,7 @@ def main() -> int:
         written_chunks: list[str] = []
 
         class _FakeClipboard:
-            def write_text(self, text: str, tool: str) -> None:
+            def write_text(self, text: str, tool: str, timeout: float = 5.0) -> None:
                 written_chunks.append(text)
 
         stream_module.clipboard = _FakeClipboard()
@@ -3615,7 +3618,7 @@ def main() -> int:
         )
         sess = types.SimpleNamespace(
             _stream=fake_stream_cfg,
-            _cfg=types.SimpleNamespace(clipboard_tool="wl-copy"),
+            _cfg=types.SimpleNamespace(clipboard_tool="wl-copy", clipboard_timeout_seconds=5.0),
         )
         paste_next_fn = stream_module.StreamSession.paste_next.__get__(sess)
 
@@ -3652,7 +3655,7 @@ def main() -> int:
         # fuori dal try. Con wl-copy assente l'eccezione usciva da paste_next
         # e il chunk non veniva mai incollato.
         class _BrokenClipboard:
-            def write_text(self, text: str, tool: str) -> None:
+            def write_text(self, text: str, tool: str, timeout: float = 5.0) -> None:
                 raise FileNotFoundError(2, "No such file or directory: 'wl-copy'")
 
         stream_module.clipboard = _BrokenClipboard()
@@ -6811,6 +6814,193 @@ max_entries = 20
     _gui_fields = set(re.findall(r"setGeneralField\('(\w+)', '(\w+)'", _prefs_gen))
     check("GENERAL_FIELDS == campi scritti dalla GUI (nessun campo senza riga, nessuna riga orfana)",
           _gui_fields == set(config_editor.GENERAL_FIELDS))
+
+    # --- ex costanti di modulo ora regolabili (config.toml + GUI) -----------
+    # Formerly hardcoded module constants, now read from config.toml.
+    from bravoric_stt_clipboard import clipboard as _clip_mod, fallback as _fb_mod
+    _tun_dir = Path(tempfile.mkdtemp(prefix="bravoric-tunables-"))
+    _tun_toml = _tun_dir / "config.toml"
+    _tun_base = (
+        '[general]\nnotifications = true\n{general}'
+        '[[stt.fallback]]\nname = "a"\nendpoint = "http://x/v1"\nmodel = "m"\n'
+        '[ocr]\n{ocr}'
+        '[stream]\n{stream}'
+    )
+    def _tun_load(general="", ocr_extra="", stream_extra=""):
+        _tun_toml.write_text(_tun_base.format(general=general, ocr=ocr_extra, stream=stream_extra))
+        return config.load_config(_tun_toml)
+    _t0 = _tun_load()
+    check("tunables: default = valori storici (5/10/80/0.7/120)",
+          (_t0.clipboard_timeout_seconds, _t0.notify_timeout_seconds,
+           _t0.notification_content_max_chars, _t0.cleanup_min_length_ratio,
+           _t0.screenshot_timeout_seconds) == (5.0, 10.0, 80, 0.7, 120.0))
+    check("tunables: default stream (800/100/20)",
+          (_t0.stream.prompt_max_chars, _t0.stream.vad_floor_window_frames,
+           _t0.stream.vad_min_floor_frames) == (800, 100, 20))
+    _t1 = _tun_load(
+        general="clipboard_timeout_seconds = 9\nnotify_timeout_seconds = 3\n"
+                "notification_content_max_chars = 12\ncleanup_min_length_ratio = 0.2\n",
+        ocr_extra="screenshot_timeout_seconds = 30\n",
+        stream_extra="prompt_max_chars = 300\nvad_floor_window_frames = 50\nvad_min_floor_frames = 10\n")
+    check("tunables: i valori del file sono letti",
+          (_t1.clipboard_timeout_seconds, _t1.notify_timeout_seconds,
+           _t1.notification_content_max_chars, _t1.cleanup_min_length_ratio,
+           _t1.screenshot_timeout_seconds) == (9.0, 3.0, 12, 0.2, 30.0)
+          and (_t1.stream.prompt_max_chars, _t1.stream.vad_floor_window_frames,
+               _t1.stream.vad_min_floor_frames) == (300, 50, 10))
+    _t2 = _tun_load(
+        general="clipboard_timeout_seconds = 9999\nnotify_timeout_seconds = -4\n"
+                "notification_content_max_chars = 1\ncleanup_min_length_ratio = 7\n",
+        ocr_extra="screenshot_timeout_seconds = 0\n",
+        stream_extra="prompt_max_chars = 5\nvad_floor_window_frames = 99999\nvad_min_floor_frames = 0\n")
+    check("tunables: valori fuori range sono clampati, mai un crash",
+          (_t2.clipboard_timeout_seconds, _t2.notify_timeout_seconds,
+           _t2.notification_content_max_chars, _t2.cleanup_min_length_ratio,
+           _t2.screenshot_timeout_seconds) == (60.0, 1.0, 10, 1.0, 5.0)
+          and (_t2.stream.prompt_max_chars, _t2.stream.vad_floor_window_frames,
+               _t2.stream.vad_min_floor_frames) == (100, 1000, 5))
+    _tun_toml.write_text('[general]\nnotifications = "false"\n[[stt.fallback]]\nname="a"\nendpoint="http://x/v1"\nmodel="m"\n')
+    check("tunables: notifications = \"false\" (stringa) non e' truthy",
+          config.load_config(_tun_toml).notifications is False)
+
+    # Scrittura via config_editor: stessi limiti, stesso file valido.
+    _saved_tun = config_editor.CONFIG_PATH
+    try:
+        config_editor.CONFIG_PATH = _tun_toml
+        _tun_toml.write_text(_tun_base.format(general="", ocr="", stream=""))
+        for _sec, _fld, _val, _exp in [
+            ("general", "clipboard_timeout_seconds", "12", 12.0),
+            ("general", "notify_timeout_seconds", "99", 60.0),
+            ("general", "notification_content_max_chars", "40", 40),
+            ("general", "cleanup_min_length_ratio", "0", 0.0),
+            ("ocr", "screenshot_timeout_seconds", "45", 45.0),
+        ]:
+            config_editor.set_general_field(_sec, _fld, _val)
+            check(f"tunables: set_general_field {_sec}.{_fld}={_val} -> {_exp}",
+                  tomllib.loads(_tun_toml.read_text(encoding="utf-8"))[_sec][_fld] == _exp)
+        for _fld, _val in [("prompt_max_chars", "500"), ("vad_floor_window_frames", "60"),
+                           ("vad_min_floor_frames", "12")]:
+            config_editor.set_stream_field(_fld, _val)
+        _tun_state = config_editor.get_state()
+        check("tunables: get_state espone general e stream",
+              _tun_state["general"]["clipboard_timeout_seconds"] == 12.0
+              and _tun_state["general"]["notify_timeout_seconds"] == 60.0
+              and _tun_state["general"]["notification_content_max_chars"] == 40
+              and _tun_state["general"]["cleanup_min_length_ratio"] == 0.0
+              and _tun_state["general"]["screenshot_timeout_seconds"] == 45.0
+              and _tun_state["stream"]["prompt_max_chars"] == 500
+              and _tun_state["stream"]["vad_floor_window_frames"] == 60
+              and _tun_state["stream"]["vad_min_floor_frames"] == 12)
+        _tun_reload = config.load_config(_tun_toml)
+        check("tunables: il backend rilegge quanto scritto dall'editor",
+              _tun_reload.notification_content_max_chars == 40
+              and _tun_reload.stream.prompt_max_chars == 500)
+        _rejected = 0
+        for _sec, _fld, _val in [("general", "clipboard_timeout_seconds", "abc"),
+                                 ("ocr", "screenshot_timeout_seconds", "nan")]:
+            try:
+                config_editor.set_general_field(_sec, _fld, _val)
+            except config_editor.ConfigEditorError:
+                _rejected += 1
+        check("tunables: valori non numerici rifiutati dall'editor", _rejected == 2)
+    finally:
+        config_editor.CONFIG_PATH = _saved_tun
+
+    # Cablaggio: ogni valore arriva davvero al punto in cui prima c'era la costante.
+    # Wiring: each value reaches the spot where the constant used to be.
+    with mock.patch("bravoric_stt_clipboard.clipboard.subprocess.run") as _m_clip:
+        _clip_mod.write_text("x", "wl-copy", 7.5)
+        _clip_mod.read_image_png("wl-paste", 8.5)
+        check("cablaggio: clipboard usa il timeout passato",
+              _m_clip.call_args_list[0].kwargs["timeout"] == 7.5
+              and _m_clip.call_args_list[1].kwargs["timeout"] == 8.5)
+    _saved_notify = (notify._send_timeout_seconds, notify._content_max_chars)
+    try:
+        notify.configure(types.SimpleNamespace(notify_timeout_seconds=3, notification_content_max_chars=12))
+        with mock.patch("bravoric_stt_clipboard.notify.subprocess.run") as _m_ns:
+            notify.send("t", "b")
+            check("cablaggio: notify.send usa notify_timeout_seconds",
+                  _m_ns.call_args.kwargs["timeout"] == 3.0)
+            notify.maybe_send(True, config.NotificationEvent(True, True), "t", "0123456789ABCDEFGHIJ")
+            check("cablaggio: il corpo e' troncato a notification_content_max_chars",
+                  _m_ns.call_args[0][0][-1] == "0123456789AB")
+    finally:
+        notify._send_timeout_seconds, notify._content_max_chars = _saved_notify
+    with mock.patch.object(_fb_mod, "try_with_fallback", return_value="ok"):
+        _short = _fb_mod.cleanup_with_validation([], "p", "x" * 100, retry_count=1, min_length_ratio=0.0)
+        check("cablaggio: cleanup_min_length_ratio=0 accetta un risultato corto", _short == "ok")
+        try:
+            _fb_mod.cleanup_with_validation([], "p", "x" * 100, retry_count=1, min_length_ratio=0.7)
+            _strict_rejects = False
+        except _fb_mod.AllLevelsFailedError:
+            _strict_rejects = True
+        check("cablaggio: cleanup_min_length_ratio=0.7 scarta un risultato corto", _strict_rejects)
+    with mock.patch("bravoric_stt_clipboard.screenshot.subprocess.run") as _m_shot:
+        _m_shot.return_value = types.SimpleNamespace(returncode=1)
+        screenshot.capture_area_png(7)
+        check("cablaggio: capture_area_png usa il timeout passato",
+              _m_shot.call_args.kwargs["timeout"] == 7)
+    _prompt_seen: dict = {}
+    class _PromptSess:
+        def post(self, *a, **kw):
+            _prompt_seen.update(kw.get("data") or {})
+            return _OkResp()
+    _long_prompt = "parola " * 400
+    api_client.transcribe_audio(_lvl_to(5), _audio, prompt=_long_prompt,
+                                session=cast(Any, _PromptSess()), prompt_max_chars=150)
+    check("cablaggio: prompt_max_chars limita il prompt inviato",
+          len(_prompt_seen.get("prompt", "")) == 150)
+    _stream_src = (ROOT / "src" / "bravoric_stt_clipboard" / "stream.py").read_text(encoding="utf-8")
+    check("cablaggio: il VAD legge le finestre dal config, non dalle costanti",
+          "maxlen=stream.vad_floor_window_frames" in _stream_src
+          and "maxlen=FLOOR_WINDOW_FRAMES" not in _stream_src)
+
+    # Anti-drift impostazioni dell'indicatore: schema GSettings, elenco della
+    # GUI (INDICATOR_SETTINGS) e chiavi lette da extension.js devono coincidere,
+    # con gli stessi limiti e con i default storici delle ex costanti.
+    # Indicator settings anti-drift: GSettings schema, GUI list
+    # (INDICATOR_SETTINGS) and the keys read by extension.js must agree, with
+    # the same bounds and the historical defaults of the former constants.
+    _ext_dir = ROOT / "gnome-extension" / "bravoric-indicator@local"
+    _schema_xml = (_ext_dir / "schemas" / "org.gnome.shell.extensions.bravoric-indicator.gschema.xml").read_text(encoding="utf-8")
+    _schema_ints = {
+        m_.group(1): (int(m_.group(2)), int(m_.group(3)), int(m_.group(4)))
+        for m_ in re.finditer(
+            r'<key name="([^"]+)" type="i">\s*<default>(-?\d+)</default>\s*<range min="(-?\d+)" max="(-?\d+)"/>',
+            _schema_xml)
+    }
+    _ext_js = (_ext_dir / "extension.js").read_text(encoding="utf-8")
+    _prefs_js = (_ext_dir / "prefs.js").read_text(encoding="utf-8")
+    _gui_ind = {
+        m_.group(1): (int(m_.group(2)), int(m_.group(3)))
+        for m_ in re.finditer(r"\{ key: '([\w-]+)', title: N_\('[^']*'\), subtitle: N_\('[^']*'\), lower: (\d+), upper: (\d+)",
+                              _prefs_js)
+    }
+    _ext_keys = set(re.findall(r"settingInt\('([\w-]+)'", _ext_js)) | set(
+        re.findall(r"'([\w-]+-timeout-minutes)'", _ext_js))
+    check("indicatore: chiavi intere dello schema == righe GUI",
+          set(_schema_ints) == set(_gui_ind) and len(_gui_ind) == 10)
+    check("indicatore: ogni chiave dello schema e' letta da extension.js",
+          set(_schema_ints) <= _ext_keys)
+    check("indicatore: limiti della GUI == range dello schema",
+          all((_gui_ind[k][0], _gui_ind[k][1]) == (_schema_ints[k][1], _schema_ints[k][2])
+              for k in _gui_ind if k in _schema_ints))
+    def _const(name: str) -> int:
+        return int(re.search(rf"const {name} = (\d+)", _ext_js).group(1))
+    _expected_defaults = {
+        "history-preview-chars": _const("HISTORY_PREVIEW_CHARS"),
+        "last-output-preview-chars": _const("LAST_OUTPUT_PREVIEW_CHARS"),
+        "blink-interval-ms": _const("BLINK_INTERVAL_MS"),
+        "type-key-interval-ms": _const("TYPE_KEY_INTERVAL_MS"),
+        "timeout-check-interval-seconds": _const("TIMEOUT_CHECK_INTERVAL_SECONDS"),
+        "stream-end-timeout-seconds": int(re.search(r"const STREAM_END_TIMEOUT_MS = (\d+) \* 1000", _ext_js).group(1)),
+        "recording-timeout-minutes": int(re.search(r"recording: (\d+) \* 60", _ext_js).group(1)),
+        "error-timeout-minutes": int(re.search(r"error: (\d+) \* 60", _ext_js).group(1)),
+        "stt-timeout-minutes": int(re.search(r"stt: (\d+) \* 60", _ext_js).group(1)),
+        "ocr-timeout-minutes": int(re.search(r"ocr: (\d+) \* 60", _ext_js).group(1)),
+    }
+    check("indicatore: default dello schema == valori storici delle ex costanti",
+          all(_schema_ints[k][0] == v for k, v in _expected_defaults.items()))
 
     # --- 10. il percorso di default e' quello vero, non un doppione -------
     # (la verifica che il percorso reale non sia stato TOCCATO da nessun test

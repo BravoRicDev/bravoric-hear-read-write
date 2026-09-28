@@ -644,6 +644,9 @@ console.log('Smoke test GTK4/Adw PASS: riga, segnali, visibilità, cattura tasto
     const rateMatch = prefsSrc.match(/const SAMPLE_RATES = \[[^\]]*\];/);
     if (!rateMatch)
         throw new Error('SAMPLE_RATES non trovato in prefs.js');
+    const indMatch = prefsSrc.match(/const INDICATOR_SETTINGS = \[[\s\S]*?\n\];/);
+    if (!indMatch)
+        throw new Error('INDICATOR_SETTINGS non trovato in prefs.js');
 
     const built = [];
     const rec = cls => new Proxy(cls, {
@@ -682,14 +685,26 @@ console.log('Smoke test GTK4/Adw PASS: riga, segnali, visibilità, cattura tasto
     let state = { general, stream: { chunk_log_max_lines: 500 } };
     const debounce = fn => fn;   // il ritardo e' infrastruttura, non logica
 
-    const make = new Function('Adw', 'Gtk', 'GLib', '_', 'N_', 'debounce',
+    const make = new Function('Adw', 'Gtk', 'Gio', 'GLib', '_', 'N_', 'debounce',
         'getServicesState', 'runConfigEditor', 'setGeneralField',
-        `${rateMatch[0]}\nreturn function (window) {${body}};`);
-    const method = make(AdwRec, Gtk, GLibFake, t => t, t => t, debounce,
-        () => state, runConfigEditor, setGeneralField);
+        `${rateMatch[0]}\n${indMatch[0]}\nreturn { build: function (window) {${body}}, INDICATOR_SETTINGS };`);
+    const built2 = make(AdwRec, Gtk, { SettingsBindFlags: { DEFAULT: 0 } }, GLibFake,
+        t => t, t => t, debounce, () => state, runConfigEditor, setGeneralField);
+    const method = built2.build;
+    const INDICATOR = built2.INDICATOR_SETTINGS;
 
+    // GSettings finto: registra i bind e simula uno schema stantio (has_key falso).
+    // Fake GSettings: records binds and simulates a stale schema (has_key false).
+    const binds = [];
+    let schemaHasKeys = true;
     let errorShown = 0;
-    const self = { _showConfigError() { errorShown++; } };
+    const self = {
+        _showConfigError() { errorShown++; },
+        getSettings: () => ({
+            settings_schema: { has_key: () => schemaHasKeys },
+            bind: (key, obj, prop) => binds.push([key, prop, obj.title]),
+        }),
+    };
     const win = { added: [], add(p) { this.added.push(p); } };
 
     method.call(self, win);
@@ -713,6 +728,15 @@ console.log('Smoke test GTK4/Adw PASS: riga, segnali, visibilità, cattura tasto
         throw new Error('chunk_log_max_lines non letto');
     if (writes.length !== 0)
         throw new Error(`la costruzione ha scritto in config: ${JSON.stringify(writes)}`);
+
+    // Ogni impostazione dell'indicatore e' legata alla propria chiave GSettings.
+    // Every indicator setting is bound to its own GSettings key.
+    if (binds.length !== INDICATOR.length || INDICATOR.length !== 10)
+        throw new Error(`bind GSettings: attesi 10, trovati ${binds.length}`);
+    if (JSON.stringify(binds.map(b => b[0])) !== JSON.stringify(INDICATOR.map(i => i.key)))
+        throw new Error('i bind non seguono INDICATOR_SETTINGS');
+    if (!binds.every(b => b[1] === 'value'))
+        throw new Error('un bind non punta alla proprieta value');
 
     // Toggle e SpinRow scrivono il campo giusto col formato giusto.
     byTitle(Adw.SwitchRow, 'Retry on error').active = false;
@@ -752,6 +776,41 @@ console.log('Smoke test GTK4/Adw PASS: riga, segnali, visibilità, cattura tasto
     byTitle(Adw.SpinRow, 'Chunk log size (lines)').value = 1000;
     if (JSON.stringify(streamWrites.at(-1)) !== JSON.stringify(['set-stream', 'chunk_log_max_lines', '1000']))
         throw new Error(`chunk_log_max_lines scritto male: ${JSON.stringify(streamWrites)}`);
+
+    // Nuove voci: chiave, sezione e formato del valore.
+    // New rows: key, section and value format.
+    writes.length = 0;
+    byTitle(Adw.SpinRow, 'Clipboard command timeout (seconds)').value = 9;
+    byTitle(Adw.SpinRow, 'Notification timeout (seconds)').value = 4;
+    byTitle(Adw.SpinRow, 'Text shown in notifications (characters)').value = 120;
+    byTitle(Adw.SpinRow, 'Minimum cleaned length (fraction)').value = 0.5;
+    byTitle(Adw.SpinRow, 'Area selection timeout (seconds)').value = 60;
+    const expectNew = [
+        ['general', 'clipboard_timeout_seconds', '9'],
+        ['general', 'notify_timeout_seconds', '4'],
+        ['general', 'notification_content_max_chars', '120'],
+        ['general', 'cleanup_min_length_ratio', '0.50'],
+        ['ocr', 'screenshot_timeout_seconds', '60'],
+    ];
+    if (JSON.stringify(writes) !== JSON.stringify(expectNew))
+        throw new Error(`scritture nuove inattese: ${JSON.stringify(writes)}`);
+    streamWrites.length = 0;
+    byTitle(Adw.SpinRow, 'Whisper prompt limit (characters)').value = 900;
+    byTitle(Adw.SpinRow, 'Noise floor window (frames)').value = 80;
+    byTitle(Adw.SpinRow, 'Noise floor minimum (frames)').value = 15;
+    if (JSON.stringify(streamWrites.map(a => a.slice(1).join('='))) !== JSON.stringify(
+        ['prompt_max_chars=900', 'vad_floor_window_frames=80', 'vad_min_floor_frames=15']))
+        throw new Error(`scritture stream inattese: ${JSON.stringify(streamWrites)}`);
+
+    // Schema stantio: nessun bind (una chiave assente sarebbe fatale).
+    // Stale schema: no bind (a missing key would be fatal).
+    state = { general, stream: {} };
+    schemaHasKeys = false;
+    binds.length = 0;
+    method.call(self, { add() {} });
+    if (binds.length !== 0)
+        throw new Error('schema stantio: bind creati comunque');
+    schemaHasKeys = true;
 
     // Config illeggibile: errore mostrato, nessuna riga costruita a meta'.
     state = null;

@@ -354,6 +354,25 @@ function setGeneralField(section, field, value) {
 // altre, es. 44100): stesso elenco di config_editor.GENERAL_FIELDS.
 const SAMPLE_RATES = [8000, 12000, 16000, 24000, 48000];
 
+// Valori dell'indicatore in GSettings (schema): chiave, limiti e testi. Le
+// chiavi sono lette da extension.js con settingInt(); un'anti-deriva nei test
+// verifica che schema, estensione e questa lista coincidano.
+// Indicator values stored in GSettings (schema): key, bounds and texts. The
+// keys are read by extension.js through settingInt(); an anti-drift test
+// checks that the schema, the extension and this list agree.
+const INDICATOR_SETTINGS = [
+    { key: 'recording-timeout-minutes', title: N_('Recording watchdog (minutes)'), subtitle: N_('Reset a recording state that stops updating after this long'), lower: 1, upper: 600, step: 1 },
+    { key: 'stt-timeout-minutes', title: N_('Dictation processing watchdog (minutes)'), subtitle: N_('Reset a stuck dictation processing state after this long'), lower: 1, upper: 600, step: 1 },
+    { key: 'ocr-timeout-minutes', title: N_('OCR processing watchdog (minutes)'), subtitle: N_('Reset a stuck OCR processing state after this long'), lower: 1, upper: 1440, step: 5 },
+    { key: 'error-timeout-minutes', title: N_('Error state duration (minutes)'), subtitle: N_('Return to idle this long after an error'), lower: 1, upper: 120, step: 1 },
+    { key: 'timeout-check-interval-seconds', title: N_('Watchdog check interval (seconds)'), subtitle: N_('How often the status is re-checked when the backend stops writing'), lower: 5, upper: 300, step: 5 },
+    { key: 'history-preview-chars', title: N_('History preview length (characters)'), subtitle: N_('How much of each history entry the menu shows'), lower: 10, upper: 500, step: 5 },
+    { key: 'last-output-preview-chars', title: N_('Last output preview length (characters)'), subtitle: N_('How much of the last output the menu shows'), lower: 10, upper: 500, step: 5 },
+    { key: 'blink-interval-ms', title: N_('Recording blink interval (ms)'), subtitle: N_('Half-period of the indicator blink while recording'), lower: 100, upper: 2000, step: 50 },
+    { key: 'type-key-interval-ms', title: N_('Typing key interval (ms)'), subtitle: N_('Delay between simulated keystrokes when streaming types instead of pasting'), lower: 1, upper: 100, step: 1 },
+    { key: 'stream-end-timeout-seconds', title: N_('Streaming end wait (seconds)'), subtitle: N_('How long to wait for pending text before a voice command ends the session'), lower: 1, upper: 60, step: 1 },
+];
+
 function setSectionField(service, field, value) {
     return runConfigEditor(['set-section', service, field, value]).success;
 }
@@ -1471,8 +1490,89 @@ export default class BravoricPreferences extends ExtensionPreferences {
             save: v => setGeneralField('general', 'clipboard_paste_tool', v),
         });
 
+        // Aggiunto al gruppo Clipboard dopo le due voci comando.
+        // Added to the Clipboard group after the two command rows.
+        spin(clipGroup, {
+            title: N_('Clipboard command timeout (seconds)'),
+            subtitle: N_('Give up on the copy/paste command after this long'),
+            lower: 1, upper: 60, step: 1, value: general.clipboard_timeout_seconds ?? 5,
+            save: v => setGeneralField('general', 'clipboard_timeout_seconds', v),
+        });
+
+        const notifyGroup = new Adw.PreferencesGroup({ title: _('Notification delivery') });
+        page.add(notifyGroup);
+        spin(notifyGroup, {
+            title: N_('Notification timeout (seconds)'),
+            subtitle: N_('Give up on notify-send after this long'),
+            lower: 1, upper: 60, step: 1, value: general.notify_timeout_seconds ?? 10,
+            save: v => setGeneralField('general', 'notify_timeout_seconds', v),
+        });
+        spin(notifyGroup, {
+            title: N_('Text shown in notifications (characters)'),
+            subtitle: N_('Longest piece of transcribed text put in a notification body'),
+            lower: 10, upper: 500, step: 10, value: general.notification_content_max_chars ?? 80,
+            save: v => setGeneralField('general', 'notification_content_max_chars', v),
+        });
+
+        const cleanupGroup = new Adw.PreferencesGroup({ title: _('Text cleanup and OCR') });
+        page.add(cleanupGroup);
+        spin(cleanupGroup, {
+            title: N_('Minimum cleaned length (fraction)'),
+            subtitle: N_('An LLM cleanup shorter than this fraction of the raw text is discarded and retried; 0 accepts any length'),
+            lower: 0, upper: 1, step: 0.05, digits: 2, value: general.cleanup_min_length_ratio ?? 0.7,
+            save: v => setGeneralField('general', 'cleanup_min_length_ratio', v),
+        });
+        spin(cleanupGroup, {
+            title: N_('Area selection timeout (seconds)'),
+            subtitle: N_('How long OCR waits for you to select a screen area before giving up'),
+            lower: 5, upper: 600, step: 5, value: general.screenshot_timeout_seconds ?? 120,
+            save: v => setGeneralField('ocr', 'screenshot_timeout_seconds', v),
+        });
+
+        // Impostazioni dell'indicatore (GSettings, non config.toml): valgono
+        // per l'estensione stessa e si applicano senza riavvio.
+        // Indicator settings (GSettings, not config.toml): they belong to the
+        // extension itself and apply without a restart.
+        const extSettings = this.getSettings();
+        const indicatorGroup = new Adw.PreferencesGroup({ title: _('Indicator') });
+        page.add(indicatorGroup);
+        for (const item of INDICATOR_SETTINGS) {
+            // Schema stantio: niente bind, con una chiave assente e' fatale.
+            // Stale schema: no bind, a missing key would be fatal.
+            if (!extSettings.settings_schema.has_key(item.key))
+                continue;
+            const row = new Adw.SpinRow({
+                title: _(item.title),
+                subtitle: _(item.subtitle),
+                adjustment: new Gtk.Adjustment({
+                    lower: item.lower, upper: item.upper, step_increment: item.step,
+                    value: item.lower,
+                }),
+            });
+            extSettings.bind(item.key, row, 'value', Gio.SettingsBindFlags.DEFAULT);
+            indicatorGroup.add(row);
+        }
+
         const diagGroup = new Adw.PreferencesGroup({ title: _('Diagnostics') });
         page.add(diagGroup);
+        spin(diagGroup, {
+            title: N_('Whisper prompt limit (characters)'),
+            subtitle: N_('Longest prompt sent to the transcription model (vocabulary and context are trimmed to fit)'),
+            lower: 100, upper: 4000, step: 50, value: state.stream?.prompt_max_chars ?? 800,
+            save: v => runConfigEditor(['set-stream', 'prompt_max_chars', v]).success,
+        });
+        spin(diagGroup, {
+            title: N_('Noise floor window (frames)'),
+            subtitle: N_('Recent ~30 ms frames used to estimate the background noise; applies from the next session'),
+            lower: 20, upper: 1000, step: 10, value: state.stream?.vad_floor_window_frames ?? 100,
+            save: v => runConfigEditor(['set-stream', 'vad_floor_window_frames', v]).success,
+        });
+        spin(diagGroup, {
+            title: N_('Noise floor minimum (frames)'),
+            subtitle: N_('Frames needed before the noise estimate is trusted; applies from the next session'),
+            lower: 5, upper: 200, step: 5, value: state.stream?.vad_min_floor_frames ?? 20,
+            save: v => runConfigEditor(['set-stream', 'vad_min_floor_frames', v]).success,
+        });
         spin(diagGroup, {
             title: N_('Chunk log size (lines)'),
             subtitle: N_('Lines kept in the streaming chunk log; 0 uses the default (2000)'),

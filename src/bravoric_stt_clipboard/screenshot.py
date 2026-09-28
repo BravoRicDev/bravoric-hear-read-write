@@ -25,7 +25,7 @@ def is_available() -> bool:
     return shutil.which("gnome-screenshot") is not None
 
 
-def capture_area_png() -> bytes | None:
+def capture_area_png(timeout: float = SELECTION_TIMEOUT_SECONDS) -> bytes | None:
     """Selezione interattiva di un'area (mouse) e cattura in PNG.
 
     Ritorna None se l'utente annulla (Esc: gnome-screenshot esce senza
@@ -39,13 +39,13 @@ def capture_area_png() -> bytes | None:
         try:
             result = subprocess.run(
                 ["gnome-screenshot", "--area", "--file", str(out_path)],
-                check=False, timeout=SELECTION_TIMEOUT_SECONDS,
+                check=False, timeout=timeout,
             )
         except FileNotFoundError:
             logger.warning("gnome-screenshot non trovato: installa gnome-screenshot per usare capture_screenshot")
             return None
         except subprocess.TimeoutExpired:
-            logger.info("selezione area schermata scaduta dopo %ds senza risposta", SELECTION_TIMEOUT_SECONDS)
+            logger.info("selezione area schermata scaduta dopo %ds senza risposta", timeout)
             return None
         except OSError as exc:
             # Altri modi in cui avviare il processo puo' fallire (permessi,
