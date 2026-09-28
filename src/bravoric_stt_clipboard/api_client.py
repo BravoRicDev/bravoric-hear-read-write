@@ -9,6 +9,7 @@ from pathlib import Path
 
 import requests
 
+from .chunk_log import redact
 from .config import FallbackLevel
 from .i18n import _
 
@@ -43,6 +44,31 @@ def _drop_oldest_words(text: str, budget: int) -> str:
     while words and len(" ".join(words)) > budget:
         words.pop(0)
     return " ".join(words)
+
+
+MAX_ERROR_BODY_CHARS = 300
+
+
+def _error_body(resp, level: FallbackLevel) -> str:
+    """Corpo di una risposta d'errore, sicuro da mettere in un ApiError.
+
+    L'ApiError finisce in una notifica desktop, nel journal (fallback.py
+    logga "Level %s failed: %s") e nel chunk log: un backend stile OpenAI
+    ripete la chiave nel 401 ("Incorrect API key provided: sk-...") e un
+    corpo HTML di errore puo' essere di migliaia di caratteri. Quindi:
+    valore esatto della chiave del livello e pattern noti redatti, poi
+    troncato."""
+    text = str(getattr(resp, "text", "") or "")
+    try:
+        key = level.resolved_api_key()
+    except Exception:  # noqa: BLE001 - un livello anomalo non deve mascherare l'errore HTTP
+        key = ""
+    if len(key) >= 6:
+        text = text.replace(key, "<redacted>")
+    text = redact(text).strip()
+    if len(text) > MAX_ERROR_BODY_CHARS:
+        text = text[:MAX_ERROR_BODY_CHARS] + "…"
+    return text
 
 
 def _keep_leading_words(text: str, budget: int) -> str:
@@ -241,7 +267,7 @@ def transcribe_audio(
     except requests.RequestException as exc:
         raise ApiError(f"[{level.name}] transcribe: network error: {exc}") from exc
     if resp.status_code != 200:
-        raise ApiError(f"[{level.name}] transcribe failed: {resp.status_code} {resp.text}")
+        raise ApiError(f"[{level.name}] transcribe failed: {resp.status_code} {_error_body(resp, level)}")
     text = _response_json(resp, level, "transcribe").get("text", "")
     if not isinstance(text, str):
         return ""
@@ -299,7 +325,7 @@ def chat_cleanup(level: FallbackLevel, system_prompt: str, text: str) -> str:
     }
     resp = requests.post(url, headers=headers, json=payload, timeout=level.timeout_seconds, verify=verify)
     if resp.status_code != 200:
-        raise ApiError(f"[{level.name}] chat cleanup failed: {resp.status_code} {resp.text}")
+        raise ApiError(f"[{level.name}] chat cleanup failed: {resp.status_code} {_error_body(resp, level)}")
     content = _first_message_content(_response_json(resp, level, "chat cleanup"), level, "chat cleanup")
     try:
         corrected = json.loads(content)["corrected_text"]
@@ -340,7 +366,7 @@ def vision_extract(level: FallbackLevel, system_prompt: str, image_bytes: bytes)
     }
     resp = requests.post(url, headers=headers, json=payload, timeout=level.timeout_seconds, verify=verify)
     if resp.status_code != 200:
-        raise ApiError(f"[{level.name}] vision extract failed: {resp.status_code} {resp.text}")
+        raise ApiError(f"[{level.name}] vision extract failed: {resp.status_code} {_error_body(resp, level)}")
     text = _first_message_content(_response_json(resp, level, "vision extract"), level, "vision extract")
     # D1 (lato OCR, mai chiuso finora): stessa guardia gia' applicata a
     # transcribe_audio. Un 200 con content vuoto/whitespace e' un fallimento

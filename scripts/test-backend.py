@@ -5591,6 +5591,51 @@ def main() -> int:
           == config.DEFAULT_STORAGE_BASE_DIR)
     check("config: storage.base_dir valido resta invariato",
           config._build_config({"storage": {"base_dir": "/dati/x"}}).storage.base_dir == "/dati/x")
+    # api_client: il corpo di una risposta d'errore finisce in ApiError ->
+    # notifica desktop + journal + chunk log. Un 401 stile OpenAI ripete la
+    # chiave; un corpo HTML puo' essere lunghissimo.
+    class _RespErr:
+        status_code = 401
+        text = "Incorrect API key provided: sk-abcdef123456. " + ("x" * 5000)
+        def json(self) -> dict:
+            return {}
+
+    _lvl_err = config.FallbackLevel(
+        name="E", endpoint="http://x/v1", model="m", api_key_env="",
+        api_key="sk-abcdef123456", ca_cert="", timeout_seconds=5)
+    _saved_post_err = api_client.requests.post
+    api_client.requests.post = lambda *a, **k: _RespErr()  # type: ignore[assignment]
+    try:
+        _err_msgs: dict[str, str] = {}
+        for _name_err, _call_err in (
+            ("chat_cleanup", lambda: api_client.chat_cleanup(_lvl_err, "sys", "testo")),
+            ("vision_extract", lambda: api_client.vision_extract(_lvl_err, "sys", b"png")),
+        ):
+            try:
+                _call_err()
+                _err_msgs[_name_err] = ""
+            except api_client.ApiError as exc:
+                _err_msgs[_name_err] = str(exc)
+    finally:
+        api_client.requests.post = _saved_post_err
+    _au_err = tmp / "err.ogg"
+    _au_err.write_bytes(b"x")
+
+    class _SessErr:
+        def post(self, *a: Any, **k: Any) -> Any:
+            return _RespErr()
+
+    try:
+        api_client.transcribe_audio(_lvl_err, _au_err, session=_SessErr())  # type: ignore[arg-type]
+        _err_msgs["transcribe_audio"] = ""
+    except api_client.ApiError as exc:
+        _err_msgs["transcribe_audio"] = str(exc)
+    for _name_err, _msg_err in _err_msgs.items():
+        check(f"api_client.{_name_err}: la chiave NON compare nell'ApiError (401 che la ripete)",
+              bool(_msg_err) and "sk-abcdef123456" not in _msg_err)
+        check(f"api_client.{_name_err}: il corpo d'errore e' troncato (non 5000 caratteri in una notifica)",
+              0 < len(_msg_err) < api_client.MAX_ERROR_BODY_CHARS + 120)
+
     # api_client._keep_leading_words: pura, mai testata direttamente.
     _klw = api_client._keep_leading_words
     check("keep_leading_words: budget esatto tiene tutte le parole ('ab cd' = 5)",
