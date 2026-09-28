@@ -2,6 +2,12 @@
 via subprocess) o CLI. Le chiavi (endpoint/model/...) si ripetono identiche in
 12 blocchi [[*.fallback]]: una regex globale le confonderebbe. Ogni scrittura
 è validata con tomllib prima di sostituire il file, altrimenti annullata.
+
+Text editor of config.toml, scoped per block, for use from the GUI
+(prefs.js via subprocess) or CLI. The keys (endpoint/model/...) repeat
+identically in 12 [[*.fallback]] blocks: a global regex would confuse
+them. Every write is validated with tomllib before replacing the file,
+otherwise it is cancelled.
 """
 from __future__ import annotations
 
@@ -35,7 +41,15 @@ def _locked():
     config.toml di partenza e l'ultimo replace() vince, perdendo l'altra
     modifica (race confermata dal vivo, giro 13: 2/8 run perdevano un campo).
     CONFIG_PATH è letto qui (non congelato a livello di modulo) perché i test
-    lo riassegnano a runtime."""
+    lo riassegnano a runtime.
+
+    Serializes read-modify-write across concurrent config_editor.py processes
+    (every GUI command of prefs.js is a separate process). Without a lock, two
+    writes on different fields launched close in time read the same starting
+    config.toml and the last replace() wins, losing the other change (race
+    confirmed live, round 13: 2/8 runs lost a field). CONFIG_PATH is read here
+    (not frozen at module level) because the tests reassign it at runtime.
+    """
     CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
     fd = os.open(str(CONFIG_PATH.parent / ".config.toml.lock"), os.O_CREAT | os.O_RDWR, 0o600)
     try:
@@ -56,6 +70,10 @@ SERVICES = {
 # `parallel` e `max_concurrency` sono campi stream-only: hanno significato solo
 # nel pool parallelo del dicttatore, quindi per gli altri servizi restano
 # inerte ma leggibili/salvabili senza errori (SPEC-MAX-CONCURRENCY sez. 3).
+# `parallel` and `max_concurrency` are stream-only fields: they only have
+# meaning in the dictation's parallel pool, so for the other services they
+# stay inert but readable/savable without errors (SPEC-MAX-CONCURRENCY sec.
+# 3).
 LEVEL_FIELDS = ["name", "endpoint", "model", "api_key_env", "api_key", "ca_cert", "timeout_seconds", "hotwords_in_prompt", "parallel", "max_concurrency"]
 
 # Whitelist unica, non per-servizio (stesso stile di LEVEL_FIELDS): la GUI
@@ -65,6 +83,13 @@ LEVEL_FIELDS = ["name", "endpoint", "model", "api_key_env", "api_key", "ca_cert"
 # nel file (set_level_field/set_stream_field/set_notification_field/
 # set_icon_field validano gia' il proprio; questo e set_storage_field sotto
 # erano gli unici due senza, incoerenza trovata dal vivo).
+# Single whitelist, not per-service (same style as LEVEL_FIELDS): the GUI
+# already sends only the right combination for each service (SERVICES in
+# prefs.js), this is defense in depth against a malformed or unexpected
+# `field` that would end up literally in `f"{field} = {toml_value}"` in the
+# file (set_level_field/set_stream_field/set_notification_field/
+# set_icon_field already validate their own; this one and set_storage_field
+# below were the only two without, an inconsistency found live).
 SECTION_FIELDS = frozenset({"enabled", "system_prompt", "language", "prompt", "hotwords", "capture_screenshot"})
 STORAGE_FIELDS = frozenset({"base_dir", "enabled", "retention_hours"})
 
@@ -91,6 +116,9 @@ STREAM_FIELDS = {
     # Ritenzione del log JSONL dei chunk, in RIGHE (non in orari: il file e'
     # uno strumento di debug, non un archivio). "int" passa dal ramo intero
     # gia' presente, quindi il clamp resta in config.py/_coerce_int.
+    # Retention of the JSONL chunk log, in LINES (not in time: the file is a
+    # debugging tool, not an archive). "int" goes through the already existing
+    # integer branch, so the clamp stays in config.py/_coerce_int.
     "chunk_log_max_lines": "int",
     # Ex costanti di modulo, ora regolabili (clamp in config.py/_coerce_int).
     # Former module constants, now tunable (clamped in config.py/_coerce_int).
@@ -104,6 +132,8 @@ STREAM_FIELDS = {
 
 # Campi [stream] con clamp numerico esplicito (lo, hi): un valore finito fuori
 # range viene clampato, un valore invalido/non finito viene rifiutato.
+# [stream] fields with an explicit numeric clamp (lo, hi): a finite value
+# out of range is clamped, an invalid/non-finite value is rejected.
 STREAM_FLOAT_CLAMPS = {
     "vad_margin_db": (0.0, 20.0),
     "endpoint_cooldown_seconds": (0.0, 86400.0),
@@ -125,20 +155,32 @@ STORAGE_SECTIONS = {
 # chiuso e deriva dalla lettura di config.py (service_notif), cosi' le due
 # estremita' non possono divergere: ogni chiave accettata qui e' anche
 # quella che config.py sa interpretare.
+# Boolean keys allowed inside [notifications]. They are the same ones
+# prefs.js used to build by hand (TomlBoolEditor.writeBool accepted ANY key:
+# an injected string ended up raw in the TOML). Here the set is closed and
+# derives from reading config.py (service_notif), so the two ends cannot
+# diverge: every key accepted here is also one config.py knows how to
+# interpret.
 NOTIFICATION_KEYS = frozenset(
     f"{prefix}_on_{event}{suffix}"
     for prefix in ("stt", "ocr", "stream")
     for event in ("processing_start", "raw_ready", "cleanup_ready")
     for suffix in ("", "_content")
     # `stream` non ha la notifica di cleanup: config.py non la legge.
+    # `stream` has no cleanup notification: config.py does not read it.
     if not (prefix == "stream" and event == "cleanup_ready")
     # `processing_start` non ha contenuto ("nessun testo disponibile"):
     # config.py non legge <servizio>_on_processing_start_content, e
     # ammetterla darebbe una chiave che nessuna GUI ne' backend usa.
+    # `processing_start` has no content ("no text available"): config.py does
+    # not read <service>_on_processing_start_content, and allowing it would give
+    # a key that neither GUI nor backend uses.
     if not (event == "processing_start" and suffix == "_content")
 ) | frozenset({
     # Notifiche senza contenuto, solo on/off: errori di ogni servizio,
     # registrazione STT avviata, sessione stream terminata.
+    # Notifications without content, on/off only: errors of every service, STT
+    # recording started, stream session ended.
     "stt_on_error", "ocr_on_error", "stream_on_error",
     "stt_on_recording_start", "stream_on_session_end",
 })
@@ -167,13 +209,21 @@ def _toml_line_value(key: str, value: str) -> str:
     # \x1b, \x7f...) e' ILLEGALE in una stringa TOML: senza questo la
     # validazione rifiutava il salvataggio ("Write aborted") e la GUI mostrava
     # solo "Error" per un testo che l'utente vedeva normale.
+    # Every other control character (C0 and DEL: \x0b from a pasted PDF, \x1b,
+    # \x7f...) is ILLEGAL in a TOML string: without this the validation rejected
+    # the save ("Write aborted") and the GUI showed just "Error" for a text the
+    # user saw as normal.
     escaped = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]", lambda m: f"\\u{ord(m.group()):04x}", escaped)
     return f'"{escaped}"'
 
 
 def _find_block_bounds(lines: list[str], header: str, occurrence: int) -> tuple[int, int]:
     """Trova (start, end) esclusivo del blocco N-esimo (0-based) che inizia
-    con `header`, fino alla prossima riga che inizia con '[' o EOF."""
+    con `header`, fino alla prossima riga che inizia con '[' o EOF.
+
+    Finds (start, end) exclusive of the N-th block (0-based) that begins with
+    `header`, up to the next line starting with '[' or EOF.
+    """
     starts = [i for i, line in enumerate(lines) if line.strip() == header]
     if occurrence >= len(starts):
         raise ConfigEditorError(f"Block '{header}' occurrence {occurrence} not found")
@@ -209,6 +259,25 @@ def _find_or_insert_key_in_block(
     - `skip_trailing_blank`: `set_icon_field` inserisce sempre a `end`,
       senza guardare se `lines[end-1]` è una riga vuota da saltare (gli
       altri 4 siti lo fanno). Default True = comportamento della maggioranza.
+
+    Replaces `key` in the block if it is already there, otherwise inserts it
+    (P13, "perfect" mandate: 5 nearly byte-identical copies consolidated here;
+    set_storage_field and set_history_max_entries migrated later, they had a
+    twin `_replace_key_in_block` that raised if the key was missing in an
+    already existing block — configs older by one field broke at the first
+    GUI save instead of just inserting it).
+
+    A missing key is not an error: configs created before a field was
+    introduced must not break at the first GUI save.
+
+    Two variants PRESERVED exactly, not made uniform (they would change the
+    TOML produced, which 5 gate points assert byte by byte):
+    - `key_regex`: `set_notification_field` uses `^{key}\s*=` instead of
+      `^{key} = .*$` (no check on the rest of the line). Default None = use
+      the standard pattern.
+    - `skip_trailing_blank`: `set_icon_field` always inserts at `end`, without
+      looking at whether `lines[end-1]` is an empty line to skip (the other 4
+      sites do). Default True = behavior of the majority.
     """
     pattern = re.compile(key_regex if key_regex is not None else rf"^{re.escape(key)} = .*$")
     for i in range(start, end):
@@ -228,12 +297,16 @@ def _atomic_replace(text: str) -> None:
     # concorrenti sullo stesso tmp potevano far perdere una modifica.
     # tempfile.mkstemp garantisce un path univoco per invocazione, come già
     # fatto in status.py/output_history.py.
+    # P2 (round 12): the fixed path "config.toml.tmp" shared by all the GUI
+    # commands (each a separate process) caused a race — two concurrent writes
+    # on the same tmp could lose a change. tempfile.mkstemp guarantees a unique
+    # path per invocation, as already done in status.py/output_history.py.
     fd, tmp_name = tempfile.mkstemp(dir=CONFIG_PATH.parent, prefix="config.toml.", suffix=".tmp")
     try:
         with os.fdopen(fd, "w") as f:
             f.write(text)
         tmp_path = Path(tmp_name)
-        tmp_path.chmod(0o600)  # contiene api_key: leggibile solo dall'utente
+        tmp_path.chmod(0o600)  # contiene api_key: leggibile solo dall'utente | contains api_key: readable only by the user
         tmp_path.replace(CONFIG_PATH)
     except BaseException:
         Path(tmp_name).unlink(missing_ok=True)
@@ -257,6 +330,12 @@ def _ensure_level_blocks(lines: list[str], header: str, through_index: int) -> N
     Serve per migrare in modo incrementale i config creati prima che un
     servizio ottenesse endpoint dedicati (in particolare ``stream``): la GUI
     può mostrare righe sintetiche e materializza il blocco solo al primo edit.
+
+    Adds empty fallback blocks up to the requested index.
+
+    Needed to migrate incrementally the configs created before a service got
+    dedicated endpoints (in particular ``stream``): the GUI can show
+    synthetic rows and materializes the block only at the first edit.
     """
     existing = sum(line.strip() == header for line in lines)
     while existing <= through_index:
@@ -296,6 +375,9 @@ def set_level_field(service: str, level_index: int, field: str, value: str) -> N
             # Intero clampato 1..8, mai la verita' di Python: `bool("false")`
             # attiverebbe il dispatcher per un refuso. Testo non numerico ->
             # errore esplicito invece del default silenzioso.
+            # Integer clamped 1..8, never Python truthiness: `bool("false")` would
+            # enable the dispatcher for a typo. Non-numeric text -> explicit error
+            # instead of the silent default.
             try:
                 toml_value = str(max(1, min(8, int(value))))
             except (TypeError, ValueError) as exc:
@@ -315,7 +397,17 @@ def set_section_field(service: str, field: str, value: str) -> None:
     Se la sezione [service] non esiste nel TOML (config legacy: solo
     [[service.fallback]]), la crea; se esiste ma la chiave manca, la inserisce
     nel blocco invece di fallire. Necessario per i config creati prima
-    dell'introduzione di [stt] con language/prompt/hotwords."""
+    dell'introduzione di [stt] con language/prompt/hotwords.
+
+    field in {'enabled', 'system_prompt', 'language', 'prompt', 'hotwords',
+    'capture_screenshot'}, on the single section [service] (not
+    array-of-tables).
+
+    If the [service] section does not exist in the TOML (legacy config: only
+    [[service.fallback]]), it creates it; if it exists but the key is missing,
+    it inserts it in the block instead of failing. Needed for the configs
+    created before the introduction of [stt] with language/prompt/hotwords.
+    """
     if service not in SERVICES:
         raise ConfigEditorError(f"Unknown service: {service}")
     header = SERVICES[service]["section_header"]
@@ -330,6 +422,8 @@ def set_section_field(service: str, field: str, value: str) -> None:
         if not any(line.strip() == header for line in lines):
             # Sezione assente: creala subito prima del primo blocco
             # [[service.fallback]] (o alla fine del file se non c'è).
+            # Section missing: create it right before the first [[service.fallback]]
+            # block (or at the end of the file if there is none).
             array_header = SERVICES[service]["array_header"]
             insert_pos = len(lines)
             for i, line in enumerate(lines):
@@ -348,7 +442,12 @@ def set_section_field(service: str, field: str, value: str) -> None:
 def reset_to_default() -> None:
     """Sovrascrive config.toml con l'esempio di default (EN o IT secondo la
     lingua di sistema, stessa logica di config.py). Distruttivo: chi chiama
-    (GUI) deve confermare con l'utente prima."""
+    (GUI) deve confermare con l'utente prima.
+
+    Overwrites config.toml with the default example (EN or IT depending on the
+    system language, same logic as config.py). Destructive: the caller (GUI)
+    must confirm with the user first.
+    """
     from .config import _example_config_path
 
     text = _example_config_path().read_text()
@@ -362,8 +461,12 @@ def reset_to_default() -> None:
 
 
 def set_storage_field(section: str, field: str, value: str) -> None:
-    """section in STORAGE_SECTIONS (es. 'stt_raw'), field in
-    {'base_dir', 'enabled', 'retention_hours'}."""
+    """section in STORAGE_SECTIONS (e.g. 'stt_raw'), field in
+    {'base_dir', 'enabled', 'retention_hours'}.
+
+    section in STORAGE_SECTIONS (es. 'stt_raw'), field in
+    {'base_dir', 'enabled', 'retention_hours'}.
+    """
     if section not in STORAGE_SECTIONS:
         raise ConfigEditorError(f"Unknown storage section: {section}")
     if field not in STORAGE_FIELDS:
@@ -378,6 +481,11 @@ def set_storage_field(section: str, field: str, value: str) -> None:
             # il click sullo switch non salvava NULLA e la GUI mostrava lo
             # stato indietro al riavvio. Stesso rimedio che set_stream_field
             # adotta per [stream]: crea il blocco in fondo al file.
+            # P5: table missing (hand-written or older config): _find_block_bounds
+            # raised and the write did not happen, so the click on the switch saved
+            # NOTHING and the GUI showed the old state again at restart. Same remedy as
+            # set_stream_field adopts for [stream]: create the block at the end of the
+            # file.
             lines.extend(["", header, f"{field} = {_toml_line_value(field, value)}"])
             _write_validated(lines)
             return
@@ -392,6 +500,8 @@ def set_stream_commands(commands: list[dict]) -> None:
         parsed = _parse_stream_commands(commands)
     except (ValueError, TypeError) as exc:
         raise ConfigEditorError(str(exc)) from exc
+    # Convalida lo schema rigoroso bool/tipi qui sopra, poi sostituisce
+    # atomicamente tutte le tabelle dei comandi.
     # Validate strict bool/type schema above, then atomically replace all command tables.
     with _locked():
         lines = CONFIG_PATH.read_text().splitlines()
@@ -422,7 +532,10 @@ def set_stream_commands(commands: list[dict]) -> None:
 
 
 def set_stream_field(field: str, value: str) -> None:
-    """Aggiorna un campo scalare della sezione [stream]."""
+    """Aggiorna un campo scalare della sezione [stream].
+
+    Updates a scalar field of the [stream] section.
+    """
     from .config import STREAM_MODES
     if field not in STREAM_FIELDS:
         raise ConfigEditorError(f"Unknown stream field: {field}")
@@ -430,6 +543,8 @@ def set_stream_field(field: str, value: str) -> None:
     if field == "mode":
         # Allinea all'enum del parser (config.STREAM_MODES): un valore fuori
         # enum renderebbe la config non caricabile per tutto il plugin.
+        # Aligns with the parser enum (config.STREAM_MODES): an out-of-enum value
+        # would make the config unloadable for the whole plugin.
         if value not in STREAM_MODES:
             raise ConfigEditorError(
                 f"invalid mode: {value!r} (expected one of {STREAM_MODES})")
@@ -439,6 +554,10 @@ def set_stream_field(field: str, value: str) -> None:
         # `dispatch_mode` non e' un booleano e quel ramo scriverebbe `false`
         # per un valore ignoto, rendendo il TOML illeggibile per config.py al
         # reload dell'intero plugin (l'intera estensione, non solo la GUI).
+        # Same ENUM validation as `mode`, NOT the bool branch below:
+        # `dispatch_mode` is not a boolean and that branch would write `false` for
+        # an unknown value, making the TOML unreadable for config.py at the reload of
+        # the whole plugin (the whole extension, not just the GUI).
         from .config import STREAM_DISPATCH_MODES
         if value not in STREAM_DISPATCH_MODES:
             raise ConfigEditorError(
@@ -483,6 +602,10 @@ def set_stream_field(field: str, value: str) -> None:
             # affatto): creala subito prima del primo [[stream.fallback]] (o in
             # fondo al file). Senza questo, get_state() mostra i controlli
             # stream ma il salvataggio falliva con _find_block_bounds.
+            # Section missing (legacy config: only [[stream.fallback]] or nothing at
+            # all): create it right before the first [[stream.fallback]] (or at the end
+            # of the file). Without this, get_state() shows the stream controls but the
+            # save failed with _find_block_bounds.
             insert_pos = len(lines)
             for i, line in enumerate(lines):
                 if line.strip() == "[[stream.fallback]]":
@@ -512,6 +635,21 @@ def set_notification_field(key: str, value: str) -> None:
     contro l'insieme delle chiavi note: la funzione accetta un valore che
     finisce in un file TOML, e una chiave iniettata dall'estensione
     finirebbe per ridefinire un'intera tabella.
+
+    Writes a boolean key inside [notifications], exactly as
+    TomlBoolEditor.writeBool() did in prefs.js.
+
+    P5: prefs.js wrote config.toml with `_readText` + `replace` +
+    `replace_contents`, WITHOUT config_editor's lock: two writers, only one
+    with the lock. The loss was real and measured — a streaming save just made
+    was silently undone by a click on a notification switch, with no error or
+    warning (logError would only fire on IOException).
+
+    Here the same write goes through the lock, and it also inherits the
+    tomllib validation that writeBool did not have. The key name is validated
+    against the set of known keys: the function accepts a value that ends up
+    in a TOML file, and a key injected by the extension would end up
+    redefining a whole table.
     """
     if key not in NOTIFICATION_KEYS:
         raise ConfigEditorError(f"Unknown notification key: {key}")
@@ -521,6 +659,8 @@ def set_notification_field(key: str, value: str) -> None:
         if not any(line.strip() == "[notifications]" for line in lines):
             # Sezione assente (config legacy): creala, come fa
             # set_section_field per le sezioni di servizio.
+            # Section missing (legacy config): create it, as set_section_field does for
+            # the service sections.
             lines.extend(["", "[notifications]", f"{key} = {normalized}"])
             _write_validated(lines)
             return
@@ -528,6 +668,9 @@ def set_notification_field(key: str, value: str) -> None:
         # Chiave nuova in una tabella esistente: si inserisce nel blocco, non
         # si solleva (stessa scelta di set_stream_field). Regex propria
         # (`\s*=`, non `\s*=\s.*$`): preservata, vedi docstring dell'helper.
+        # New key in an existing table: it is inserted in the block, not raised
+        # (same choice as set_stream_field). Own regex (`\s*=`, not `\s*=\s.*$`):
+        # preserved, see the helper's docstring.
         _find_or_insert_key_in_block(
             lines, start, end, key, normalized,
             key_regex=rf"^{re.escape(key)}\s*=",
@@ -541,6 +684,9 @@ def set_history_max_entries(value: str) -> None:
         # P5: stessa creazione di set_storage_field — la tabella [history]
         # assente faceva sollevare _find_block_bounds e la modifica finiva in
         # un errore silenzioso dal punto di vista dell'utente.
+        # P5: same creation as set_storage_field — the missing [history] table made
+        # _find_block_bounds raise and the change ended in an error silent from the
+        # user's point of view.
         if not any(line.strip() == "[history]" for line in lines):
             lines.extend(["", "[history]",
                           f"max_entries = {_toml_line_value('max_entries', value)}"])
@@ -554,6 +700,10 @@ def set_history_max_entries(value: str) -> None:
 # Impostazioni generali (sezioni singole, non servizi): ogni campo con il suo
 # tipo e i limiti che la GUI puo' proporre. `sample_rate` e' un ELENCO chiuso:
 # libopus accetta solo 8/12/16/24/48 kHz e ffmpeg rifiuta gli altri (44100).
+# General settings (single sections, not services): each field with its
+# type and the limits the GUI can propose. `sample_rate` is a closed LIST:
+# libopus only accepts 8/12/16/24/48 kHz and ffmpeg rejects the others
+# (44100).
 GENERAL_FIELDS: dict[tuple[str, str], tuple] = {
     ("general", "notifications"): ("bool",),
     ("general", "clipboard_tool"): ("tool",),
@@ -622,6 +772,9 @@ def _general_toml_value(section: str, field: str, value: str) -> str:
         return str(choice)
     # "tool": un solo eseguibile (subprocess.run([tool]) senza shell): niente
     # vuoto ne' spazi/argomenti, altrimenti ogni copia negli appunti fallirebbe.
+    # "tool": a single executable (subprocess.run([tool]) without a shell): no
+    # empty value nor spaces/arguments, otherwise every copy to the clipboard
+    # would fail.
     tool = str(value).strip()
     if not tool or any(ch.isspace() for ch in tool):
         raise ConfigEditorError(f"{label} must be a single executable name or path, got {value!r}")
@@ -630,7 +783,11 @@ def _general_toml_value(section: str, field: str, value: str) -> str:
 
 def set_general_field(section: str, field: str, value: str) -> None:
     """Scrive un campo di [general]/[audio]/[clipboard], validato e clampato
-    secondo GENERAL_FIELDS. La sezione assente viene creata."""
+    secondo GENERAL_FIELDS. La sezione assente viene creata.
+
+    Writes a field of [general]/[audio]/[clipboard], validated and clamped
+    according to GENERAL_FIELDS. A missing section is created.
+    """
     if (section, field) not in GENERAL_FIELDS:
         raise ConfigEditorError(f"Unknown general field: {section}.{field}")
     toml_value = _general_toml_value(section, field, value)
@@ -683,6 +840,9 @@ def set_icon_field(slot: str, value: str) -> None:
         # skip_trailing_blank=False: unico sito che inserisce sempre a `end`
         # senza saltare una riga vuota finale. Preservato, non uniformato
         # (vedi docstring dell'helper).
+        # skip_trailing_blank=False: the only site that always inserts at `end`
+        # without skipping a trailing empty line. Preserved, not made uniform (see
+        # the helper's docstring).
         _find_or_insert_key_in_block(
             lines, start, end, slot, _toml_line_value(slot, value),
             skip_trailing_blank=False,
@@ -703,6 +863,9 @@ def get_state() -> dict:
         # timeout_seconds mancante (config.toml modificato a mano) deve
         # restituire un numero valido, non "": stesso default di config.py,
         # altrimenti un SpinRow lato prefs.js legge NaN/0 in silenzio.
+        # A missing timeout_seconds (hand-edited config.toml) must return a valid
+        # number, not "": same default as config.py, otherwise a SpinRow on the
+        # prefs.js side silently reads NaN/0.
         levels = [
             {f: str(entry.get(f, 60 if f == "timeout_seconds" else "")) for f in LEVEL_FIELDS}
             for entry in raw.get(key, {}).get("fallback", [])
@@ -807,11 +970,20 @@ def get_state() -> dict:
             # _coerce_int come fa la riga 528 di config.py, altrimenti la GUI
             # dichiarerebbe "fino a 1 worker" mentre il backend calcola 3xN e la
             # nota "il tetto dei worker e' automatico" non comparirebbe mai.
+            # Same rule as config.py (StreamConfig.max_concurrent_chunks_auto): 0 or
+            # MISSING key = AUTO, 1..8 = explicit override, 9+ clamped to 8 (=
+            # explicit, not auto). No second criterion: here _coerce_int is reused as
+            # line 528 of config.py does, otherwise the GUI would declare "up to 1
+            # worker" while the backend computes 3xN and the note "the worker cap is
+            # automatic" would never appear.
             "max_concurrent_chunks_auto": _coerce_int(raw.get("stream", {}).get("max_concurrent_chunks"), 0, 0, 8) == 0,
             "chunk_timeout_seconds": raw.get("stream", {}).get("chunk_timeout_seconds", 30.0),
             # 0 o chiave ASSENTE = default del modulo chunk_log (2000 righe).
             # Stessa regola di max_concurrent_chunks: il default lo decide chi
             # scrive il file, non un secondo criterio qui.
+            # 0 or MISSING key = default of the chunk_log module (2000 lines). Same
+            # rule as max_concurrent_chunks: the default is decided by whoever writes
+            # the file, not by a second criterion here.
             "chunk_log_max_lines": _coerce_int(
                 raw.get("stream", {}).get("chunk_log_max_lines"), 0, 0, 1_000_000),
             "endpoint_cooldown_seconds": _coerce_float_clamped(
@@ -823,6 +995,8 @@ def get_state() -> dict:
                 raw.get("stream", {}).get("vad_min_floor_frames"), 20, 5, 200),
             # I config pre-stream non hanno [[stream.fallback]]. Mostra comunque
             # tre righe editabili; set_level_field materializza i blocchi.
+            # Pre-stream configs have no [[stream.fallback]]. Three editable rows are
+            # shown anyway; set_level_field materializes the blocks.
             "levels": levels_of("stream", minimum=3),
         },
         "icons": {
@@ -859,6 +1033,8 @@ def main(argv: list[str] | None = None) -> int:
             if field == "api_key" and value == "-":
                 # P2 (giro 14): prefs.js passa '-' e manda l'api_key su stdin
                 # invece che come argv, non leggibile via /proc/PID/cmdline.
+                # P2 (round 14): prefs.js passes '-' and sends the api_key on stdin instead
+                # of as argv, not readable via /proc/PID/cmdline.
                 value = sys.stdin.readline().rstrip("\n")
             set_level_field(service, int(idx), field, value)
             print("ok")

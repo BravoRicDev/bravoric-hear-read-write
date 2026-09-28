@@ -1,4 +1,7 @@
-"""Caricamento configurazione modulare (fail-fast su config mancante)."""
+"""Caricamento configurazione modulare (fail-fast su config mancante).
+
+Modular configuration loading (fail-fast on a missing config).
+"""
 from __future__ import annotations
 
 import math
@@ -18,7 +21,11 @@ _CONFIG_DIR = Path(__file__).resolve().parents[2] / "config"
 
 def _example_config_path() -> Path:
     """Fallback usato solo se scripts/install.sh non ha ancora creato la
-    config utente. Stessa logica di rilevamento lingua di install.sh."""
+    config utente. Stessa logica di rilevamento lingua di install.sh.
+
+    Fallback used only if scripts/install.sh has not created the user config
+    yet. Same language-detection logic as install.sh.
+    """
     lang = os.environ.get("LANGUAGE") or os.environ.get("LC_ALL") \
         or os.environ.get("LC_MESSAGES") or os.environ.get("LANG") or ""
     if lang.startswith("it"):
@@ -44,6 +51,13 @@ class ConfigError(RuntimeError):
 # Il testo e' quello italiano gia' presente in config/config.example.it.toml
 # (riga [stt].prompt). Una riga sola da cambiare se si preferisce un'altra
 # lingua.
+# P3: DEFAULT prompt applied when the `prompt` key is missing OR empty, in
+# [stt] and in [stream]. The text lives here, in the CODE, and not only in
+# the example files: whoever writes a config by hand (or the GUI, which can
+# rewrite prompt = "") inherited no context, and without context `prompt`
+# did not travel and the vocabulary branch never started. The text is the
+# Italian one already present in config/config.example.it.toml ([stt].prompt
+# line). One single line to change if another language is preferred.
 DEFAULT_PROMPT = (
     "Contesto di dettatura in italiano. Trascrivi fedelmente le parole pronunciate, "
     "mantenendo nomi propri, termini tecnici e la lingua originale; usa punteggiatura "
@@ -67,6 +81,11 @@ class FallbackLevel:
     # test-backend.py:1540 -> FallbackLevel(..., 1, True) dove True e'
     # hotwords_in_prompt. Inserirlo qui farebbe silenziosamente attribuire
     # quell'argomento a `parallel` (vedi CONTRATTO-PARALLEL sez. 2).
+    # Appended at the TAIL (not after timeout_seconds) so as not to move
+    # hotwords_in_prompt, which the tests build by position:
+    # test-backend.py:1540 -> FallbackLevel(..., 1, True) where True is
+    # hotwords_in_prompt. Inserting it here would silently make that argument
+    # be attributed to `parallel` (see CONTRATTO-PARALLEL sec. 2).
     parallel: bool = False
     # Slot CONCORRENTI per endpoint, appendesi in CODA dopo `parallel`
     # (SPEC-MAX-CONCURRENCY sez. "Campi"): vale per TUTTI i livelli, non solo
@@ -79,6 +98,17 @@ class FallbackLevel:
     # "sequential" e con auto a zero livelli paralleli. Non cambia pero' il
     # numero di worker, che resta quello di max_concurrent_chunks: il gate
     # LIMITA, non autorizza concorrenza.
+    # CONCURRENT slots per endpoint, appended at the TAIL after `parallel`
+    # (SPEC-MAX-CONCURRENCY sec. "Fields"): it applies to ALL levels, not only
+    # to those with parallel = true. It is not a global worker counter:
+    # whisper.cpp serializes behind an internal mutex, so declaring the slots
+    # makes explicit what is gained and what is not. Clamp 1..8, default 3,
+    # NEVER AUTO. Also in the sequential path it is the cap of simultaneous
+    # requests per endpoint: the gate is applied by the chain over the whole
+    # list of levels, so the number also holds with dispatch_mode =
+    # "sequential" and with auto and zero parallel levels. It does not change
+    # the number of workers though, which stays that of max_concurrent_chunks:
+    # the gate LIMITS, it does not authorize concurrency.
     max_concurrency: int = 3
 
     def resolved_api_key(self) -> str:
@@ -112,6 +142,21 @@ def endpoint_key(level: FallbackLevel) -> str:
     chiavi: il breaker si spacca in due, un endpoint rotto sfugge al cooldown e
     le due sue occorrenze non si escludono a vicenda. Stessa normalizzazione di
     api_client.py, cosi' la funzione resta la fonte unica anche per stream.py.
+
+    Stable identity key of an endpoint (CONTRATTO-PARALLEL sec. 1).
+
+    Do NOT use host:port alone: levels 1 and 2 of the user config are BOTH
+    `http://10.9.0.2:4001/v1` with different models, so a host:port key would
+    collapse two independent levels and a single failure would exclude both.
+    Single source for breaker, lease and persistence.
+
+    The `rstrip("/")` is applied BEFORE the join, not after: normalizing the
+    whole key would let the trailing slash stay in the model and would produce
+    `h:4001/v1|model/` instead of `h:4001/v1|model`. Without this
+    normalization `http://h:4001/v1` and `http://h:4001/v1/` would be TWO
+    keys: the breaker splits in two, a broken endpoint escapes the cooldown and
+    its two occurrences do not exclude each other. Same normalization as
+    api_client.py, so the function stays the single source for stream.py too.
     """
     return f"{level.endpoint.rstrip('/')}|{level.model}"
 
@@ -136,7 +181,10 @@ class CleanupConfig:
 
 @dataclass
 class STTConfig:
-    """Sezione [stt]: configurazione della trascrizione STT."""
+    """Sezione [stt]: configurazione della trascrizione STT.
+
+    [stt] section: configuration of the STT transcription.
+    """
     language: str = "it"
     prompt: str = DEFAULT_PROMPT
     hotwords: str = ""
@@ -151,6 +199,13 @@ STREAM_MODES = ("at_end", "per_chunk")
 # "sequential" IGNORA tutti i flag per-livello e usa la catena sequenziale su
 # TUTTI i livelli. Non e' l'inverso di `FallbackLevel.parallel`: quel flag dice
 # "partecipa al pool", questo dice "usa il pool, o no".
+# GLOBAL switch of the per-chunk path. "auto" is the default and is exactly
+# the behavior from before the toggle: if at least one level has
+# `parallel = true` the dispatcher starts, otherwise it degrades to
+# sequential. "sequential" IGNORES all the per-level flags and uses the
+# sequential chain over ALL levels. It is not the inverse of
+# `FallbackLevel.parallel`: that flag says "take part in the pool", this one
+# says "use the pool, or not".
 STREAM_DISPATCH_MODES = ("auto", "sequential")
 
 
@@ -241,7 +296,10 @@ def _parse_stream_commands(raw: object) -> list[StreamCommand]:
 
 @dataclass
 class StreamConfig:
-    """Sezione [stream]: dettatura con incolla diretto (feature sperimentale)."""
+    """Sezione [stream]: dettatura con incolla diretto (feature sperimentale).
+
+    [stream] section: dictation with direct paste (experimental feature).
+    """
     mode: Literal["at_end", "per_chunk"]
     silence_seconds: float
     noise_db: float
@@ -257,6 +315,9 @@ class StreamConfig:
     chunk_timeout_seconds: float = 30.0
     # Margine (dB) sopra il noise floor adattivo stimato dal VAD. Appeso in
     # coda per non spostare i campi posizionali già usati dai test/costruttori.
+    # Margin (dB) above the adaptive noise floor estimated by the VAD. Appended
+    # at the tail so as not to move the positional fields already used by
+    # tests/constructors.
     vad_margin_db: float = 6.0
     commands: list[StreamCommand] = field(default_factory=list)
     paste_shortcut: str = "ctrl+v"
@@ -267,18 +328,32 @@ class StreamConfig:
     # ("StreamConfig positional keeps appended-field defaults") e NON diventa 0.
     # "Sono in AUTO" e' questo flag; il parser lo imposta True quando la chiave
     # e' assente o vale 0, lasciando max_concurrent_chunks == 0 (lo=0).
+    # --- fields appended at the TAIL (vad_margin_db above is the previous one) ---
+    # max_concurrent_chunks stays 3 by default: it is pinned by test-backend.py
+    # ("StreamConfig positional keeps appended-field defaults") and does NOT
+    # become 0. "We are in AUTO" is this flag; the parser sets it to True when
+    # the key is missing or is 0, leaving max_concurrent_chunks == 0 (lo=0).
     max_concurrent_chunks_auto: bool = False
     # 0 = breaker disabilitato. Valore non finito/non parsabile -> 3600.0.
+    # 0 = breaker disabled. Non-finite/unparsable value -> 3600.0.
     endpoint_cooldown_seconds: float = 3600.0
     # Interruttore globale parallelo/sequenziale, APPESO IN CODA dopo
     # endpoint_cooldown_seconds per non spostare nessun campo posizionale
     # (StreamConfig e' costruito per posizione dai test). Default "auto" =
     # retrocompatibilita' esatta con la config di oggi.
+    # Global parallel/sequential switch, APPENDED AT THE TAIL after
+    # endpoint_cooldown_seconds so as not to move any positional field
+    # (StreamConfig is built by position by the tests). Default "auto" = exact
+    # backward compatibility with today's config.
     dispatch_mode: str = "auto"
     # Ritenzione del log JSONL dei chunk, in RIGHE (non in orari: il file e'
     # uno strumento di debug, non un archivio). 0 o chiave assente = default
     # del modulo chunk_log (2000). APPESA IN CODA per non spostare i campi
     # posizionali, come tutti i campi aggiunti dopo.
+    # Retention of the JSONL chunk log, in LINES (not in time: the file is a
+    # debugging tool, not an archive). 0 or missing key = the default of the
+    # chunk_log module (2000). APPENDED AT THE TAIL so as not to move the
+    # positional fields, like all the fields added later.
     chunk_log_max_lines: int = 0
     # Ex costanti di modulo, ora regolabili (GUI: pagina Streaming).
     # Former module constants, now tunable (GUI: Streaming page).
@@ -308,6 +383,10 @@ class ServiceNotifications:
     # Notifiche). Default True = comportamento di sempre per chi non li
     # ha nel config.toml. `recording_start` vale per stt, `session_end`
     # per stream: per gli altri servizi restano inerti.
+    # Every backend notification has its own switch (GUI: Notifications page).
+    # Default True = behavior as always for whoever does not have them in
+    # config.toml. `recording_start` applies to stt, `session_end` to stream:
+    # for the other services they stay inert.
     error: bool = True
     recording_start: bool = True
     session_end: bool = True
@@ -394,6 +473,9 @@ class Config:
     # Se True, OCR scatta prima uno screenshot interattivo (gnome-screenshot
     # -a) invece di leggere un'immagine già presente in clipboard. Default
     # False: comportamento di sempre, invariato per chi non lo attiva.
+    # If True, OCR first takes an interactive screenshot (gnome-screenshot -a)
+    # instead of reading an image already in the clipboard. Default False:
+    # behavior as always, unchanged for whoever does not enable it.
     ocr_capture_screenshot: bool = False
     # Ex costanti di modulo ora regolabili da config.toml e GUI (pagina
     # General). Default = valori di sempre. APPESI in coda (Config e'
@@ -407,6 +489,7 @@ class Config:
     cleanup_min_length_ratio: float = 0.7         # 0 = nessun controllo / no check
     screenshot_timeout_seconds: float = 120.0     # selezione area / area selection
     # Retrocompatibilità: stt_fallback è un alias di stt.fallback
+    # Backward compatibility: stt_fallback is an alias of stt.fallback
     stt_fallback: list[FallbackLevel] = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
@@ -422,6 +505,9 @@ def _parse_fallback_list(raw: list[dict]) -> list[FallbackLevel]:
             # OverflowError: un `timeout_seconds = inf` in TOML fa sollevare
             # int() con OverflowError (non una ValueError) e il livello non
             # veniva costruito. Stessa risposta degli altri due casi: default.
+            # OverflowError: a `timeout_seconds = inf` in TOML makes int() raise
+            # OverflowError (not a ValueError) and the level was not built. Same answer
+            # as the other two cases: default.
             timeout = 60
         if timeout <= 0:
             timeout = 60
@@ -460,6 +546,19 @@ def _coerce_bool(raw: object) -> bool:
     rispettare FINAL-PLAN-PARALLEL sez. D, test 3 (`parallel = "yes"` ->
     False). I due campi restano coerenti sui casi che contano davvero: il
     bool vero e False, e le stringhe "false"/"0" che non diventano mai True.
+
+    Converts a TOML value to bool without ever applying Python truthiness.
+
+    `bool("false")` is True: a wrong string would enable the parallel level
+    (and with it the dispatcher) for a simple typo. We accept only the
+    explicit truth tokens; everything else (float, "yes", "on", empty strings,
+    None, lists) stays False.
+
+    Note: the coercion of `context_enabled` also accepts "yes"; this one does
+    not, to respect FINAL-PLAN-PARALLEL sec. D, test 3 (`parallel = "yes"` ->
+    False). The two fields stay consistent on the cases that really matter:
+    the true bool and False, and the strings "false"/"0" that never become
+    True.
     """
     if isinstance(raw, bool):
         return raw
@@ -471,7 +570,10 @@ def _coerce_bool(raw: object) -> bool:
 
 
 def _coerce_int(raw: object, default: int, lo: int, hi: int) -> int:
-    """Converte un valore TOML in int, con fallback e clamp sui limiti."""
+    """Converte un valore TOML in int, con fallback e clamp sui limiti.
+
+    Converts a TOML value to int, with fallback and clamp to the limits.
+    """
     try:
         value = int(raw)  # type: ignore[call-overload]  # pyright: ignore[reportArgumentType]
     except (TypeError, ValueError):
@@ -482,6 +584,12 @@ def _coerce_int(raw: object, default: int, lo: int, hi: int) -> int:
     # traceback grezzo invece di diventare ConfigError (misurato: 2 righe,
     # [stream].max_concurrent_chunks = inf e [stream].paste_delay_ms = inf).
     # `nan` solleva invece ValueError, gia' coperto sopra.
+    # OverflowError: TOML allows `inf`, `nan`, `inf` and `-inf` as float.
+    # int(float('inf')) raises OverflowError, which is NOT a ValueError: without
+    # this branch it escaped the try and crossed load_config() as a raw
+    # traceback instead of becoming ConfigError (measured: 2 lines,
+    # [stream].max_concurrent_chunks = inf and [stream].paste_delay_ms = inf).
+    # `nan` raises ValueError instead, already covered above.
     except OverflowError:
         return default
     return max(lo, min(hi, value))
@@ -506,6 +614,25 @@ def _coerce_max_concurrency(raw: object, default: int, lo: int, hi: int) -> int:
     round-trip prefs.js -> config.toml senza avvisare. Il confronto resta
     esplicito, mai `bool(str)`: in Python `bool("false")` e' True, trappola
     gia' pagata su `parallel`.
+
+    STRICT coercion of the number of slots per endpoint (SPEC-MAX-CONCURRENCY).
+
+    Unlike `_coerce_int`, which would accept `int(3.9) == 3` and
+    `int(True) == 1`, here a non-integer value is a config error and goes back
+    to the default instead of being silently truncated:
+
+      missing / "" / "x" / float / NaN / inf / bool  -> default
+      integer 1..8 respected, <1 -> lo, >8 -> hi
+
+    `bool` is not a valid integer: in TOML `max_concurrency = true` is a typo,
+    not "an endpoint that accepts 1 request".
+
+    Numeric strings ARE accepted because the GUI path writes
+    `max_concurrency = "3"` (config_editor._toml_line_value quotes every field
+    not explicitly listed): rejecting them would break the
+    prefs.js -> config.toml round trip without warning. The comparison stays
+    explicit, never `bool(str)`: in Python `bool("false")` is True, a trap
+    already paid for on `parallel`.
     """
     if isinstance(raw, bool):
         return default
@@ -513,6 +640,7 @@ def _coerce_max_concurrency(raw: object, default: int, lo: int, hi: int) -> int:
         return max(lo, min(hi, raw))
     if isinstance(raw, float):
         # float/NaN/inf non sono slot: intero solo se matematicamente esatto.
+        # float/NaN/inf are not slots: integer only if mathematically exact.
         if not math.isfinite(raw) or not raw.is_integer():
             return default
         return max(lo, min(hi, int(raw)))
@@ -531,7 +659,12 @@ def _coerce_max_concurrency(raw: object, default: int, lo: int, hi: int) -> int:
 def _coerce_float_clamped(raw: object, default: float, lo: float, hi: float) -> float:
     """Converte un valore TOML in float con fallback, clamp [lo, hi] e guardia
     NaN/infinito. Valore invalido o non finito -> default; valore finito ->
-    clampato nell'intervallo."""
+    clampato nell'intervallo.
+
+    Converts a TOML value to float with fallback, clamp [lo, hi] and a NaN/
+    infinity guard. Invalid or non-finite value -> default; finite value ->
+    clamped into the range.
+    """
     try:
         value = float(raw)  # type: ignore[arg-type]  # pyright: ignore[reportArgumentType]
     except (TypeError, ValueError):
@@ -542,7 +675,10 @@ def _coerce_float_clamped(raw: object, default: float, lo: float, hi: float) -> 
 
 
 def _parse_stt_config(raw_stt: dict) -> STTConfig:
-    """Parse la sezione [stt] del TOML, con supporto legacy."""
+    """Parse la sezione [stt] del TOML, con supporto legacy.
+
+    Parses the [stt] section of the TOML, with legacy support.
+    """
     language = str(raw_stt.get("language", "it"))
     # P3: la chiave manca O e' vuota -> default. Serve qui, non solo sul
     # dataclass: `raw.get("prompt", "")` passava "" esplicito e SOSTITUIVA
@@ -555,6 +691,17 @@ def _parse_stt_config(raw_stt: dict) -> STTConfig:
     # ("se l'utente non ha impostato un prompt, si usa quello di default"):
     # il caso "nessun prompt" e' il caso normale, non l'eccezione, e per
     # disattivare il contesto esiste gia' context_enabled=false.
+    # P3: the key is missing OR empty -> default. It is needed here, not only on
+    # the dataclass: `raw.get("prompt", "")` passed an explicit "" and REPLACED
+    # the dataclass default, making it empty exactly in the case the default was
+    # meant to cover (hand-written config, or prefs.js rewriting prompt = "").
+    # Hence `or DEFAULT_PROMPT`: empty or missing string both fall on the
+    # default. Note on the tradeoff: after this, there is no longer a way to SAY
+    # "no context" with prompt = "" (the key has to be removed, which however
+    # brings back the default). It is the choice of the brief ("if the user has
+    # not set a prompt, the default one is used"): the "no prompt" case is the
+    # normal case, not the exception, and to disable the context there is
+    # already context_enabled=false.
     prompt = str(raw_stt.get("prompt") or DEFAULT_PROMPT)
     hotwords = str(raw_stt.get("hotwords", ""))
     fallback = _parse_fallback_list(raw_stt.get("fallback", []))
@@ -588,6 +735,10 @@ def _build_config(raw: dict) -> Config:
         # meglio un errore LOCALE e leggibile che un fallback silenzioso a un
         # comportamento diverso da quello richiesto. L'assenza della chiave
         # resta "auto" (comportamento di oggi).
+        # dispatch_mode: same treatment as `mode` — an out-of-enum value would make
+        # the config unloadable for the whole plugin, so a LOCAL and readable error
+        # is better than a silent fallback to a behavior different from the one
+        # requested. A missing key stays "auto" (today's behavior).
         dispatch_mode = stream_raw.get("dispatch_mode", "auto")
         if not isinstance(dispatch_mode, str) or dispatch_mode not in STREAM_DISPATCH_MODES:
             raise ValueError(
@@ -601,10 +752,18 @@ def _build_config(raw: dict) -> Config:
         # costruttore/manuale conserva la semantica fissa di oggi. 1..8 e'
         # override esplicito, 9+ viene clampato a 8. Valore non parsabile
         # (es. "abc") cade sul default 0 -> AUTO.
+        # max_concurrent_chunks: lo=0 because 0 (or a missing key) means AUTOMATIC.
+        # The raw value 0 stays 0 and is marked by the flag:
+        # StreamConfig.max_concurrent_chunks stays 3 as default, so a
+        # constructor/manual use keeps today's fixed semantics. 1..8 is an explicit
+        # override, 9+ is clamped to 8. An unparsable value (e.g. "abc") falls on
+        # the default 0 -> AUTO.
         max_chunks_raw = _coerce_int(stream_raw.get("max_concurrent_chunks"), 0, 0, 8)
 
         # Gestione legacy: se [stt] non esiste ma c'è [[stt.fallback]],
         # usa i default per language/prompt/hotwords e popola fallback.
+        # Legacy handling: if [stt] does not exist but [[stt.fallback]] does, use
+        # the defaults for language/prompt/hotwords and populate fallback.
         stt_cfg = _parse_stt_config(stt_raw) if stt_raw else STTConfig(
             language="it", prompt="", hotwords="",
             fallback=_parse_fallback_list(raw.get("stt", {}).get("fallback", [])),
@@ -629,6 +788,7 @@ def _build_config(raw: dict) -> Config:
                     content=notif_raw.get(f"{prefix}_on_cleanup_ready_content", True),
                 ),
                 # _coerce_bool: la stringa "false" e' truthy in Python.
+                # _coerce_bool: the string "false" is truthy in Python.
                 error=_coerce_bool(notif_raw.get(f"{prefix}_on_error", True)),
                 recording_start=_coerce_bool(notif_raw.get(f"{prefix}_on_recording_start", True)),
                 session_end=_coerce_bool(notif_raw.get(f"{prefix}_on_session_end", True)),
@@ -664,6 +824,10 @@ def _build_config(raw: dict) -> Config:
             # in Python e attiverebbe l'apertura di gnome-screenshot ad ogni
             # pressione per un refuso (o per un config.toml scritto prima
             # che config_editor serializzasse questo campo come bool vero).
+            # _coerce_bool, not the raw value: the string "false" is truthy in Python
+            # and would enable opening gnome-screenshot on every press because of a
+            # typo (or because of a config.toml written before config_editor serialized
+            # this field as a real bool).
             ocr_capture_screenshot=_coerce_bool(ocr_raw.get("capture_screenshot", False)),
             clipboard_timeout_seconds=_coerce_float_clamped(
                 general.get("clipboard_timeout_seconds"), 5.0, 1.0, 60.0),
@@ -686,6 +850,10 @@ def _build_config(raw: dict) -> Config:
                 # svuotato) diventerebbe Path("") = cwd del processo, cioe' di
                 # norma $HOME: audio e testo dettato salvati alla rinfusa li',
                 # in silenzio. Assente e vuoto cadono entrambi sul default.
+                # `or DEFAULT`: an explicit empty string (hand-written config, emptied
+                # field) would become Path("") = the process cwd, i.e. normally $HOME:
+                # audio and dictated text saved haphazardly there, silently. Missing and
+                # empty both fall on the default.
                 base_dir=(str(storage_raw.get("base_dir", "")).strip() or DEFAULT_STORAGE_BASE_DIR),
                 stt_original=retention("stt_original"),
                 stt_raw=retention("stt_raw"),
@@ -758,6 +926,11 @@ def _build_config(raw: dict) -> Config:
         # tra la costruzione e questo punto muta cfg.stt.fallback, quindi una
         # seconda assegnazione qui era una riassegnazione ridondante dello
         # stesso valore, non una risincronizzazione.
+        # cfg.stt_fallback is already set by __post_init__ (lines 374-375),
+        # executed automatically during Config(...) above: no line between the
+        # construction and this point mutates cfg.stt.fallback, so a second
+        # assignment here was a redundant reassignment of the same value, not a
+        # resynchronization.
         return cfg
     # OverflowError entra nell'elenco perche' TOML accetta `inf`/`-inf` come
     # float e int(inf) solleva OverflowError, che non e' una ValueError:
@@ -768,6 +941,15 @@ def _build_config(raw: dict) -> Config:
     # _parse_fallback_list); qui la rete di sicurezza e' per gli int() che
     # restano scoperti, cosi' l'utente riceve un errore di config leggibile
     # invece di una stack trace.
+    # OverflowError is in the list because TOML accepts `inf`/`-inf` as float
+    # and int(inf) raises OverflowError, which is not a ValueError: without it,
+    # six fields (measured: paste_delay_ms, history.max_entries,
+    # audio.sample_rate/bitrate_kbps/retry_count and a level's timeout_seconds)
+    # produced a raw traceback instead of ConfigError. The values are already
+    # protected at the source where a fallback makes sense (_coerce_int,
+    # _parse_fallback_list); here the safety net is for the int() calls that
+    # remain uncovered, so the user gets a readable config error instead of a
+    # stack trace.
     except (ValueError, TypeError, AttributeError, KeyError, OverflowError) as exc:
         raise ConfigError(
             _("Invalid value in config: {exc}").format(exc=exc)
