@@ -17,6 +17,9 @@ ICON_READY = "edit-copy-symbolic"
 # Icone custom per servizio/fase (fotocamera=OCR, microfono=STT; avvio=stile
 # neutro, grezzo=legno, pulito=cyberpunk). Bundlate nel pacchetto Python
 # (non nel checkout git) per restare portabili dopo `pip install`.
+# Custom icons per service/phase (camera=OCR, microphone=STT; start=neutral
+# style, raw=wood, clean=cyberpunk). Bundled in the Python package (not in
+# the git checkout) to stay portable after `pip install`.
 ICONS_DIR = Path(__file__).resolve().parent / "icons"
 _PACKAGED_DEFAULTS = {
     "stt_start": "mic-neutral.png", "stt_raw": "mic-wood.png",
@@ -32,7 +35,13 @@ _FALLBACKS = {
 
 
 def resolve_icon(slot: str, override: str = "") -> str:
-    """Resolve a registered slot: valid user override, packaged asset, theme icon.
+    """Risolve uno slot registrato: override valido dell'utente, risorsa inclusa
+    nel pacchetto, icona del tema.
+
+    I percorsi utente errati o mancanti ricadono volutamente sul livello
+    successivo e non sono mai fatali.
+
+    Resolve a registered slot: valid user override, packaged asset, theme icon.
 
     Bad/missing user paths intentionally fall through and are never fatal.
     """
@@ -85,6 +94,16 @@ def send(title: str, body: str = "", icon: str = ICON_READY) -> None:
     # Timeout come per wl-copy/wl-paste (B26): senza, un server di notifiche
     # che non risponde blocca notify-send sul timeout D-Bus e con lui il
     # flusso chiamante. TimeoutExpired NON e' un OSError.
+    # B27a: uses -- so that a title starting with `-` is not interpreted as an
+    # option of notify-send. It must come AFTER the real options (-i): before
+    # -i, GOption stops recognizing options and -i itself becomes the first
+    # positional argument (SUMMARY) — real bug, reproduced live: every
+    # notification failed silently (exit 1).
+    # B27b: catches OSError (not only FileNotFoundError) so that a notify
+    # failure does not interrupt the main flow.
+    # Timeout as for wl-copy/wl-paste (B26): without it, a notification server
+    # that does not answer blocks notify-send on the D-Bus timeout, and the
+    # calling flow with it. TimeoutExpired is NOT an OSError.
     with contextlib.suppress(OSError, subprocess.TimeoutExpired):
         subprocess.run(["notify-send", "-i", icon, "--", title, body], check=False, timeout=_send_timeout_seconds)
 

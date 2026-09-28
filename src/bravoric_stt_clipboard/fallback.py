@@ -1,4 +1,7 @@
-"""Catena di fallback: prova ogni livello in ordine finché uno risponde."""
+"""Catena di fallback: prova ogni livello in ordine finché uno risponde.
+
+Fallback chain: try each level in order until one answers.
+"""
 from __future__ import annotations
 
 import logging
@@ -31,6 +34,9 @@ def try_with_fallback(levels: list[FallbackLevel], call: Callable[[FallbackLevel
             # redact(): un errore requests include l'URL, e con un endpoint
             # del tipo ...?api_key=XXX la chiave finiva nel journal e, via
             # AllLevelsFailedError, in una notifica desktop (misurato).
+            # redact(): a requests error includes the URL, and with an endpoint like
+            # ...?api_key=XXX the key ended up in the journal and, via
+            # AllLevelsFailedError, in a desktop notification (measured).
             message = redact(str(exc))
             logger.warning("Level %s failed: %s", level.name, message)
             errors.append(f"{level.name}: {message}")

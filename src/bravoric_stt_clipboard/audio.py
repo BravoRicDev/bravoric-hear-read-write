@@ -1,4 +1,7 @@
-"""Registrazione microfono toggle (start/stop) in OGG/Opus via ffmpeg."""
+"""Registrazione del microfono a toggle (start/stop) in OGG/Opus via ffmpeg.
+
+Registrazione microfono toggle (start/stop) in OGG/Opus via ffmpeg.
+"""
 from __future__ import annotations
 
 import contextlib
@@ -19,7 +22,11 @@ logger = logging.getLogger(__name__)
 
 def _runtime_dir() -> Path:
     """XDG_RUNTIME_DIR è per-utente e privato (0700). Fallback: sottocartella
-    per-uid nella temp dir di sistema, per non condividere il lock tra utenti."""
+    per-uid nella temp dir di sistema, per non condividere il lock tra utenti.
+
+    XDG_RUNTIME_DIR is per-user and private (0700). Fallback: a per-uid
+    subfolder in the system temp dir, so the lock is not shared between users.
+    """
     base = os.environ.get("XDG_RUNTIME_DIR")
     if base:
         return Path(base) / "bravoric-stt-clipboard"
@@ -28,6 +35,7 @@ def _runtime_dir() -> Path:
 
 LOCK_PATH = _runtime_dir() / "recording.lock"
 # Sottostringhe attese nella cmdline del registratore (vedi pid_matches).
+# Substrings expected in the recorder's cmdline (see pid_matches).
 RECORDER_MARKERS = ("ffmpeg",)
 
 
@@ -40,7 +48,18 @@ def ensure_private_dir(path: Path) -> None:
     mkdir con umask la crea 0755 (WAV leggibili da altri utenti locali) e un
     nome prevedibile in /tmp puo' essere PRE-CREATO da un altro utente: senza
     controllo si scriverebbero lock e audio in casa sua. Symlink e directory
-    di un altro uid vengono rifiutate, non usate."""
+    di un altro uid vengono rifiutate, non usate.
+
+    Creates `path` (and its parents) and guarantees it is OURS and 0700.
+
+    Needed for the runtime directory: it holds the locks and, for streaming,
+    the WAVs with the user's VOICE. With XDG_RUNTIME_DIR (0700, per-user) it is
+    already protected; in the `<tmp>/bravoric-stt-clipboard-<uid>` fallback a
+    mkdir with umask creates it 0755 (WAVs readable by other local users) and
+    a predictable name in /tmp can be PRE-CREATED by another user: without a
+    check, locks and audio would be written into their home. Symlinks and
+    directories of another uid are rejected, not used.
+    """
     path.mkdir(mode=0o700, parents=True, exist_ok=True)
     info = path.lstat()
     if stat.S_ISLNK(info.st_mode) or not stat.S_ISDIR(info.st_mode):
@@ -52,7 +71,10 @@ def ensure_private_dir(path: Path) -> None:
 
 
 class ToggleDebouncedError(RuntimeError):
-    """Seconda pressione arrivata prima del debounce minimo: ignorata."""
+    """Seconda pressione arrivata prima del debounce minimo: ignorata.
+
+    Second press arrived before the minimum debounce: ignored.
+    """
 
 
 def _read_lock() -> dict | None:
@@ -66,6 +88,9 @@ def _read_lock() -> dict | None:
         return None
     # B3: valida che tutti i campi necessari siano presenti e del tipo corretto.
     # Un lock parziale/manomesso in stop_recording causerebbe KeyError/TypeError.
+    # B3: validates that all the needed fields are present and of the right
+    # type. A partial/tampered lock in stop_recording would cause
+    # KeyError/TypeError.
     try:
         pid = data["pid"]
         _ = data["started_at"]
@@ -78,6 +103,10 @@ def _read_lock() -> dict | None:
     # `time.time() - lock["started_at"]` in stop_recording (TypeError non
     # catturato); audio_path non-stringa farebbe fallire Path(). Trattali
     # come lock stale.
+    # A tampered/partial lock with a non-numeric started_at would make
+    # `time.time() - lock["started_at"]` fail in stop_recording (uncaught
+    # TypeError); a non-string audio_path would make Path() fail. Treat them as
+    # stale locks.
     started_at = data["started_at"]
     if isinstance(started_at, bool) or not isinstance(started_at, (int, float)):
         return None
@@ -89,7 +118,12 @@ def _read_lock() -> dict | None:
 def is_recording() -> bool:
     """Un lock con pid non più vivo è un residuo (ffmpeg morto/crash): va
     ripulito, altrimenti l'estensione resta convinta di stare registrando e la
-    pressione successiva non fa ripartire nulla."""
+    pressione successiva non fa ripartire nulla.
+
+    A lock whose pid is no longer alive is a leftover (ffmpeg dead/crashed):
+    it must be cleaned up, otherwise the extension stays convinced it is
+    recording and the next press restarts nothing.
+    """
     lock = _read_lock()
     if lock is None:
         return False
@@ -101,6 +135,13 @@ def is_recording() -> bool:
         # senso, e il tentativo e' innocuo solo per fortuna: non solleva, ma
         # non cancella nemmeno il .ogg vero). Lo stesso segnale che in
         # stop_recording, trattato uguale: si rimuove il lock e basta.
+        # B2: cleanup of the leftover audio file when ffmpeg dies/crashes. Without
+        # this fix, an .ogg file stays in /tmp forever. Empty audio_path = start-up
+        # window placeholder: there is no associated file, and Path("") is the cwd
+        # (deleting it makes no sense, and the attempt is harmless only by luck: it
+        # does not raise, but it does not delete the real .ogg either). The same
+        # signal as in stop_recording, treated the same way: only the lock is
+        # removed.
         if lock["audio_path"].strip():
             try:
                 Path(lock["audio_path"]).unlink(missing_ok=True)
@@ -118,11 +159,17 @@ def start_recording(audio_cfg: AudioConfig) -> Path:
     # fallisce immediatamente (il secondo toggle viene scartato).
     # Senza questo fix, due invocazioni concorrenti possono entrambe creare
     # un processo ffmpeg, con il primo che resta orfano.
+    # B1: atomic lock with O_CREAT|O_EXCL: if the lock already exists, the start
+    # fails immediately (the second toggle is discarded). Without this fix, two
+    # concurrent invocations can both create an ffmpeg process, with the first
+    # one left orphaned.
     try:
         fd = os.open(str(LOCK_PATH), os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
     except FileExistsError:
         # Lock presente: c'è già una registrazione in corso, o un lock residuo.
         # Verifica se il processo è vivo prima di decidere.
+        # Lock present: there is already a recording in progress, or a leftover
+        # lock. Check whether the process is alive before deciding.
         lock = _read_lock()
         if lock and _pid_alive(lock["pid"]):
             raise RuntimeError("Recording already in progress") from None
@@ -135,6 +182,11 @@ def start_recording(audio_cfg: AudioConfig) -> Path:
     # lock vuoto fino a dopo lo spawn di ffmpeg. Senza questo, un
     # start/stop_recording concorrente in quella finestra legge JSON vuoto,
     # lo tratta come lock stale e avvia un secondo ffmpeg orfano.
+    # P3 (round 12): write a valid placeholder right away (pid of the current
+    # process, alive for the whole start-up window) instead of leaving the lock
+    # empty until after the ffmpeg spawn. Without this, a concurrent
+    # start/stop_recording in that window reads empty JSON, treats it as a stale
+    # lock and starts a second orphan ffmpeg.
     os.write(fd, json.dumps({
         "pid": os.getpid(), "audio_path": "", "started_at": time.time(),
     }).encode())
@@ -156,6 +208,8 @@ def start_recording(audio_cfg: AudioConfig) -> Path:
     except Exception:
         # B9: se Popen fallisce (ffmpeg assente/errore), il file vuoto resta in
         # /tmp permanentemente. Rimuovilo prima di rilanciare l'eccezione.
+        # B9: if Popen fails (ffmpeg missing/error), the empty file stays in /tmp
+        # permanently. Remove it before re-raising the exception.
         out_path.unlink(missing_ok=True)
         os.close(fd)
         LOCK_PATH.unlink(missing_ok=True)
@@ -177,6 +231,17 @@ def start_recording(audio_cfg: AudioConfig) -> Path:
     # LOCK_PATH passa dal placeholder valido (scritto sopra, giro 12 P3) al
     # lock completo senza mai attraversare lo zero byte. Stesso pattern già
     # in uso in status._atomic_write_text e stream._atomic_write_json.
+    # B3 (round 3): the lock is no longer rewritten in place. The sequence
+    # lseek(0) + ftruncate(0) + write() left the file at ZERO BYTES for the
+    # whole window between the truncation and the write (~0.01 ms in practice,
+    # but a concurrent call can hit it): at that moment a concurrent toggle read
+    # '', _read_lock() returned None and the chain is_recording()->False + stop
+    # "No recording in progress" + a second ffmpeg started while the audio of
+    # the first was still open. Here the lock is serialized to a temporary file
+    # and published with os.replace, which is atomic: the LOCK_PATH path goes
+    # from the valid placeholder (written above, round 12 P3) to the full lock
+    # without ever crossing zero bytes. Same pattern already used in
+    # status._atomic_write_text and stream._atomic_write_json.
     tmp_fd, tmp_name = tempfile.mkstemp(dir=str(LOCK_PATH.parent),
                                         prefix=LOCK_PATH.name + ".",
                                         suffix=".tmp")
@@ -194,6 +259,8 @@ def start_recording(audio_cfg: AudioConfig) -> Path:
         # L'inode del placeholder non è più quello di LOCK_PATH (os.replace ha
         # pubblicato un inode nuovo): va chiuso o il fd resta aperto fino al
         # termine del processo.
+        # The placeholder's inode is no longer LOCK_PATH's (os.replace published a
+        # new inode): it must be closed or the fd stays open until the process ends.
         os.close(fd)
     return out_path
 
@@ -222,6 +289,18 @@ def stop_recording(audio_cfg: AudioConfig) -> Path:
     # La guardia sta qui e NON in _read_lock: li' il vuoto e' un segnale
     # LEGITTIMO (start_recording lo usa per rifiutare un secondo avvio), e
     # respingerlo farebbe partire un ffmpeg fantasma.
+    # B5: EMPTY audio_path = we are inside the start-up window. start_recording
+    # publishes that placeholder (Popen -> os.replace, ~1 s, the same as the
+    # default debounce) so that a concurrent toggle sees "recording in
+    # progress" and does not open a second ffmpeg; but here there is no file to
+    # return yet, and Path("") is NOT "no file": it is the working directory.
+    # Without this guard stop_recording returned the cwd and the transcription
+    # chain ended up on a directory (IsADirectoryError, toast "STT:
+    # transcription error", recording lost) leaving the real .ogg at 0 bytes in
+    # /tmp for the whole session, already under its final name. The guard lives
+    # here and NOT in _read_lock: there the empty value is a LEGITIMATE signal
+    # (start_recording uses it to refuse a second start), and rejecting it
+    # would start a phantom ffmpeg.
     if not lock["audio_path"].strip():
         LOCK_PATH.unlink(missing_ok=True)
         raise RuntimeError("No recording in progress")
@@ -230,6 +309,9 @@ def stop_recording(audio_cfg: AudioConfig) -> Path:
         # Lock stale con pid RIUSATO da un altro processo: non e' il nostro
         # ffmpeg, nessun segnale (SIGKILL compreso). Si prosegue come per un
         # ffmpeg gia' morto: lock rimosso e controllo del file sotto.
+        # Stale lock with a pid REUSED by another process: it is not our ffmpeg, no
+        # signal (SIGKILL included). We proceed as for an already dead ffmpeg: lock
+        # removed and file check below.
         logger.warning("lock di registrazione stale: il pid %d non e' ffmpeg, non lo segnalo", pid)
     elif _pid_alive(pid):
         with contextlib.suppress(ProcessLookupError):
@@ -239,6 +321,7 @@ def stop_recording(audio_cfg: AudioConfig) -> Path:
                 break
             time.sleep(0.1)
         # B4: fallback SIGTERM -> SIGKILL se il processo non muore dopo 5s.
+        # B4: SIGTERM -> SIGKILL fallback if the process does not die after 5 s.
         if _pid_alive(pid):
             logger.warning("ffmpeg PID %d still alive after SIGINT+5s, sending SIGTERM", pid)
             with contextlib.suppress(ProcessLookupError):
@@ -257,6 +340,9 @@ def stop_recording(audio_cfg: AudioConfig) -> Path:
                 time.sleep(0.1)
     # Il lock va SEMPRE rimosso, anche se ffmpeg è già morto: altrimenti la
     # registrazione successiva non parte più (toggle fantasma permanente).
+    # The lock must ALWAYS be removed, even if ffmpeg is already dead:
+    # otherwise the next recording never starts again (permanent phantom
+    # toggle).
     LOCK_PATH.unlink(missing_ok=True)
     # P1: un file a ZERO BYTE non è una registrazione. Il ramo normale (ffmpeg
     # vivo, chiuso con SIGINT) è proprio quello in cui il file è quasi certo
@@ -275,6 +361,22 @@ def stop_recording(audio_cfg: AudioConfig) -> Path:
     # file è sparito fra is_recording() e stop_recording() (misurato dal
     # reviewer come caso B): qui si richiede che il file ci sia E non sia
     # vuoto.
+    # P1: a ZERO-BYTE file is not a recording. The normal branch (ffmpeg alive,
+    # closed with SIGINT) is exactly the one where the file is almost certainly
+    # empty: the user pressed twice in a row, or ffmpeg has not written anything
+    # yet. Before, it came back as a legitimate recording and the transcription
+    # started on an empty file (wl-copy with an empty string, i.e. clipboard
+    # wiped). Same guard as the twin in stream.py, inside
+    # `_stop_at_end_transcribe` (`audio_path.exists() and
+    # audio_path.stat().st_size > 0`), which was missing here. The empty file is
+    # removed immediately: leaving it on the floor is exactly the leftover that
+    # nobody owns any more.
+    #
+    # Note: this guard comes AFTER the lock removal, so it also applies to the
+    # false _pid_alive branch (ffmpeg already dead). Before, only the existence
+    # of the path was checked, which stays true even if the file vanished
+    # between is_recording() and stop_recording() (measured by the reviewer as
+    # case B): here the file is required to exist AND not be empty.
     try:
         empty = not audio_path.exists() or audio_path.stat().st_size == 0
     except OSError:
@@ -296,7 +398,19 @@ def pid_matches(pid: int, markers: tuple[str, ...]) -> bool:
     non basta: dice solo che *qualcuno* ha quel pid.
 
     Se /proc non e' leggibile (non-Linux, processo appena sparito, permessi)
-    non si puo' giudicare: True, cioe' il comportamento di prima."""
+    non si puo' giudicare: True, cioe' il comportamento di prima.
+
+    Is process `pid` still THE one we expect (its cmdline contains one of the
+    `markers`)?
+
+    Needed before sending signals (SIGINT/SIGTERM/SIGKILL) to the pid written
+    in a lock: after a crash the lock stays, and if that pid was REUSED by any
+    process of the user, os.kill would kill it. _pid_alive is not enough: it
+    only says that *someone* has that pid.
+
+    If /proc is not readable (non-Linux, process just gone, permissions) we
+    cannot judge: True, i.e. the behaviour from before.
+    """
     try:
         raw = Path(f"/proc/{int(pid)}/cmdline").read_bytes()
     except (OSError, ValueError):
@@ -308,6 +422,8 @@ def pid_matches(pid: int, markers: tuple[str, ...]) -> bool:
 def _pid_alive(pid: int) -> bool:
     # B7: type guard — un lock manomesso con pid non-int causerebbe TypeError
     # non catturato in os.kill.
+    # B7: type guard — a tampered lock with a non-int pid would cause an
+    # uncaught TypeError in os.kill.
     if not isinstance(pid, int) or pid <= 0:
         return False
     try:

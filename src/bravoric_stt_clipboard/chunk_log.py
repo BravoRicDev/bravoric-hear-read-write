@@ -24,6 +24,33 @@ SICUREZZA PRIMA
    che e' gia' best-effort (le sessioni successive ripartono pulite).
 4. MAI api_key, api_key_env o il valore risolto della chiave. L'host e' solo
    il netloc: niente query string, niente userinfo, niente percorso.
+
+Append-only JSONL log: ONE line per dictation chunk.
+
+WHY (measured, not assumed)
+---------------------------
+In ~/.cache/bravoric-stt-clipboard there were only output_history.json (the
+text) and stream_state.json (the chunks): nothing said WHICH endpoint had
+answered, WHETHER it had fallen back and HOW LONG it took. The
+logger.warning calls of fallback.py end up on stderr, and the supervisor
+runs detached: those warnings arrived nowhere. So there was no way to
+measure whether whisper-gpu held up and whether scrocco-fissone lost words.
+
+The log answers a single question, per chunk: who answered, in attempt
+order, and with which timings. It is not an archive: it is a debugging
+tool, so retention is in LINES (not in time) and the default is 2000.
+
+SAFETY FIRST
+------------
+1. Every write is in try/except and does NOT propagate: a broken log
+   cannot lose a word nor stop the dictation. `append_record` returns False.
+2. Write-only append (O_APPEND, a single os.write of the whole line): never
+   read-modify-write, because several processes may write. Appending at the
+   tail of the file is atomic at write() level.
+3. fsync is NOT required on every line: it would slow the dictation down
+   for a file that is already best-effort (later sessions start clean).
+4. NEVER api_key, api_key_env or the resolved value of the key. The host is
+   only the netloc: no query string, no userinfo, no path.
 """
 from __future__ import annotations
 
@@ -48,29 +75,48 @@ logger = logging.getLogger(__name__)
 
 # Percorso INIETTABILE: i test lo riassegnano (o lo passano a append_record)
 # perche' scrivere sul percorso reale inquinerebbe la sessione dell'utente.
+# INJECTABLE path: the tests reassign it (or pass it to append_record)
+# because writing to the real path would pollute the user's session.
 CHUNK_LOG_PATH = Path.home() / ".cache" / "bravoric-stt-clipboard" / "chunk_log.jsonl"
 # NB: il lock non ha una costante dedicata. _rotate() lo deriva dal path
 # ricevuto con path.suffix + ".lock", che per chunk_log.jsonl da
 # chunk_log.jsonl.lock: era qui una costante che diceva un'altra cosa
 # (chunk_log.lock) ed era l'unica definizione di un oggetto che nessuno
 # usava, cioe' due nomi diversi per lo stesso file con uno solo vivo.
+# NB: the lock has no dedicated constant. _rotate() derives it from the
+# received path with path.suffix + ".lock", which for chunk_log.jsonl gives
+# chunk_log.jsonl.lock: here there used to be a constant saying something
+# else (chunk_log.lock) and it was the only definition of an object nobody
+# used, i.e. two different names for the same file with only one alive.
 
 DEFAULT_MAX_LINES = 2000
 # Tetto della ritenzione richiesta: il valore 1_000_000 che c'era gia' qui
 # sotto, solo messo a nome (come DEFAULT_MAX_LINES e MAX_ERR_CHARS) perche' lo
 # stesso limite compare anche in config.py e config_editor.py e i tre numeri
 # non possono divergere. NON e' un limite nuovo: e' quello preesistente.
+# Cap of the requested retention: the 1_000_000 value that was already here
+# below, just given a name (like DEFAULT_MAX_LINES and MAX_ERR_CHARS)
+# because the same limit also appears in config.py and config_editor.py and
+# the three numbers cannot diverge. It is NOT a new limit: it is the
+# pre-existing one.
 MAX_MAX_LINES = 1_000_000
 TS_FORMAT = "%Y-%m-%dT%H:%M:%S"
 # Tetto del campo `err`: il messaggio di un'eccezione HTTP puo' essere lunghissimo
 # e il log serve a leggere, non ad archiviare. Non e' una troncatura del log:
 # e' una troncatura del MESSAGGIO, dichiarata qui perche' nessuno se ne
 # accorga altrimenti.
+# Cap of the `err` field: the message of an HTTP exception can be very long
+# and the log is for reading, not archiving. It is not a truncation of the
+# log: it is a truncation of the MESSAGE, declared here so that nobody
+# notices it otherwise.
 MAX_ERR_CHARS = 500
 
 # api_key / key / token / authorization =<valore>: il valore sparisce, il nome
 # del parametro resta (serve per capire cosa era rotto). Copre sia
 # "api_key=abc" sia "api_key: abc" sia "Authorization: Bearer abc".
+# api_key / key / token / authorization =<value>: the value disappears, the
+# parameter name stays (needed to understand what was broken). It covers
+# "api_key=abc", "api_key: abc" and "Authorization: Bearer abc" alike.
 _SECRET_RE = re.compile(
     r"((?:api[_-]?key|access[_-]?key|client[_-]?secret|secret|passw(?:or)?d|pwd"
     r"|key|token|auth(?:orization)?|bearer)"
@@ -80,6 +126,9 @@ _SECRET_RE = re.compile(
 # "Bearer <token>" con SPAZIO (non =/:): senza questa passata il regex sopra,
 # su "Authorization: Bearer sk-abc", prende "Bearer" come valore e lascia il
 # token in chiaro (misurato).
+# "Bearer <token>" with a SPACE (not =/:): without this pass the regex
+# above, on "Authorization: Bearer sk-abc", takes "Bearer" as the value and
+# leaves the token in clear (measured).
 _BEARER_RE = re.compile(r"(\bbearer\s+)([^\s\"',&]+)", re.IGNORECASE)
 # Credenziali nell'URL: https://utente:password@host
 _URL_USERINFO_RE = re.compile(r"(://[^/\s:@]+:)([^@\s/]+)(@)")
@@ -89,6 +138,11 @@ _URL_USERINFO_RE = re.compile(r"(://[^/\s:@]+:)([^@\s/]+)(@)")
 # riavvio si riconta una volta sola, quindi un file cresciuto da un altro
 # processo puo' superare la ritenzione fino alla prossima rotazione. Il file e'
 # di debug e la rotazione e' comunque pigra, non e' un archivio.
+# Cache of the line count per path: a count on every append would cost one
+# file read per chunk. The cache lives for the process: after a restart we
+# recount once, so a file grown by another process may exceed the retention
+# until the next rotation. The file is for debugging and rotation is lazy
+# anyway, it is not an archive.
 _line_counts: dict[str, int] = {}
 _count_lock = threading.Lock()
 
@@ -100,6 +154,12 @@ def endpoint_host(endpoint: str) -> str:
     `http://10.9.0.2:4001/v1?api_key=SEGRETO` -> "10.9.0.2:4001". Serve
     anche quando l'endpoint non ha schema ("10.9.0.2:4001/v1"): urlsplit
     restituisce netloc vuoto e si cade sul ramo manuale.
+
+    Only the endpoint's netloc: NEVER query string, NEVER userinfo, NEVER path.
+
+    `http://10.9.0.2:4001/v1?api_key=SECRET` -> "10.9.0.2:4001". It is needed
+    also when the endpoint has no scheme ("10.9.0.2:4001/v1"): urlsplit
+    returns an empty netloc and we fall to the manual branch.
     """
     raw = (endpoint or "").strip()
     if not raw:
@@ -121,6 +181,12 @@ def redact(text: str) -> str:
     Non e' una paranoia: un messaggio di errore di requests/include l'URL
     completo, e l'endpoint puo' portare la chiave in query string. Il nome del
     parametro resta leggibile, che e' cio' che serve per capire il difetto.
+
+    Strips the VALUE of the keys that must not end up in the log.
+
+    It is not paranoia: an error message from requests includes the full URL,
+    and the endpoint may carry the key in the query string. The parameter name
+    stays readable, which is what is needed to understand the defect.
     """
     text = _BEARER_RE.sub(r"\1<redacted>", text or "")
     text = _URL_USERINFO_RE.sub(r"\1<redacted>\3", text)
@@ -134,6 +200,11 @@ def _short_error(exc: object, secrets: tuple[str, ...] = ()) -> str:
     # sk-...") senza alcun "nome=valore" che un regex possa agganciare, e
     # api_client mette resp.text nell'ApiError. Sotto 6 caratteri non si
     # redige: una "chiave" cosi' corta colpirebbe testo qualunque.
+    # The exact VALUE of the configured keys, before the patterns: an
+    # OpenAI-style 401 repeats the key in the body ("Incorrect API key provided:
+    # sk-...") without any "name=value" a regex could latch onto, and
+    # api_client puts resp.text in the ApiError. Below 6 characters we do not
+    # redact: such a short "key" would hit arbitrary text.
     for secret in secrets:
         if len(secret) >= 6:
             message = message.replace(secret, "<redacted>")
@@ -144,7 +215,10 @@ def _short_error(exc: object, secrets: tuple[str, ...] = ()) -> str:
 
 
 def _level_secrets(level) -> tuple[str, ...]:
-    """Chiavi API note di questo livello (inline o da variabile d'ambiente)."""
+    """Chiavi API note di questo livello (inline o da variabile d'ambiente).
+
+    Known API keys of this level (inline or from an environment variable).
+    """
     resolver = getattr(level, "resolved_api_key", None)
     try:
         key = resolver() if callable(resolver) else ""
@@ -161,6 +235,13 @@ def make_attempt(level, ms: float, ok: bool, err: object = None) -> dict:
     campo puo' contenere la chiave perche' qui non c'e'. `err` accetta
     l'eccezione stessa (non la sua stringa): la redazione e' il mestiere di
     questo modulo, non del chiamante.
+
+    An entry of `attempts`: the level TRIED, with its timings.
+
+    It is built from the level, not from a hand-passed dict: the `host` field
+    therefore cannot contain anything but the netloc, and no field can contain
+    the key because it is not here. `err` accepts the exception itself (not its
+    string): redaction is this module's job, not the caller's.
     """
     return {
         "level": str(getattr(level, "name", "") or ""),
@@ -180,6 +261,12 @@ def make_record(*, session: Any, seq: Any, audio_s: float,
     Non sono parametri: se lo fossero, il chiamante potrebbe scrivere un
     `served_by` che contraddice gli attempts, e il log direbbe una bugia
     proprio nel campo che serve per decidere quale endpoint conviene.
+
+    The log line. `served_by`/`fallback` are DERIVED from the attempts.
+
+    They are not parameters: if they were, the caller could write a
+    `served_by` that contradicts the attempts, and the log would tell a lie in
+    exactly the field used to decide which endpoint is worth keeping.
     """
     entries = [dict(a) for a in (attempts or []) if isinstance(a, dict)]
     served_by = None
@@ -232,6 +319,37 @@ def _coerce_max_lines(max_lines: Any) -> int:
     - `float` solo se finito e matematicamente esatto (2000.0 -> 2000, 12.7 ->
       default): troncare 12.7 a 12 sarebbe inventare una ritenzione che nessuno
       ha scritto.
+
+    Requested retention in lines, cleaned. 0 (or missing) = DEFAULT.
+
+     THE DEFECT CORRECTED HERE: the previous version did
+     `max(1, min(1_000_000, int(max_lines)))`, so `0` became `1`. But
+     `StreamConfig.chunk_log_max_lines` and the two example TOMLs all three say
+     that `0` means "use the default" (2000). The user's personal config does
+     not have the key, so 0 arrived and the log kept ONE line: with a single
+     chunk in the file `summarize` has nothing to aggregate and the
+     per-endpoint `--summary` stayed empty, i.e. exactly the reason the feature
+     was requested. It is not a rounding: it is the feature effectively turned
+     off, silently.
+
+     Rules, aligned with `_coerce_max_concurrency` in config.py (same house
+    style, no new grammar invented here):
+
+         missing / 0 / "" / "0" / negative / non-exact float /
+         non-numeric / bool                          -> DEFAULT_MAX_LINES
+         positive integer                            -> itself, clamped
+                                                        to MAX_MAX_LINES
+
+     - `bool` is not a line count: in TOML `chunk_log_max_lines = true` is a
+       typo, not "keep one line" (which is exactly the defect this function
+       fixes). `int(True) == 1` is the same trap.
+     - Numeric strings ARE accepted because the GUI path writes
+       `chunk_log_max_lines = "3"` (config_editor._toml_line_value quotes the
+       fields not explicitly listed): rejecting them would break the
+       prefs.js -> config.toml round trip without warning. The comparison stays
+       explicit, never `bool(str)`: in Python `bool("false")` is True.
+     - `float` only if finite and mathematically exact (2000.0 -> 2000, 12.7 ->
+       default): truncating 12.7 to 12 would invent a retention nobody wrote.
     """
     if isinstance(max_lines, bool):
         return DEFAULT_MAX_LINES
@@ -254,6 +372,9 @@ def _coerce_max_lines(max_lines: Any) -> int:
     # 0 (e i suoi equivalenti) = "usa il default", mai 1: il tetto inferiore
     # non e' 1, e' DEFAULT_MAX_LINES. Un valore negativo non e' "tieni poco",
     # e' una battitura: torna al default come un valore non numerico.
+    # 0 (and its equivalents) = "use the default", never 1: the lower bound is
+    # not 1, it is DEFAULT_MAX_LINES. A negative value is not "keep few", it is
+    # a typo: it goes back to the default like a non-numeric value.
     if value <= 0:
         return DEFAULT_MAX_LINES
     return min(MAX_MAX_LINES, value)
@@ -277,6 +398,15 @@ def _rotate(path: Path, max_lines: int) -> None:
     rileggendo se la dimensione e' cambiata durante la lettura, e il
     progetto ha un solo writer (il supervisore), quindi la finestra e' vuota
     in pratica.
+
+    Keeps the LAST `max_lines` lines. Retention in lines, not in time.
+
+    Dedicated lock: the append is pure O_APPEND and does not take it (taking it
+    would cost one syscall per chunk), the rotation does, so two processes do
+    not rewrite the file together. A line written by a third process between
+    the read and the replacement would be lost: this is remedied by rereading
+    if the size changed during the read, and the project has a single writer
+    (the supervisor), so the window is empty in practice.
     """
     lock_path = path.with_suffix(path.suffix + ".lock")
     lock_path.parent.mkdir(parents=True, exist_ok=True)
@@ -293,6 +423,8 @@ def _rotate(path: Path, max_lines: int) -> None:
             if before != after:
                 # cresciuto durante la lettura: un altro processo sta
                 # scrivendo, rileggo invece di tagliare via le sue righe.
+                # grown during the read: another process is writing, I reread
+                # instead of cutting away its lines.
                 continue
             lines = [line for line in data.splitlines() if line.strip()]
             kept = lines[-max_lines:]
@@ -302,6 +434,11 @@ def _rotate(path: Path, max_lines: int) -> None:
             # testo dettato: dopo la prima rotazione (il file vive al tetto di
             # 2000 righe, quindi ruota di continuo) diventava leggibile da
             # ogni utente locale. L'append usa gia' 0o600, la rotazione no.
+            # EXPLICIT 0o600: open(tmp, "wb") uses the umask (typically 0644) and
+            # os.replace publishes THAT file in place of the log, which contains the
+            # dictated text: after the first rotation (the file lives at the 2000-line
+            # cap, so it rotates continuously) it became readable by every local user.
+            # The append already uses 0o600, the rotation did not.
             tmp_fd = os.open(str(tmp), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
             with os.fdopen(tmp_fd, "wb") as handle:
                 handle.write(b"".join(line + b"\n" for line in kept))
@@ -334,6 +471,12 @@ def append_record(record: dict, path: Path | str | None = None,
     Non solleva MAI: il chiamante e' il sequencer, e un log rotto non puo'
     fermare la dettatura. `path` e `max_lines` sono iniettabili perche' i
     test non devono scrivere sul percorso reale dell'utente.
+
+    Atomic append of ONE line. Returns False if it was not written.
+
+    It NEVER raises: the caller is the sequencer, and a broken log cannot stop
+    the dictation. `path` and `max_lines` are injectable because the tests
+    must not write to the user's real path.
     """
     target = Path(path) if path is not None else CHUNK_LOG_PATH
     limit = _coerce_max_lines(max_lines)
@@ -344,6 +487,8 @@ def append_record(record: dict, path: Path | str | None = None,
         try:
             # UN solo write() della riga intera: nessun lettore vede meta'
             # riga, e nessun altro scrittore ci mette dentro nel mezzo.
+            # A SINGLE write() of the whole line: no reader sees half a line, and no
+            # other writer puts anything in the middle of it.
             os.write(fd, payload.encode("utf-8"))
         finally:
             os.close(fd)
@@ -355,12 +500,20 @@ def append_record(record: dict, path: Path | str | None = None,
         # promette gia' False in caso di errore: rilanciare renderebbe falso
         # quel contratto e perderebbe un chunk gia' trascritto. debug e non
         # warning perche' il supervisore gira staccato: nessuno legge stderr.
+        # A broken log cannot stop the dictation: here we NOTE it and return False,
+        # never re-raise. The caller is the sequencer, and its signature already
+        # promises False on error: re-raising would make that contract false and
+        # would lose an already transcribed chunk. debug and not warning because the
+        # supervisor runs detached: nobody reads stderr.
         logger.debug("chunk_log: scrittura fallita su %s: %s", target, exc, exc_info=True)
         return False
 
 # ---------------------------------------------------------------------- lettura
 def read_records(path: Path | str | None = None) -> list[dict]:
-    """Tutte le righe valide, piu' recente in fondo. Mai solleva."""
+    """Tutte le righe valide, piu' recente in fondo. Mai solleva.
+
+    All valid lines, most recent last. Never raises.
+    """
     target = Path(path) if path is not None else CHUNK_LOG_PATH
     try:
         with open(target, "rb") as handle:
@@ -376,6 +529,8 @@ def read_records(path: Path | str | None = None) -> list[dict]:
         except (json.JSONDecodeError, UnicodeDecodeError):
             # Riga troncata da un kill -9 o da una scrittura incompleta: si
             # scarta quella riga, non il file.
+            # Line truncated by a kill -9 or by an incomplete write: that line is
+            # discarded, not the file.
             continue
         if isinstance(item, dict):
             records.append(item)
@@ -400,6 +555,12 @@ def filter_records(records: list[dict], *, last: int | None = None,
     Con `--since` una riga SENZA ts leggibile viene scartata: un log senza
     orario non puo' dimostrare di essere dentro la finestra, e tenerla
     produrrebbe un --summary che mente proprio sulla finestra temporale.
+
+    Last N lines / of one session / of the last N minutes, in this order.
+
+    With `--since` a line WITHOUT a readable ts is discarded: a log without a
+    time cannot prove it is inside the window, and keeping it would produce a
+    --summary that lies precisely about the time window.
     """
     result = list(records)
     if session:
@@ -415,7 +576,10 @@ def filter_records(records: list[dict], *, last: int | None = None,
 
 
 def _percentile(values: list[float], pct: float) -> float | None:
-    """Percentile nearest-rank. Nessun campione -> None (mai 0 inventato)."""
+    """Percentile nearest-rank. Nessun campione -> None (mai 0 inventato).
+
+    Nearest-rank percentile. No samples -> None (never an invented 0).
+    """
     if not values:
         return None
     index = max(0, math.ceil(pct / 100.0 * len(values)) - 1)
@@ -434,6 +598,14 @@ def summarize(records: list[dict]) -> list[dict]:
     miscelarla con le risposte vere renderebbe il confronto fra endpoint
     illegibile. I tentativi falliti contano comunque in `attempts` e
     `failed`, quindi la loro presenza resta visibile.
+
+    Per-endpoint view: attempts, ok, failed, mean ms, p50, p95, share.
+
+    Latency is computed on SUCCESSFUL attempts: the duration of a timeout
+    (8 s on whisper-gpu) is not a latency, it is the timeout cap, and mixing
+    it with real answers would make the comparison between endpoints
+    unreadable. Failed attempts still count in `attempts` and `failed`, so
+    their presence stays visible.
     """
     buckets: dict[tuple[str, str, str], dict] = {}
     served_total = 0
@@ -447,6 +619,11 @@ def summarize(records: list[dict]) -> list[dict]:
         # ha prodotto il testo finale). La quota si accredita su QUEL
         # bucket, non su tutti gli ok: un endpoint che ha risposto ma non
         # e' stato quello scelto non ha servito il chunk.
+        # The chunk was SERVED by the LAST successful attempt (the chain stops at
+        # the first ok, so in a well-formed line it is the last one; if there were
+        # two, the last counts, which is the one that produced the final text). The
+        # share is credited to THAT bucket, not to every ok: an endpoint that
+        # answered but was not the chosen one did not serve the chunk.
         served_bucket = None
         for attempt in attempts:
             if not isinstance(attempt, dict):
@@ -471,6 +648,9 @@ def summarize(records: list[dict]) -> list[dict]:
             # UNA volta sola per chunk, mai per tentativo: altrimenti un
             # chunk con piu' tentativi riusciti conterebbe due volte e la
             # quota non sarebbe piu' una quota.
+            # Only ONCE per chunk, never per attempt: otherwise a chunk with several
+            # successful attempts would count twice and the share would no longer be a
+            # share.
             served_bucket["served"] += 1
             served_total += 1
 

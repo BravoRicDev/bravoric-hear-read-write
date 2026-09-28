@@ -1,4 +1,7 @@
-"""Client OpenAI-compatible per trascrizione, chat cleanup e vision OCR."""
+"""Client OpenAI-compatible per trascrizione, chat cleanup e vision OCR.
+
+OpenAI-compatible client for transcription, chat cleanup and vision OCR.
+"""
 from __future__ import annotations
 
 import base64
@@ -18,10 +21,15 @@ logger = logging.getLogger(__name__)
 # Limite del campo `prompt` lato provider. Vale per TUTTE le composizioni
 # del prompt ( ramo semplice e ramo con vocabolario): un prompt oltre questo
 # limite viene rifiutato dal provider.
+# Limit of the `prompt` field on the provider side. It applies to ALL prompt
+# compositions (simple branch and vocabulary branch): a prompt over this
+# limit is rejected by the provider.
 PROMPT_MAX_CHARS = 800
 
 # Frase di vocabolario: cornice fissa, il riempimento sta nel mezzo. Tenerla
 # (anche ridotta) evita di degradare il prompt a un elenco nudo di termini.
+# Vocabulary sentence: fixed frame, the filling goes in the middle. Keeping
+# it (even shortened) avoids degrading the prompt to a bare list of terms.
 _VOCAB_HEAD = "Le parole"
 _VOCAB_TAIL = "sono nomi proprio."
 
@@ -33,13 +41,22 @@ class ApiError(RuntimeError):
 def _blocks_len(*blocks: str) -> int:
     """Lunghezza esatta della stringa che verrà inviata: i blocchi sono uniti
     da UNO spazio ciascuno e quegli spazi stanno nel budget. Contarne al
-    massimo uno faceva uscire il prompt di 1 carattere oltre il limite (801)."""
+    massimo uno faceva uscire il prompt di 1 carattere oltre il limite (801).
+
+    Exact length of the string that will be sent: the blocks are joined by ONE
+    space each and those spaces count in the budget. Counting at most one made
+    the prompt come out 1 character over the limit (801).
+    """
     return len(" ".join(b for b in blocks if b))
 
 
 def _drop_oldest_words(text: str, budget: int) -> str:
     """Svuota `text` dalla TESTA (dal pezzo più vecchio) finché non sta in
-    `budget`, tagliando solo su confini di parola."""
+    `budget`, tagliando solo su confini di parola.
+
+    Empties `text` from the HEAD (from the oldest piece) until it fits in
+    `budget`, cutting only on word boundaries.
+    """
     words = text.split()
     while words and len(" ".join(words)) > budget:
         words.pop(0)
@@ -57,7 +74,17 @@ def _error_body(resp, level: FallbackLevel) -> str:
     ripete la chiave nel 401 ("Incorrect API key provided: sk-...") e un
     corpo HTML di errore puo' essere di migliaia di caratteri. Quindi:
     valore esatto della chiave del livello e pattern noti redatti, poi
-    troncato."""
+    troncato.
+
+    Body of an error response, safe to put in an ApiError.
+
+    The ApiError ends up in a desktop notification, in the journal
+    (fallback.py logs "Level %s failed: %s") and in the chunk log: an
+    OpenAI-style backend repeats the key in the 401 ("Incorrect API key
+    provided: sk-...") and an HTML error body can be thousands of characters.
+    So: the level's exact key value and known patterns are redacted, then it
+    is truncated.
+    """
     text = str(getattr(resp, "text", "") or "")
     try:
         key = level.resolved_api_key()
@@ -74,7 +101,12 @@ def _error_body(resp, level: FallbackLevel) -> str:
 def _keep_leading_words(text: str, budget: int) -> str:
     """Tiene l'inizio di `text` (solo parole intere) finché sta in `budget`.
     Serve per il prompt personale, dove la TESTA è la parte preziosa (policy
-    A5, come build_prompt che tronca a destra)."""
+    A5, come build_prompt che tronca a destra).
+
+    Keeps the beginning of `text` (whole words only) while it fits in
+    `budget`. Needed for the personal prompt, where the HEAD is the valuable
+    part (policy A5, like build_prompt which truncates on the right).
+    """
     if budget <= 0:
         return ""
     kept: list[str] = []
@@ -92,7 +124,13 @@ def _vocabulary_sentence(hotwords: str, budget: int) -> str:
     """Frase di vocabolario entro `budget` caratteri. Se la frase intera non
     entra, si accorcia la lista centrale mantenendo la cornice
     "Le parole ... sono nomi proprio."; con un budget più piccolo della
-    cornice si cade al semplice taglio dalla testa della frase."""
+    cornice si cade al semplice taglio dalla testa della frase.
+
+    Vocabulary sentence within `budget` characters. If the whole sentence does
+    not fit, the central list is shortened while keeping the frame
+    "Le parole ... sono nomi proprio."; with a budget smaller than the frame we
+    fall back to a plain cut from the head of the sentence.
+    """
     if budget <= 0:
         return ""
     sentence = f"{_VOCAB_HEAD} {hotwords.strip()} {_VOCAB_TAIL}"
@@ -112,10 +150,23 @@ def _vocabulary_sentence(hotwords: str, budget: int) -> str:
     # SEMPRE, e il termine viene troncato a destra sul confine di carattere:
     # la frase resta intera e grammaticale, il provider vede almeno l'inizio
     # dell'elenco invece di niente.
+    # An empty `_keep_leading_words` means that NO whole word fits in the
+    # remainder: either the budget is below the frame, or there is a single term
+    # without spaces longer than the remainder (measured: a 1200-character
+    # hotword with budget 800). The previous fallback cut the whole sentence from
+    # the HEAD and returned the final fragment ("sono nomi proprio.", 18
+    # characters out of 800: 782 wasted and the grammar chopped — the prompt the
+    # provider saw said only that, because the term did not fit). Now the frame
+    # is ALWAYS kept, and the term is truncated on the right at a character
+    # boundary: the sentence stays whole and grammatical, the provider sees at
+    # least the start of the list instead of nothing.
     if budget <= frame:
         # Budget sotto la cornice: non esiste una frase grammaticalmente
         # intera. Si rende il massimo disponibile tagliando dalla coda (la
         # testa "Le parole" e' la parte che rende leggibile il costrutto).
+        # Budget below the frame: no grammatically whole sentence exists. We render
+        # the maximum available cutting from the tail (the head "Le parole" is the
+        # part that makes the construct readable).
         return _drop_oldest_words(f"{_VOCAB_HEAD} {_VOCAB_TAIL}", budget)
     words = hotwords.strip().split()
     room = budget - frame
@@ -144,26 +195,52 @@ def _build_vocabulary_prompt(personal: str, context: str, hotwords: str, limit: 
     `_blocks_len`, quindi la garanzia non dipende da quanti spazi si contano a
     mano: per costruzione ogni blocco sta nel suo budget e aggiunge al massimo
     uno spazio, quindi la somma resta <= limit.
+
+    Composes personal prompt + context + vocabulary sentence within `limit`
+    characters, NEVER exceeding it.
+
+    Sacrifice order, fixed and documented:
+      1. context — it is the only block already truncated by age, the oldest
+         piece is lost (same direction as the pre-existing truncation);
+      2. vocabulary sentence — shortened to whole words;
+      3. personal prompt — the head is kept, to whole words. Last because it
+         is the only piece written by hand by the user and cannot be rebuilt
+         from the other two. It cannot eat the whole budget though: the
+         vocabulary gets the minimal frame
+         "Le parole ... sono nomi proprio." reserved first and, if the whole
+         sentence fits, the whole sentence — better to lose 30 characters of
+         instructions than a chopped vocabulary sentence, which the model
+         would read as broken grammar.
+    Every step recomputes the exact length of the final string with
+    `_blocks_len`, so the guarantee does not depend on how many spaces are
+    counted by hand: by construction each block fits its budget and adds at
+    most one space, so the sum stays <= limit.
     """
     vocabulary = _vocabulary_sentence(hotwords, limit)
     # Il contesto aggiunge due spazi di giunzione (prima e dopo sé stesso):
     # vanno riservati insieme ai blocchi fissi.
+    # The context adds two joining spaces (before and after itself): they must
+    # be reserved together with the fixed blocks.
     context = _drop_oldest_words(context, limit - _blocks_len(personal, vocabulary) - 1)
     if _blocks_len(personal, context, vocabulary) <= limit:
         return " ".join(b for b in (personal, context, vocabulary) if b)
 
     # Qui i blocchi fissi da soli superano il limite: svuotare il contesto non
     # basta più. Si tronca invece di mandare roba fuori limite, con avviso.
+    # Here the fixed blocks alone exceed the limit: emptying the context is no
+    # longer enough. We truncate instead of sending out-of-limit content, with a
+    # warning.
     logger.warning(
         "prompt budget: blocchi fissi oltre %d caratteri (personale %d, hotwords %d): troncamento",
         limit, len(personal), len(hotwords),
     )
-    context = ""  # garantito vuoto: con il contesto presente il limite era già stato superato
+    context = ""  # garantito vuoto: con il contesto presente il limite era già stato superato | guaranteed empty: with the context present the limit had already been exceeded
     vocabulary = _vocabulary_sentence(hotwords, limit - _blocks_len(personal) - 1)
     if _blocks_len(personal, vocabulary) <= limit:
         return " ".join(b for b in (personal, vocabulary) if b)
 
     # Il personale cede il necessario al vocabolario, tenendone la testa.
+    # The personal prompt yields what the vocabulary needs, keeping its head.
     full_sentence = f"{_VOCAB_HEAD} {hotwords.strip()} {_VOCAB_TAIL}"
     floor = len(full_sentence) if len(full_sentence) <= limit else len(_VOCAB_HEAD) + 2 + len(_VOCAB_TAIL)
     personal = _keep_leading_words(personal, max(0, limit - floor - 1))
@@ -179,7 +256,12 @@ def _build_vocabulary_prompt(personal: str, context: str, hotwords: str, limit: 
 def _response_json(resp, level: FallbackLevel, what: str) -> dict:
     """Un corpo non-JSON o non-oggetto non deve sollevare JSONDecodeError grezzo:
     try_with_fallback cattura solo ApiError/RequestException, quindi un errore di
-    forma qui impedirebbe il fallback al livello successivo."""
+    forma qui impedirebbe il fallback al livello successivo.
+
+    A non-JSON or non-object body must not raise a raw JSONDecodeError:
+    try_with_fallback only catches ApiError/RequestException, so a shape error
+    here would prevent falling back to the next level.
+    """
     try:
         data = resp.json()
     except ValueError as exc:
@@ -191,7 +273,11 @@ def _response_json(resp, level: FallbackLevel, what: str) -> dict:
 
 def _first_message_content(data: dict, level: FallbackLevel, what: str) -> str:
     """Estrae choices[0].message.content convertendo le assenze di campo in
-    ApiError (stesso motivo di _response_json)."""
+    ApiError (stesso motivo di _response_json).
+
+    Extracts choices[0].message.content turning missing fields into ApiError
+    (same reason as _response_json).
+    """
     try:
         content = data["choices"][0]["message"]["content"]
     except (KeyError, IndexError, TypeError) as exc:
@@ -215,6 +301,7 @@ def transcribe_audio(
     headers = {"Authorization": f"Bearer {level.resolved_api_key()}"}
     verify = level.ca_cert_path() or True
     # B12: deriva il MIME dal formato reale del file (non sempre audio/ogg).
+    # B12: derive the MIME from the file's real format (not always audio/ogg).
     _MIME_MAP = {"ogg": "audio/ogg", "wav": "audio/wav", "mp3": "audio/mpeg",
                  "m4a": "audio/mp4", "flac": "audio/flac"}
     mime = _MIME_MAP.get(audio_path.suffix.lstrip("."), "audio/ogg")
@@ -231,6 +318,15 @@ def transcribe_audio(
     # mandare: `hotwords_in_prompt and hotwords`. Senza questo, il default di
     # config.py basterebbe finche' prefs.js non riscrive prompt = "" (P3b),
     # e il difetto tornerebbe.
+    # P3: the vocabulary branch is detached from the PRESENCE of the personal
+    # prompt. Before, the threshold was `prompt is not None`: with prompt=None
+    # (stt.py does `cfg.stt.prompt or None`, and so do the first streaming
+    # chunks) the `prompt` field did not go out and the vocabulary branch died,
+    # even with hotwords_in_prompt on and hotwords configured. Now the entry
+    # condition is the vocabulary itself, which is what the branch exists to
+    # send: `hotwords_in_prompt and hotwords`. Without this, the config.py
+    # default would suffice only until prefs.js rewrites prompt = "" (P3b), and
+    # the defect would come back.
     normalized_prompt = (prompt or "").strip()
     if getattr(level, "hotwords_in_prompt", False) is True and hotwords and hotwords.strip():
         personal = (personal_prompt or "").strip()
@@ -255,6 +351,11 @@ def transcribe_audio(
         # sintetizzati dal breaker, timeout_seconds = 0) non deve poter
         # disabilitare la richiesta, quindi si ripiega su 30.0 esattamente come
         # in stream._stop_drain_budget.
+        # The only request timeout is level.timeout_seconds: it is the value the
+        # user sets per level from the GUI and it must hold. There is no override
+        # any more: whoever has no timeout of their own (e.g. the levels synthesized
+        # by the breaker, timeout_seconds = 0) must not be able to disable the
+        # request, so we fall back to 30.0 exactly as in stream._stop_drain_budget.
         try:
             timeout = float(level.timeout_seconds)
         except (TypeError, ValueError):
@@ -279,6 +380,13 @@ def transcribe_audio(
     # dannosa che possa succedere a un utente che ha appena parlato. Il
     # chiamante distingue i due casi con ApiError, che la catena di fallback
     # sa già gestire (prova il livello successivo invece di arrendersi).
+    # D1: an EMPTY transcription is not a success. The backend can answer
+    # {"text": ""} even with a full audio file (silence, noise, an endpoint that
+    # filters). Returning "" made the empty be treated as a success: the text
+    # ended up in wl-copy and the clipboard was WIPED, which is the most harmful
+    # thing that can happen to a user who has just spoken. The caller tells the
+    # two cases apart with ApiError, which the fallback chain already knows how
+    # to handle (it tries the next level instead of giving up).
     stripped = text.strip()
     if not stripped:
         raise ApiError(f"[{level.name}] transcribe: backend returned an empty transcription")
@@ -303,7 +411,12 @@ CLEANUP_JSON_SCHEMA = {
 def chat_cleanup(level: FallbackLevel, system_prompt: str, text: str) -> str:
     """Chiama chat_completions con response_format json_schema stretto: senza
     vincolo di schema, i modelli chat instruction-tuned rispondono conversando
-    invece di restituire solo il testo corretto (verificato su 2 modelli)."""
+    invece di restituire solo il testo corretto (verificato su 2 modelli).
+
+    Calls chat_completions with a strict json_schema response_format: without
+    a schema constraint, instruction-tuned chat models answer conversationally
+    instead of returning only the corrected text (verified on 2 models).
+    """
     url = f"{level.endpoint.rstrip('/')}/chat/completions"
     headers = {
         "Authorization": f"Bearer {level.resolved_api_key()}",
@@ -318,6 +431,11 @@ def chat_cleanup(level: FallbackLevel, system_prompt: str, text: str) -> str:
         # (spesso 0.7-1.0) porta a lievi parafrasi/riformulazioni anche con
         # un prompt che le vieta esplicitamente (osservato: "Log diagnosi +
         # fix" -> "Registrati diagnosi e fix" nonostante il divieto).
+        # temperature=0: the cleanup must be a deterministic correction, not a
+        # creative rewrite. Without this, the model default (often 0.7-1.0) leads
+        # to slight paraphrases/rewordings even with a prompt that explicitly
+        # forbids them (observed: "Log diagnosi + fix" -> "Registrati diagnosi e
+        # fix" despite the ban).
         "temperature": 0,
         "messages": [
             {"role": "system", "content": system_prompt},
@@ -337,6 +455,10 @@ def chat_cleanup(level: FallbackLevel, system_prompt: str, text: str) -> str:
         # controllo un AttributeError su .strip() sfuggirebbe alla catena di
         # fallback (che cattura solo ApiError/OSError/TimeoutError) fino al top
         # level, lasciando lo status bloccato su 'processing'.
+        # Valid JSON but of the wrong shape (null/number/list): without this check
+        # an AttributeError on .strip() would escape the fallback chain (which only
+        # catches ApiError/OSError/TimeoutError) up to the top level, leaving the
+        # status stuck on 'processing'.
         raise ApiError(
             f"[{level.name}] chat cleanup: 'corrected_text' is "
             f"{type(corrected).__name__}, expected string"
@@ -374,6 +496,11 @@ def vision_extract(level: FallbackLevel, system_prompt: str, image_bytes: bytes)
     # muto, non un successo: senza questa eccezione try_with_fallback lo
     # accetta come esito valido e ocr.py scrive una stringa vuota negli
     # appunti, azzerandoli, al posto di riprovare il livello successivo.
+    # D1 (OCR side, never closed until now): same guard already applied to
+    # transcribe_audio. A 200 with empty/whitespace content is a mute failure,
+    # not a success: without this exception try_with_fallback accepts it as a
+    # valid outcome and ocr.py writes an empty string to the clipboard, wiping
+    # it, instead of retrying the next level.
     stripped = text.strip()
     if not stripped:
         raise ApiError(f"[{level.name}] vision extract: backend returned empty text")

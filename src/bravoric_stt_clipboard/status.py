@@ -1,4 +1,7 @@
-"""Status file condiviso con l'estensione GNOME (top bar)."""
+"""Status file condiviso con l'estensione GNOME (top bar).
+
+Status file shared with the GNOME extension (top bar).
+"""
 from __future__ import annotations
 
 import json
@@ -49,7 +52,42 @@ def write_status(state: str, last_output: str | None = None, service: str | None
     scrittura viene respinta. Il percorso di default resta aperto perché chi
     scrive IDLE/ERROR passando per PROCESSING porta con sé `service=<proprio>`
     (ocr.py:17, stt.py:53, stream.py:1298) e il confronto lo riconosce come
-    completamento genuino della propria registrazione."""
+    completamento genuino della propria registrazione.
+
+    service: 'stt'|'ocr', informational only, to tell which service is
+    processing in the extension menu.
+
+    Exception (round 17, real bug confirmed live): status.json is shared
+    between STT and OCR, independent shortcuts with no mutual exclusion. If
+    OCR finishes (writes IDLE) while STT is still recording, it silently
+    switched off the 'recording' state — the user saw the idle icon with the
+    microphone still physically open, and the safety timeout on recording
+    (15 min) stopped applying because the state was no longer 'recording'.
+
+    Round 2 (B4): the guard was valid ONLY on the IDLE branch, so it covered
+    half of the cases. With the indicator in 'recording' (STT) and OCR moving
+    to 'processing', the file became {state: processing, service: ocr}: the
+    icon left the microphone and the safety timeout stopped applying even with
+    the microphone still open. Extended to STATE_PROCESSING and STATE_ERROR,
+    the other two ways a different service can switch off a running recording
+    by overwriting its state.
+
+    Round 3 (B4): the `service is not None` clause in front of the guard was
+    still there, i.e. the guard did NOT exist for writes without a service —
+    which are exactly the error branches: `ocr.py` and `stt.py` call
+    `write_status(STATE_ERROR)` without `service`, `cli.py` too. With STT
+    recording and OCR failing on an empty clipboard, the file went from
+    recording to error: the indicator left the microphone while the microphone
+    was still open, and the safety timeout went with it. The clause is gone:
+    the guard now compares the service, and `None` (a write without a service)
+    is covered too. `service=None` is no longer "skip the guard" but "a
+    service different from the one that is recording": for a recording with
+    `service='stt'`/`'stream'` the difference is 'stt' != None, so the write is
+    rejected. The default path stays open because whoever writes IDLE/ERROR
+    after PROCESSING carries `service=<its own>` (ocr.py:17, stt.py:53,
+    stream.py:1298) and the comparison recognizes it as the genuine completion
+    of its own recording.
+    """
     STATUS_PATH.parent.mkdir(parents=True, exist_ok=True)
     if state in (STATE_IDLE, STATE_PROCESSING, STATE_ERROR):
         current = read_status()
@@ -66,7 +104,12 @@ def write_status(state: str, last_output: str | None = None, service: str | None
 def read_status() -> dict:
     """Best-effort: file assente o corrotto -> idle, mai un'eccezione.
     B8: ritorna un dict con timestamp corrente (non 0) per non invalidare
-    i timeout impostati dall'estensione."""
+    i timeout impostati dall'estensione.
+
+    Best-effort: missing or corrupt file -> idle, never an exception.
+    B8: returns a dict with the current timestamp (not 0) so as not to
+    invalidate the timeouts set by the extension.
+    """
     try:
         data = json.loads(STATUS_PATH.read_text())
         if isinstance(data, dict) and "state" in data:

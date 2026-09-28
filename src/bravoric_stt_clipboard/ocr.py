@@ -1,4 +1,7 @@
-"""Orchestrazione modalità OCR: clipboard immagine -> vision -> cleanup -> clipboard."""
+"""Orchestrazione modalità OCR: clipboard immagine -> vision -> cleanup -> clipboard.
+
+OCR mode orchestration: clipboard image -> vision -> cleanup -> clipboard.
+"""
 from __future__ import annotations
 
 import logging
@@ -21,6 +24,12 @@ def handle_capture(cfg: Config) -> None:
     # lettura clipboard (ramo di default) e' invece istantanea e idempotente,
     # quindi non ha bisogno di questa guardia: una doppia pressione ci legge
     # la stessa immagine due volte, innocuo.
+    # With capture_screenshot=True a double press of the shortcut (or the long
+    # selection wait, up to SELECTION_TIMEOUT_SECONDS) would launch a second
+    # interactive gnome-screenshot on top of the first: two overlapping
+    # selections, no crash but a confusing experience. Reading the clipboard
+    # (default branch) is instead instantaneous and idempotent, so it does not
+    # need this guard: a double press reads the same image twice, harmless.
     if cfg.ocr_capture_screenshot:
         current = status.read_status()
         if current.get("state") == status.STATE_PROCESSING and current.get("service") == "ocr":
@@ -31,6 +40,12 @@ def handle_capture(cfg: Config) -> None:
             # finally che lo corregga): senza questo limite il guard
             # bloccherebbe in silenzio OGNI cattura successiva fino al
             # watchdog dell'estensione (120 min per ocr).
+            # Only if the state is FRESH: two selections can overlap only within
+            # SELECTION_TIMEOUT_SECONDS from the start of the first. An older
+            # 'processing' is a leftover (process killed with kill -9 or crashed during
+            # the selection, no finally to fix it): without this limit the guard would
+            # silently block EVERY later capture until the extension watchdog (120 min
+            # for ocr).
             ts = current.get("timestamp")
             age = time.time() - ts if isinstance(ts, (int, float)) and not isinstance(ts, bool) else 0.0
             if age < cfg.screenshot_timeout_seconds:
@@ -43,6 +58,11 @@ def handle_capture(cfg: Config) -> None:
         # non lo stesso silenzio di un cambio idea. Senza questo controllo
         # capture_area_png() fallirebbe comunque in modo sicuro (None), ma
         # l'utente non avrebbe alcun segnale del perche' non succede nulla.
+        # Different from the cancel (Esc) handled further below: here the feature
+        # WAS enabled by the user but cannot work AT ALL, always, on every press —
+        # it deserves one explicit warning, not the same silence as a change of
+        # mind. Without this check capture_area_png() would still fail safely
+        # (None), but the user would have no signal about why nothing happens.
         if not screenshot.is_available():
             status.write_status(status.STATE_ERROR)
             if cfg.notifications and cfg.notif_ocr.error:
@@ -63,6 +83,9 @@ def handle_capture(cfg: Config) -> None:
             # Annullato (Esc) o nessuna risposta: un cambio idea dell'utente,
             # non un errore. Si torna a idle senza notifica, cosi' come non
             # si notifica mai una scorciatoia premuta per sbaglio due volte.
+            # Cancelled (Esc) or no answer: a change of mind by the user, not an error.
+            # We go back to idle without a notification, just as we never notify a
+            # shortcut pressed twice by mistake.
             try:
                 status.write_status(status.STATE_IDLE)
             except Exception:
@@ -98,6 +121,11 @@ def handle_capture(cfg: Config) -> None:
     # ApiError sul vuoto, ma questa è difesa in profondità indipendente:
     # se mai un livello tornasse "" senza sollevare, qui si segnala
     # l'errore invece di scrivere una stringa vuota negli appunti.
+    # D1 (mandate: the most serious debt ever closed, OCR side): same
+    # caller-side guard already present in stt.py. vision_extract now raises
+    # ApiError on empty output, but this is an independent defense in depth: if
+    # a level ever returned "" without raising, the error is reported here
+    # instead of writing an empty string to the clipboard.
     if not raw_text or not raw_text.strip():
         status.write_status(status.STATE_ERROR, service="ocr")
         if cfg.notifications and cfg.notif_ocr.error:
@@ -110,6 +138,8 @@ def handle_capture(cfg: Config) -> None:
         except Exception:
             # Non fatale: la scrittura finale (sotto) e' quella che conta. Se
             # anche quella fallisce l'utente viene avvisato esplicitamente.
+            # Not fatal: the final write (below) is the one that matters. If that fails
+            # too, the user is warned explicitly.
             logger.warning("impossibile scrivere il testo grezzo negli appunti", exc_info=True)
 
     notify.maybe_send(
@@ -143,6 +173,9 @@ def handle_capture(cfg: Config) -> None:
         # Senza questa guardia l'eccezione salterebbe write_status(IDLE)
         # lasciando lo stato bloccato su "processing" fino al timeout
         # dell'estensione (120 min), con l'icona ferma su content-loading.
+        # Without this guard the exception would skip write_status(IDLE), leaving
+        # the state stuck on "processing" until the extension timeout (120 min),
+        # with the icon stuck on content-loading.
         logger.error("impossibile scrivere negli appunti: %s", exc)
         status.write_status(status.STATE_ERROR)
         if cfg.notifications and cfg.notif_ocr.error:
