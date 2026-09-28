@@ -5221,6 +5221,38 @@ def main() -> int:
     check("D1: una trascrizione vuota viene trattata come errore",
           bool(_seen_st) and _seen_st[-1] == status.STATE_ERROR)
 
+    # Allucinazione nota come INTERA trascrizione (registrazione senza voce):
+    # stessa uscita dell'empty, appunti intatti, errore notificato.
+    for _hal_text in ("Grazie per la visione!", "  Sottotitoli a cura di Whisper  "):
+        with mock.patch.object(stt, "try_with_fallback", return_value=_hal_text), \
+             mock.patch.object(stt, "clipboard") as _clip_h, \
+             mock.patch.object(stt, "status", _st_d1), \
+             mock.patch.object(stt, "notify") as _nt_h, \
+             mock.patch.object(stt, "storage"), \
+             mock.patch.object(stt, "output_history"):
+            _st_d1.reset_mock()
+            stt._process_recording(cast(Any, cfg_stream_min), Path("/tmp/qualsiasi.ogg"))
+            _hal_clip = _clip_h.write_text.call_count
+            _hal_st = [c.args[0] for c in _st_d1.write_status.call_args_list]
+            _hal_notified = _nt_h.send.call_count >= 1
+        check(f"stt: allucinazione nota {_hal_text.strip()!r} come intera trascrizione NON va negli appunti",
+              _hal_clip == 0)
+        check(f"stt: allucinazione nota {_hal_text.strip()!r} -> errore + notifica",
+              bool(_hal_st) and _hal_st[-1] == status.STATE_ERROR and _hal_notified)
+
+    # CONTRO: una frase vera che CONTIENE la stessa espressione non e' toccata
+    # (match sull'intero testo, mai su sottostringa).
+    with mock.patch.object(stt, "try_with_fallback", return_value="Grazie per la visione! Ci vediamo domani."), \
+         mock.patch.object(stt, "clipboard") as _clip_hs, \
+         mock.patch.object(stt, "status", _st_d1), \
+         mock.patch.object(stt, "notify"), \
+         mock.patch.object(stt, "storage"), \
+         mock.patch.object(stt, "output_history"):
+        stt._process_recording(cast(Any, cfg_stream_min), Path("/tmp/qualsiasi.ogg"))
+        _hs_clip = [c.args[0] for c in _clip_hs.write_text.call_args_list]
+    check("stt (contro): frase vera che contiene l'espressione NON viene scartata",
+          "Grazie per la visione! Ci vediamo domani." in _hs_clip)
+
     # CONTRO: con un testo vero la clipboard viene comunque scritta — la
     # guardia non ha spento il percorso buono.
     with mock.patch.object(stt, "try_with_fallback", return_value="ciao mondo"), \

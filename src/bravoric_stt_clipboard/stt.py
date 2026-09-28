@@ -21,6 +21,16 @@ def _is_stream_active() -> bool:
     return is_stream_active()
 
 
+def _is_known_hallucination(text: str) -> bool:
+    """La trascrizione INTERA e' un'allucinazione nota di Whisper su audio
+    senza voce (es. "Grazie per la visione!")? Import differito come
+    _is_stream_active: `stream` e' un modulo grosso e non importa `stt`.
+    Match esatto sull'intero testo (mai su una sottostringa): una frase
+    vera che la contiene non viene toccata."""
+    from .stream import KNOWN_HALLUCINATIONS
+    return text.strip() in KNOWN_HALLUCINATIONS
+
+
 def handle_toggle(cfg: Config) -> None:
     if audio.is_recording():
         _stop_and_process(cfg)
@@ -134,9 +144,16 @@ def _process_recording(cfg: Config, audio_path: Path) -> None:
     # passava come successo: finiva a wl-copy e AZZERAVA gli appunti. E'
     # la stessa cosa che D1 definisce come difetto, vista dal lato
     # chiamante: qui non si azzera nulla, si segnala l'errore.
-    if not raw_text or not raw_text.strip():
+    # Stessa uscita dell'empty per un'allucinazione nota che e' l'INTERA
+    # trascrizione: su una registrazione senza voce (misurato dal vivo: ~1
+    # minuto di rumore ambientale -> "Grazie per la visione!") finiva negli
+    # appunti come se fosse dettatura vera, sovrascrivendoli.
+    hallucinated = raw_text is not None and _is_known_hallucination(raw_text)
+    if not raw_text or not raw_text.strip() or hallucinated:
         if raw_text is not None:
-            last_error = last_error or RuntimeError("empty transcription")
+            last_error = last_error or RuntimeError(
+                "no speech detected (known hallucination)" if hallucinated
+                else "empty transcription")
         status.write_status(status.STATE_ERROR, service="stt")
         if cfg.notifications:
             notify.send(_("STT: transcription error"), str(last_error), icon=notify.resolve_icon("error_general", cfg.icons.error_general))
