@@ -282,7 +282,6 @@ function spawnConfigEditor(...args) {
         'bravoric-indicator: impossibile eseguire config-editor');
 }
 
-const BravoricIndicator = GObject.registerClass(
 // Nomi accessibili dei bottoni rapidi (lettori di schermo e suggerimenti),
 // tradotti al momento dell'uso. `start`/`stop` cambiano quando l'azione sta
 // registrando.
@@ -335,6 +334,7 @@ function makeQuickButton(uuid, spec, labels, onClick) {
     };
 }
 
+const BravoricIndicator = GObject.registerClass(
 class BravoricIndicator extends PanelMenu.Button {
     _init(extension) {
         super._init(0.0, 'Bravoric STT/OCR');

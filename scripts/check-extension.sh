@@ -16,8 +16,17 @@ ok()  { printf '  PASS  %s\n' "$1"; }
 bad() { printf '  FAIL  %s\n' "$1"; FAIL=$((FAIL + 1)); }
 
 echo "== sintassi =="
-if node --check "$EXT/extension.js" >/dev/null 2>&1; then ok "extension.js"; else bad "extension.js"; fi
-if node --check "$EXT/prefs.js" >/dev/null 2>&1; then ok "prefs.js"; else bad "prefs.js"; fi
+# `node --check file.js` NON e' affidabile per i moduli ES: con un `import` in
+# testa il file non viene analizzato davvero e un errore di sintassi passa con
+# exit 0 (misurato: una parentesi mancata in extension.js restava verde). Si
+# passa il sorgente da stdin con --input-type=module, che lo analizza sempre.
+# `node --check file.js` is NOT reliable for ES modules: with an `import` at the
+# top the file is not really parsed and a syntax error passes with exit 0
+# (measured: a missing parenthesis in extension.js stayed green). The source is
+# fed on stdin with --input-type=module, which always parses it.
+for f in "$EXT"/*.js "$EXT"/*.mjs; do
+    if node --input-type=module --check < "$f" >/dev/null 2>&1; then ok "$(basename "$f")"; else bad "$(basename "$f")"; fi
+done
 if bash -n "$REPO/scripts/install.sh" 2>/dev/null; then ok "install.sh"; else bad "install.sh"; fi
 
 echo "== metadata.json =="
