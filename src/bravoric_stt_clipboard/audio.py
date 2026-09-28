@@ -44,9 +44,9 @@ def ensure_private_dir(path: Path) -> None:
     path.mkdir(mode=0o700, parents=True, exist_ok=True)
     info = path.lstat()
     if stat.S_ISLNK(info.st_mode) or not stat.S_ISDIR(info.st_mode):
-        raise RuntimeError(f"directory di runtime non sicura (symlink o non directory): {path}")
+        raise RuntimeError(f"unsafe runtime directory (symlink or not a directory): {path}")
     if info.st_uid != os.getuid():
-        raise RuntimeError(f"directory di runtime di un altro utente: {path}")
+        raise RuntimeError(f"runtime directory owned by another user: {path}")
     if info.st_mode & 0o077:
         path.chmod(0o700)
 
