@@ -63,6 +63,9 @@ file behind.
 - Python ≥ 3.11
 - `ffmpeg` (with `libopus`), `wl-clipboard`, `notify-send`,
   `glib-compile-schemas`, `gsettings`
+- Optional: `gnome-screenshot`, only if you enable *Take screenshot on
+  capture* (`[ocr] capture_screenshot = true`). If it is missing the OCR
+  shortcut shows a clear notification instead of failing silently.
 
 ## Install
 
