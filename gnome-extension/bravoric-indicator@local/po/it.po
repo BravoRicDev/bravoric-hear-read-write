@@ -133,7 +133,7 @@ msgstr "Sequenziale: un livello alla volta, in ordine."
 #: gnome-extension/bravoric-indicator@local/prefs.js:224
 #, javascript-format
 msgid "Ignored in sequential mode: %s"
-msgstr "Ignorati in modalita' sequenziale: %s"
+msgstr "Ignorati in modalità sequenziale: %s"
 
 #: gnome-extension/bravoric-indicator@local/prefs.js:232
 msgid "Sequential (no level marked parallel)."
@@ -148,18 +148,18 @@ msgstr "Parallelo: %d endpoint nel pool, fino a %d worker."
 msgid ""
 "The worker cap is automatic: it is recalculated at each session from the "
 "endpoints not in cooldown, so the real number can be lower."
-msgstr "Il limite di worker e' automatico: viene ricalcolato a ogni sessione sugli endpoint non in cooldown, quindi il numero reale puo' essere inferiore."
+msgstr "Il limite di worker è automatico: viene ricalcolato a ogni sessione sugli endpoint non in cooldown, quindi il numero reale può essere inferiore."
 
 #: gnome-extension/bravoric-indicator@local/prefs.js:249
 #, javascript-format
 msgid "Not in the pool, unreachable while another level is parallel: %s"
-msgstr "Fuori dal pool, irraggiungibili finche' un altro livello e' parallelo: %s"
+msgstr "Fuori dal pool, irraggiungibili finché un altro livello è parallelo: %s"
 
 #: gnome-extension/bravoric-indicator@local/prefs.js:259
 msgid ""
 "Ignored: the global Dispatch mode is Sequential. This level takes no part in "
 "the parallel pool."
-msgstr "Ignorato: la Modalita' di dispatch globale e' Sequenziale. Questo livello non partecipa al pool parallelo."
+msgstr "Ignorato: la Modalità di dispatch globale è Sequenziale. Questo livello non partecipa al pool parallelo."
 
 #: gnome-extension/bravoric-indicator@local/prefs.js:260
 msgid ""
@@ -300,7 +300,7 @@ msgstr "Alla fine (trascrive quando fermo)"
 
 #: gnome-extension/bravoric-indicator@local/prefs.js:613
 msgid "Dispatch mode (per-chunk mode only)"
-msgstr "Modalita' di dispatch (solo per modalita' per-chunk)"
+msgstr "Modalità di dispatch (solo per modalità per-chunk)"
 
 #: gnome-extension/bravoric-indicator@local/prefs.js:614
 msgid ""
@@ -311,7 +311,7 @@ msgstr "Usa in automatico il pool degli endpoint segnati come paralleli; sequenz
 
 #: gnome-extension/bravoric-indicator@local/prefs.js:616
 msgid "Auto (parallel if any level is marked)"
-msgstr "Automatico (parallelo se un livello e' segnato)"
+msgstr "Automatico (parallelo se un livello è segnato)"
 
 #: gnome-extension/bravoric-indicator@local/prefs.js:616
 msgid "Sequential (one level at a time)"
@@ -803,9 +803,9 @@ msgid ""
 "are serialized, as whisper.cpp does. It applies in the parallel pool, and in "
 "sequential mode only when the global worker count is greater than 1."
 msgstr ""
-"Quanti chunk questo endpoint puo' elaborare contemporaneamente. 1 significa "
+"Quanti chunk questo endpoint può elaborare contemporaneamente. 1 significa "
 "richieste in serie, come fa whisper.cpp. Vale nel pool parallelo e, in "
-"modalita' sequenziale, solo se il numero globale di worker e' maggiore di 1."
+"modalità sequenziale, solo se il numero globale di worker è maggiore di 1."
 
 #: gnome-extension/bravoric-indicator@local/extension.js:75
 #: gnome-extension/bravoric-indicator@local/extension.js:104
@@ -1049,12 +1049,12 @@ msgstr "Controlla config.toml"
 
 #: gnome-extension/bravoric-indicator@local/prefs.js:838
 msgid "Blacklist conflicts with a voice command"
-msgstr "La blacklist e' in conflitto con un comando vocale"
+msgstr "La blacklist è in conflitto con un comando vocale"
 
 #: gnome-extension/bravoric-indicator@local/prefs.js:839
 #, javascript-format
 msgid "The phrase \"%s\" is already a command keyword or alias. Remove it from the blacklist, or rename the command."
-msgstr "La frase \"%s\" e' gia' una keyword o un alias di un comando. Rimuovila dalla blacklist, oppure rinomina il comando."
+msgstr "La frase \"%s\" è già una keyword o un alias di un comando. Rimuovila dalla blacklist, oppure rinomina il comando."
 
 #: gnome-extension/bravoric-indicator@local/prefs.js:723
 msgid "Max parallel workers"
@@ -1062,7 +1062,7 @@ msgstr "Worker paralleli massimi"
 
 #: gnome-extension/bravoric-indicator@local/prefs.js:724
 msgid "Upper bound of chunks pasted at the same time (auto mode; sequential always uses one)"
-msgstr "Tetto massimo di chunk incollati contemporaneamente (modalita' auto; sequenziale ne usa sempre uno)"
+msgstr "Tetto massimo di chunk incollati contemporaneamente (modalità auto; sequenziale ne usa sempre uno)"
 
 #: gnome-extension/bravoric-indicator@local/prefs.js
 msgid "Recording started"

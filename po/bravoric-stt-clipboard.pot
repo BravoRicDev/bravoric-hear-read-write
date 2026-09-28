@@ -228,3 +228,23 @@ msgstr ""
 #: src/bravoric_stt_clipboard/chunk_log.py
 msgid "alternative log path (default: the real one)"
 msgstr ""
+
+#: src/bravoric_stt_clipboard/config.py:ICON_SLOT_REGISTRY
+msgid "STT — Recording started"
+msgstr ""
+
+#: src/bravoric_stt_clipboard/config.py:ICON_SLOT_REGISTRY
+msgid "Stream — Session started"
+msgstr ""
+
+#: src/bravoric_stt_clipboard/config.py:ICON_SLOT_REGISTRY
+msgid "Stream — Session ended"
+msgstr ""
+
+#: src/bravoric_stt_clipboard/config.py:ICON_SLOT_REGISTRY
+msgid "Stream — Text delivered"
+msgstr ""
+
+#: src/bravoric_stt_clipboard/config.py:ICON_SLOT_REGISTRY
+msgid "General — Error"
+msgstr ""
