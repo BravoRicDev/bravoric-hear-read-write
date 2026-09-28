@@ -151,8 +151,13 @@ def stream_toggle_main(argv: list[str] | None = None) -> int:
             status.write_status(status.STATE_ERROR, service="stream")
         except Exception:
             logger.debug("impossibile aggiornare lo status su ERROR", exc_info=True)
-        notify.send(_("Unexpected error"), _("Check the system log for details"),
-                    icon=notify.ICON_ERROR)
+        # _report_unexpected_error(), non un notify.send diretto come prima:
+        # stessa stringa di stt_toggle_main/ocr_capture_main duplicata qui
+        # SENZA il loro try/except attorno — un notify.send che avesse
+        # sollevato in questo punto (l'ultimo except della funzione) sarebbe
+        # risalito senza rete, facendo crashare l'intero processo CLI invece
+        # di tornare 1.
+        _report_unexpected_error()
         return 1
     return 0
 

@@ -779,6 +779,25 @@ def main() -> int:
         check("stream_toggle_main: eccezione inattesa -> notifica utente",
               m_notify_stream.send.call_count >= 1)
 
+    # CONTRO: notify.send che solleva a sua volta non deve far crashare la
+    # funzione (prova diretta del beneficio di _report_unexpected_error()
+    # rispetto alla chiamata diretta che c'era prima, senza rete).
+    with mock.patch.object(cli, "load_config", return_value=mock.Mock()), \
+         mock.patch("bravoric_stt_clipboard.stream.StreamSession") as m_session_cls2, \
+         mock.patch.object(cli, "status"), \
+         mock.patch.object(cli, "notify") as m_notify_stream2:
+        m_session_cls2.return_value.is_active.return_value = False
+        m_session_cls2.return_value.start.side_effect = RuntimeError("boom (simulato)")
+        m_notify_stream2.send.side_effect = OSError("notify-send a sua volta rotto (simulato)")
+        try:
+            ret_stream2 = cli.stream_toggle_main([])
+            crashed = False
+        except Exception:
+            ret_stream2 = None
+            crashed = True
+        check("stream_toggle_main: notify.send rotto non fa crashare la funzione",
+              not crashed and ret_stream2 == 1)
+
     # --- storage.py: _purge_expired con file che scompare -----------------
     print("== storage.py (giro 10) ==")
     from bravoric_stt_clipboard import storage
