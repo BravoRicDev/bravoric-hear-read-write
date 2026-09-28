@@ -80,6 +80,9 @@ copies a starter config to `~/.config/bravoric-stt-clipboard/config.toml`
 GNOME Shell's extensions directory. Idempotent — safe to re-run after a
 `git pull`.
 
+Default shortcuts (changeable in the preferences): `Alt+Super+R` dictation,
+`Alt+Super+O` OCR, `Alt+Super+S` streaming dictation.
+
 Then enable the extension (`gnome-extensions enable bravoric-indicator@local`,
 or via the Extensions app) and open its preferences to point the fallback
 chain at your endpoints.
