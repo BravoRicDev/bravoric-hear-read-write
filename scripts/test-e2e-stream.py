@@ -172,6 +172,44 @@ def main() -> int:
         kill_leftovers(env)
         env.cleanup()
 
+    print("== streaming con fallback: primo endpoint morto, secondo vivo / streaming fallback ==")
+    env = e2e.Env()
+    try:
+        (env.bin / "ffmpeg").write_text(FAKE_FFMPEG)
+        write_stream_config(env, good)
+        cfg = env.home / ".config" / "bravoric-stt-clipboard" / "config.toml"
+        text = cfg.read_text()
+        dead_level = ('[[stream.fallback]]\nname = "dead"\nendpoint = "http://127.0.0.1:1/v1"\nmodel = "m"\n'
+                      'api_key = "k"\ntimeout_seconds = 5\n')
+        # Il livello morto va PRIMA di quello vivo, nella stessa sezione [stream].
+        # The dead level goes BEFORE the live one, in the same [stream] section.
+        cfg.write_text(text.replace('[[stream.fallback]]\nname = "s0"', dead_level + '[[stream.fallback]]\nname = "s0"'))
+        e2e.check("avvio della sessione con fallback: exit 0", run_stream(env).returncode == 0)
+        log = env.home / ".cache" / "bravoric-stt-clipboard" / "chunk_log.jsonl"
+
+        def served_by_second() -> bool:
+            if not log.exists():
+                return False
+            for line in log.read_text().splitlines():
+                try:
+                    rec = json.loads(line)
+                except ValueError:
+                    continue
+                if rec.get("served_by") == "s0" and rec.get("fallback") is True:
+                    return True
+            return False
+
+        e2e.check("il chunk e' servito dal secondo livello e il log dichiara fallback=true",
+                  wait_for(served_by_second, 30), log.read_text()[:300] if log.exists() else "")
+        e2e.check("il testo arriva comunque nello stato per l'estensione",
+                  any("ciao mondo prova" in c for c in state_of(env).get("chunks", [])), str(state_of(env).get("chunks")))
+        run_stream(env, "stop")
+        e2e.check("chiusura pulita anche con il fallback",
+                  wait_for(lambda: not (env.runtime / "bravoric-stt-clipboard" / "stream.lock").exists(), 15))
+    finally:
+        kill_leftovers(env)
+        env.cleanup()
+
     server.shutdown()
     print()
     print(f"{e2e.PASS} PASS / {e2e.FAIL} FAIL")
