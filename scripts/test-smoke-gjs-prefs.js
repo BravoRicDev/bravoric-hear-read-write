@@ -627,3 +627,140 @@ console.log('Smoke test GTK4/Adw PASS: riga, segnali, visibilità, cattura tasto
     console.log('Regressione N1 OK: flashButtonLabel azzera l\'id alla scadenza, '
         + 'la guardia destroy non rimuove mai una sorgente scaduta');
 })();
+
+// Pagina General: il metodo REALE _buildGeneralPage estratto da prefs.js ed
+// eseguito su widget REALI. Il backend (setGeneralField/runConfigEditor) e'
+// finto per osservare cosa la GUI scrive e per simulare un rifiuto.
+(function generalPageReal() {
+    const sig = '    _buildGeneralPage(window) {';
+    const startAt = prefsSrc.indexOf(sig);
+    if (startAt === -1)
+        throw new Error('_buildGeneralPage non trovato in prefs.js');
+    const open = prefsSrc.indexOf('{', startAt + sig.length - 1);
+    const close = matchBrace(prefsSrc, open);
+    if (close === -1)
+        throw new Error('_buildGeneralPage non terminato in prefs.js');
+    const body = prefsSrc.slice(open + 1, close);
+    const rateMatch = prefsSrc.match(/const SAMPLE_RATES = \[[^\]]*\];/);
+    if (!rateMatch)
+        throw new Error('SAMPLE_RATES non trovato in prefs.js');
+
+    const built = [];
+    const rec = cls => new Proxy(cls, {
+        construct(target, args) {
+            const obj = new target(...args);
+            built.push(obj);
+            return obj;
+        },
+    });
+    const AdwRec = {
+        PreferencesPage: rec(Adw.PreferencesPage),
+        PreferencesGroup: rec(Adw.PreferencesGroup),
+        SwitchRow: rec(Adw.SwitchRow),
+        SpinRow: rec(Adw.SpinRow),
+        ComboRow: rec(Adw.ComboRow),
+        EntryRow: rec(Adw.EntryRow),
+    };
+    const GLibFake = {
+        PRIORITY_DEFAULT: 0, SOURCE_REMOVE: false,
+        timeout_add: (p, d, cb) => { cb(); return 1; },
+        source_remove() {},
+    };
+    const writes = [];
+    let accept = true;
+    const setGeneralField = (section, field, value) => {
+        writes.push([section, field, String(value)]);
+        return accept;
+    };
+    const streamWrites = [];
+    const runConfigEditor = args => { streamWrites.push(args); return { success: true }; };
+    const general = {
+        toggle_debounce_seconds: 1.5, retry_on_error: true, retry_count: 3,
+        bitrate_kbps: 24, sample_rate: 24000, double_injection: false,
+        clipboard_tool: 'wl-copy', clipboard_paste_tool: 'wl-paste',
+    };
+    let state = { general, stream: { chunk_log_max_lines: 500 } };
+    const debounce = fn => fn;   // il ritardo e' infrastruttura, non logica
+
+    const make = new Function('Adw', 'Gtk', 'GLib', '_', 'N_', 'debounce',
+        'getServicesState', 'runConfigEditor', 'setGeneralField',
+        `${rateMatch[0]}\nreturn function (window) {${body}};`);
+    const method = make(AdwRec, Gtk, GLibFake, t => t, t => t, debounce,
+        () => state, runConfigEditor, setGeneralField);
+
+    let errorShown = 0;
+    const self = { _showConfigError() { errorShown++; } };
+    const win = { added: [], add(p) { this.added.push(p); } };
+
+    method.call(self, win);
+    if (win.added.length !== 1 || errorShown !== 0)
+        throw new Error('la pagina General non e stata aggiunta (o ha mostrato errore)');
+    const byTitle = (cls, title) => {
+        const row = built.find(o => o instanceof cls && o.title === title);
+        if (!row)
+            throw new Error(`riga "${title}" non costruita`);
+        return row;
+    };
+
+    // Valori iniziali letti dallo stato reale, non da default fissi.
+    if (byTitle(Adw.SpinRow, 'Attempts').value !== 3)
+        throw new Error('Attempts non legge retry_count dallo stato');
+    if (byTitle(Adw.SwitchRow, 'Write raw text first').active !== false)
+        throw new Error('double_injection=false non rispecchiato');
+    if (byTitle(Adw.ComboRow, 'Sample rate').selected !== 3)
+        throw new Error('sample_rate 24000 non selezionato (indice 3)');
+    if (byTitle(Adw.SpinRow, 'Chunk log size (lines)').value !== 500)
+        throw new Error('chunk_log_max_lines non letto');
+    if (writes.length !== 0)
+        throw new Error(`la costruzione ha scritto in config: ${JSON.stringify(writes)}`);
+
+    // Toggle e SpinRow scrivono il campo giusto col formato giusto.
+    byTitle(Adw.SwitchRow, 'Retry on error').active = false;
+    byTitle(Adw.SpinRow, 'Attempts').value = 5;
+    byTitle(Adw.SpinRow, 'Toggle debounce (seconds)').value = 2.5;
+    const expect = [
+        ['audio', 'retry_on_error', 'false'],
+        ['audio', 'retry_count', '5'],
+        ['audio', 'toggle_debounce_seconds', '2.5'],
+    ];
+    if (JSON.stringify(writes) !== JSON.stringify(expect))
+        throw new Error(`scritture inattese: ${JSON.stringify(writes)}`);
+
+    // Rifiuto del backend: la ComboRow torna al valore dello stato.
+    writes.length = 0;
+    accept = false;
+    const combo = byTitle(Adw.ComboRow, 'Sample rate');
+    combo.selected = 4;
+    if (writes[0]?.join('/') !== 'audio/sample_rate/48000')
+        throw new Error(`sample_rate non scritto: ${JSON.stringify(writes)}`);
+    if (combo.selected !== 3)
+        throw new Error('rifiuto del backend: la ComboRow non e tornata a 24000');
+
+    // EntryRow: valore rifiutato -> testo ripristinato all'ultimo buono.
+    const entryRow = byTitle(Adw.EntryRow, 'Copy command');
+    entryRow.text = 'bad cmd';
+    entryRow.emit('apply');
+    if (entryRow.text !== 'wl-copy')
+        throw new Error(`comando rifiutato non ripristinato: "${entryRow.text}"`);
+    accept = true;
+    entryRow.text = 'xclip';
+    entryRow.emit('apply');
+    if (entryRow.text !== 'xclip')
+        throw new Error('comando accettato ripristinato per errore');
+
+    // Diagnostica: passa da set-stream, non da set-general.
+    byTitle(Adw.SpinRow, 'Chunk log size (lines)').value = 1000;
+    if (JSON.stringify(streamWrites.at(-1)) !== JSON.stringify(['set-stream', 'chunk_log_max_lines', '1000']))
+        throw new Error(`chunk_log_max_lines scritto male: ${JSON.stringify(streamWrites)}`);
+
+    // Config illeggibile: errore mostrato, nessuna riga costruita a meta'.
+    state = null;
+    const before = built.length;
+    method.call(self, { add() {} });
+    if (errorShown !== 1)
+        throw new Error('config illeggibile: _showConfigError non chiamato');
+    if (built.slice(before).some(o => o instanceof Adw.SpinRow))
+        throw new Error('config illeggibile: righe costruite comunque');
+
+    console.log('Pagina General REALE OK: valori dallo stato, scritture per campo/formato, revert su rifiuto, set-stream, config illeggibile');
+})();
