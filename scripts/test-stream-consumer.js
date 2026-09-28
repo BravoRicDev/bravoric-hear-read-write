@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 // Regressione dello snapshot consumer reale usato dall'estensione GNOME.
+// Regression of the real snapshot consumer used by the GNOME extension.
 'use strict';
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -12,6 +13,12 @@ const { matchBrace } = require('./lib/brace-match.cjs');
 // test i metodi restano quelli REALI e ricevono un `Main` finto: qui i due
 // helper inoltrano a quel Main. Il comportamento degli helper veri (interruttore
 // spento, chiave assente) e' provato a parte, estraendoli dal sorgente.
+// The methods extracted from extension.js notify through
+// notifyErrorIfEnabled / notifyStatusIfEnabled (module functions, controlled
+// by GSettings). In the tests the methods stay the REAL ones and receive a
+// fake `Main`: here the two helpers forward to that Main. The behavior of
+// the real helpers (switch off, missing key) is proven separately, by
+// extracting them from the source.
 const NOTIFY_PRELUDE = 'const notifyErrorIfEnabled = (t, b) => Main.notifyError(t, b);\n'
     + 'const notifyStatusIfEnabled = (t, b) => Main.notify(t, b);\n'
     + 'const settingInt = (key, fallback) => fallback;\n';
@@ -22,9 +29,12 @@ const NOTIFY_PRELUDE = 'const notifyErrorIfEnabled = (t, b) => Main.notifyError(
     const source = fs.readFileSync(extensionPath, 'utf8');
     const { consumeStreamSnapshot, classifyStreamItem, normalizeCommandKeyword, computeStreamDelete, parseBlacklist } = await import(pathToFileURL(helperPath));
     // S4: il modulo puro del monitor di cache, importato ed ESEGUITO come stream-consumer.mjs
+    // S4: the pure module of the cache monitor, imported and RUN like
+    // stream-consumer.mjs
     const watchPath = path.join(__dirname, '..', 'gnome-extension', 'bravoric-indicator@local', 'watch-cache.mjs');
     const { watchCacheFile, watchStatusFile, watchStreamStateFile } = await import(pathToFileURL(watchPath));
     // S4: il modulo puro del lampeggio, importato ed ESEGUITO come gli altri
+    // S4: the pure module of the blink, imported and RUN like the others
     const blinkPath = path.join(__dirname, '..', 'gnome-extension', 'bravoric-indicator@local', 'recording-blink.mjs');
     const { setRecordingBlink } = await import(pathToFileURL(blinkPath));
     let pass = 0;
@@ -46,6 +56,8 @@ const NOTIFY_PRELUDE = 'const notifyErrorIfEnabled = (t, b) => Main.notifyError(
 
     c = consumer();
     // Più scritture coalesciate: consumer osserva solo lo snapshot risultante.
+    // Several coalesced writes: the consumer observes only the resulting
+    // snapshot.
     r = consumeStreamSnapshot(c, state(true, ['a', 'b', 'c']));
     check('coalescenza debounce non perde i chunk presenti nello snapshot', r.items.length === 3);
 
@@ -86,6 +98,12 @@ const NOTIFY_PRELUDE = 'const notifyErrorIfEnabled = (t, b) => Main.notifyError(
     // test esistente presidiava solo il campo corretto e lasciava il morto
     // senza guardia. Qui il campo morto non deve piu' esistere e il flag vero
     // deve essere davvero azzerato al cambio di sessione.
+    // Defect G (round 1): `finalObserved` (without underscore) was a dead field
+    // — initialized to false at the session change and NEVER read, while the
+    // real flag `_streamFinalObserved` stayed True from the previous session.
+    // The existing test guarded only the correct field and left the dead one
+    // unguarded. Here the dead field must no longer exist and the real flag must
+    // really be reset at the session change.
     const helperSrc = fs.readFileSync(helperPath, 'utf8');
     check('nessun campo morto finalObserved senza underscore',
         !/\bfinalObserved\b/.test(helperSrc.replace(/_streamFinalObserved/g, '')));
@@ -95,6 +113,8 @@ const NOTIFY_PRELUDE = 'const notifyErrorIfEnabled = (t, b) => Main.notifyError(
     // Comportamento: dopo aver osservato una sessione finale, il cambio di
     // sessione deve ripulire il flag (con il campo morto il reset non
     // arrivava da nessuna parte).
+    // Behavior: after observing a final session, the session change must clear
+    // the flag (with the dead field the reset arrived from nowhere).
     c = consumer();
     consumeStreamSnapshot(c, state(true, []));
     consumeStreamSnapshot(c, state(false, ['x']));
@@ -122,6 +142,11 @@ const NOTIFY_PRELUDE = 'const notifyErrorIfEnabled = (t, b) => Main.notifyError(
     // presidiava la guardia per NOME, quindi verificava che una LETTERA ci fosse e non che
     // il teardown fermasse il lavoro. Sostituito dalla sezione S3B in fondo al file, che
     // esegue la guardia vera e misura che nessun timer di digitazione riparta.
+    // The third term of this assertion was
+    // `source.includes('this._streamDestroyed')`: it guarded the guard by NAME,
+    // so it verified that a LETTER was there and not that the teardown stopped
+    // the work. Replaced by section S3B at the bottom of the file, which runs the
+    // real guard and measures that no typing timer restarts.
     check('type branch uses paced tracked timer and destroy cleanup', source.includes('this._streamTypeTimerId = GLib.timeout_add') && source.includes('GLib.source_remove(this._streamTypeTimerId)'));
     check('callback accoda in FIFO e usa worker seriale', source.includes('this._streamQueue.push(...result.items.map(item => classifyStreamItem(item, this._streamRules, this._streamBlacklist)))') && source.includes('_startStreamPasteWorker()') && source.includes('this._streamQueue[0]'));
     check('device mancante non avvia worker né consuma la coda', source.includes('if (!this._virtualDevice)') && source.includes('un prossimo evento può riprovare'));
@@ -134,12 +159,19 @@ const NOTIFY_PRELUDE = 'const notifyErrorIfEnabled = (t, b) => Main.notifyError(
 
     // B5: il timer ricorsivo di _requestStreamEnd deve essere tracciato,
     // annullato in destroy() e interrompersi se l'estensione è distrutta.
+    // B5: the recursive timer of _requestStreamEnd must be tracked, cancelled in
+    // destroy() and stop if the extension is destroyed.
     const reqEndBody = (source.match(/_requestStreamEnd\(sessionId\)\s*\{([\s\S]*?)\n    \}/) || [])[1] || '';
     check('_requestStreamEnd traccia il timer ricorsivo', reqEndBody.includes('this._streamEndTimerId = GLib.timeout_add'));
     // Qui c'era `reqEndBody.includes('this._streamDestroyed')`: la stessa verifica per
     // NOME. L'intento ("il polling di fine sessione non si ri-arma dopo destroy()") e'
     // ora misurato per comportamento nella sezione S3B, che esegue _requestStreamEnd
     // vero, chiama destroy() e poi fa scadere il timer gia' armato.
+    // Here there was `reqEndBody.includes('this._streamDestroyed')`: the same
+    // check by NAME. The intent ("the end-of-session polling does not re-arm
+    // after destroy()") is now measured by behavior in section S3B, which runs
+    // the real _requestStreamEnd, calls destroy() and then lets the already armed
+    // timer expire.
     check('_init inizializza _streamEndTimerId', source.includes('this._streamEndTimerId = null'));
     check('destroy rimuove _streamEndTimerId', source.includes('GLib.source_remove(this._streamEndTimerId)'));
     // Giro 18: la chiusura ora passa per il sottocomando idempotente `stop`.
@@ -151,6 +183,14 @@ const NOTIFY_PRELUDE = 'const notifyErrorIfEnabled = (t, b) => Main.notifyError(
     // per indebolimento: l'intento dell'asserzione — la fine sessione passa
     // dalla porta giusta e resta agganciata al drenaggio della coda — e'
     // PRESERVATO, e i due pezzi sono verificati separatamente.
+    // Round 18: the close now goes through the idempotent `stop` subcommand.
+    // Before, the assertion demanded the exact string
+    // spawnBackground('bravoric-stream-toggle'), i.e. the call WITHOUT arguments
+    // which is the silent close: with no live session the toggle STARTS a new one
+    // instead of closing (measured in stream_toggle_main). The string therefore
+    // changed by choice, not by weakening: the intent of the assertion — the end
+    // of the session goes through the right door and stays hooked to the queue
+    // drain — is PRESERVED, and the two pieces are verified separately.
     check('_requestStreamEnd conserva la logica di fine stream',
         reqEndBody.includes("spawnBackground('bravoric-stream-toggle', 'stop')")
         && reqEndBody.includes('this._streamQueue.length || this._streamWorkerActive'));
@@ -158,17 +198,25 @@ const NOTIFY_PRELUDE = 'const notifyErrorIfEnabled = (t, b) => Main.notifyError(
     // `state.active === true` (che faceva tornare in silenzio quando la
     // lettura dello stato era obsoleta) non deve piu' esserci, e la
     // sessione diversa va lasciata in pace invece di chiusa.
+    // Anti-drift on the exact point of the defect: the start condition
+    // `state.active === true` (which made it return silently when the state read
+    // was obsolete) must no longer be there, and a different session must be
+    // left alone instead of closed.
     check('_requestStreamEnd non usa piu active===true come condizione di partenza',
         !reqEndBody.includes('state.active === true')
         && reqEndBody.includes('state.session_id !== sessionId'));
     // La chiusura non puo' fallire in silenzio: ogni uscita terminale che
     // NON spara il toggle lascia una traccia (logError).
+    // The close cannot fail silently: every terminal exit that does NOT fire the
+    // toggle leaves a trace (logError).
     check('_requestStreamEnd non torna mai in silenzio senza traccia',
         reqEndBody.includes('nessuna chiusura necessaria')
         && reqEndBody.includes('stream end abbandonato')
         && reqEndBody.includes("logError(e, 'stream end state verification')"));
     // E la coda che non si svuota non tiene piu' la chiusura appesa: c'e' un
     // tetto oltre il quale si chiude comunque (pallino rosso segnalato).
+    // And the queue that does not empty no longer keeps the close hanging: there
+    // is a cap beyond which it closes anyway (red dot reported).
     check('_requestStreamEnd ha un tetto che forza la chiusura',
         reqEndBody.includes('STREAM_END_TIMEOUT_MS') && reqEndBody.includes('chiusura forzata'));
 
@@ -190,6 +238,9 @@ const NOTIFY_PRELUDE = 'const notifyErrorIfEnabled = (t, b) => Main.notifyError(
     check('blacklist has precedence over rules', classifyStreamItem({text: 'invio!'}, [{keyword: 'invio', action: 'key', key: 'Return'}], new Set(['invio'])).action === 'drop');
     // Regressione del bug regex doppio-escaped: la normalizzazione deve trattare \s
     // come whitespace e NON rimuovere per errore "s" o backslash finali.
+    // Regression of the double-escaped regex bug: the normalization must treat
+    // \s as whitespace and must NOT remove a trailing "s" or backslash by
+    // mistake.
     check('normalizzazione non rimuove una "s" finale', normalizeCommandKeyword('thanks') === 'thanks');
     check('normalizzazione non rimuove un backslash finale', normalizeCommandKeyword('foo\\') === 'foo\\');
     check('normalizzazione rimuove solo punteggiatura e spazi finali', normalizeCommandKeyword('cancella...') === 'cancella');
@@ -234,6 +285,13 @@ const NOTIFY_PRELUDE = 'const notifyErrorIfEnabled = (t, b) => Main.notifyError(
     // finisce nel file di contesto. Qui il metodo REALE viene estratto per
     // brace-matching ed eseguito, con this legato all'istanza.
     // ====================================================================
+    // ====================================================================
+    // Round 2 (F1, C2): _onStreamStateChanged really run.
+    // Before, this file only looked at strings in extension.js: no behavioral
+    // proof on the method that decides what ends up in the field and what ends
+    // up in the context file. Here the REAL method is extracted by
+    // brace-matching and run, with this bound to the instance.
+    // ====================================================================
     console.log('== giro 2: _onStreamStateChanged reale (F1, C2) ==');
 
     function methodBody(src, signature) {
@@ -249,9 +307,14 @@ const NOTIFY_PRELUDE = 'const notifyErrorIfEnabled = (t, b) => Main.notifyError(
     // Ancoraggio sulla DEFINIZIONE, non sulla chiamata: la stringa
     // '_onStreamStateChanged()' compare PRIMA alla riga 436, dentro un'altra
     // funzione, e il brace-matching avrebbe estratto il corpo di quella.
+    // Anchored on the DEFINITION, not on the call: the string
+    // '_onStreamStateChanged()' appears FIRST at line 436, inside another
+    // function, and the brace-matching would have extracted the body of that one.
     const body = methodBody(source, '\n    _onStreamStateChanged() {');
     // Il corpo usa GLib/Gio, gli helper del consumer, logError, _sm e Main:
     // si forniscono tutti, e si chiama la funzione con this = istanza.
+    // The body uses GLib/Gio, the consumer's helpers, logError, _sm and Main: we
+    // provide them all, and the function is called with this = instance.
     const realMethod = new Function(
         'GLib', 'Gio', 'consumeStreamSnapshot', 'classifyStreamItem', 'parseBlacklist',
         'logError', 'TextDecoder', 'JSON', 'STREAM_STATE_PATH',
@@ -290,11 +353,13 @@ const NOTIFY_PRELUDE = 'const notifyErrorIfEnabled = (t, b) => Main.notifyError(
     }
 
     // --- F1: coda bloccata della sessione precedente -------------------
+    // --- F1: blocked queue of the previous session -------------------
     const ind = newIndicator();
     feed(ind, state(true, ['PRIMO CHUNK']));
     check('F1: il chunk della sessione 1 finisce in coda',
         ind._streamQueue.length === 1 && ind._streamQueue[0].text === 'PRIMO CHUNK');
     // invio fallito: il blocco scatta e il chunk resta in testa
+    // failed send: the block fires and the chunk stays at the head
     ind._streamPasteBlocked = true;
     ind._streamSegments = ['PRIMO CHUNK'];
 
@@ -314,6 +379,8 @@ const NOTIFY_PRELUDE = 'const notifyErrorIfEnabled = (t, b) => Main.notifyError(
 
     // Caso con comando in testa: il comando della sessione vecchia, se
     // sopravvivesse, agirebbe sui segmenti NUOVI (BackSpace distruttivi).
+    // Case with a command at the head: the old session's command, if it
+    // survived, would act on the NEW segments (destructive BackSpaces).
     const indCmd = newIndicator();
     const snapshotCmd = (active, chunks, session) => ({
         active, chunks, mode: 'per_chunk', session_id: session,
@@ -333,6 +400,8 @@ const NOTIFY_PRELUDE = 'const notifyErrorIfEnabled = (t, b) => Main.notifyError(
 
     // Il blocco SENZA cambio di sessione deve invece restare: un errore di
     // invio non viene dimenticato al primo chunk successivo.
+    // The block WITHOUT a session change must instead stay: a send error is not
+    // forgotten at the first following chunk.
     const indSticky = newIndicator();
     feed(indSticky, state(true, ['uno']));
     indSticky._streamPasteBlocked = true;
@@ -346,6 +415,10 @@ const NOTIFY_PRELUDE = 'const notifyErrorIfEnabled = (t, b) => Main.notifyError(
     // copia: la copia precedente scriveva anche quando i segmenti erano null,
     // cioe' non presidiava la guardia che il difetto riguarda. Gio e' finto,
     // la scrittura viene catturata.
+    // --- C2: the context file does not receive never-delivered segments -----
+    // Here too the REAL method (_writeStreamLiveText) is run, not a copy: the
+    // previous copy also wrote when the segments were null, i.e. it did not
+    // guard the guard the defect is about. Gio is fake, the write is captured.
     const liveBody = methodBody(source, '\n    _writeStreamLiveText() {');
     const realLive = new Function(
         'Gio', 'STREAM_LIVE_TEXT_PATH', 'TextEncoder', 'logError', liveBody,
@@ -372,6 +445,7 @@ const NOTIFY_PRELUDE = 'const notifyErrorIfEnabled = (t, b) => Main.notifyError(
     }
 
     // Caso normale: i segmenti consegnati vengono scritti.
+    // Normal case: the delivered segments are written.
     const ok = makeLiveIndicator(['PRIMO']);
     ok._write();
     check('C2: il file di contesto registra i segmenti consegnati',
@@ -380,11 +454,14 @@ const NOTIFY_PRELUDE = 'const notifyErrorIfEnabled = (t, b) => Main.notifyError(
         && ok._written[0].session_id === 's1');
     // Il caso del difetto: segmenti sconosciuti (null) dopo il cambio di
     // sessione -> il metodo deve NON scrivere. E' la guardia che chiude C2.
+    // The defect case: unknown segments (null) after the session change -> the
+    // method must NOT write. It is the guard that closes C2.
     const unknown = makeLiveIndicator(null);
     unknown._write();
     check('C2: con segmenti sconosciuti non viene scritto nulla',
         unknown._written.length === 0);
     // Nessuna sessione: idem, non si scrive.
+    // No session: same, nothing is written.
     const noSession = makeLiveIndicator(['X']);
     noSession._streamSessionId = null;
     noSession._write();
@@ -393,6 +470,9 @@ const NOTIFY_PRELUDE = 'const notifyErrorIfEnabled = (t, b) => Main.notifyError(
     // Il percorso completo: al cambio di sessione i segmenti sono azzerati
     // (null) e quindi il file di contesto NON contiene piu' i segmenti della
     // sessione precedente, che non erano mai stati consegnati.
+    // The full path: at the session change the segments are reset (null) and
+    // therefore the context file NO LONGER contains the segments of the previous
+    // session, which had never been delivered.
     const indFlow = newIndicator();
     feed(indFlow, state(true, ['PRIMO'], 'per_chunk', 's1'));
     indFlow._streamSegments = ['PRIMO'];
@@ -417,9 +497,17 @@ const NOTIFY_PRELUDE = 'const notifyErrorIfEnabled = (t, b) => Main.notifyError(
     // campo, ma il modello — che rappresenta cosa c'e' nel campo — restava
     // invariato: il backend leggeva come presenti parole appena cancellate.
     // Ancoraggio sulla DEFINIZIONE, per la stessa ragione di sopra.
+    // The defect: in the action="key" branch the key was pressed and released
+    // and then it exited, without touching _streamSegments and without calling
+    // _writeStreamLiveText. The BackSpace really deleted the characters from the
+    // field, but the model — which represents what is in the field — stayed
+    // unchanged: the backend read as present words that had just been deleted.
+    // Anchored on the DEFINITION, for the same reason as above.
     const cmdBody = methodBody(source, '\n    _runStreamCommand(item) {');
     // Il corpo usa Clutter (la keyMap), Main, logError, computeStreamDelete e
     // gli helper dell'istanza: si forniscono tutti come parametri.
+    // The body uses Clutter (the keyMap), Main, logError, computeStreamDelete and
+    // the instance's helpers: we provide them all as parameters.
     const realCommand = new Function(
         'Clutter', 'Main', 'logError', 'computeStreamDelete', 'GLib', '_', 'item', NOTIFY_PRELUDE + cmdBody,
     );
@@ -441,17 +529,23 @@ const NOTIFY_PRELUDE = 'const notifyErrorIfEnabled = (t, b) => Main.notifyError(
     }
     // Il metodo legge il comando da `item.command`, quindi l'item passato
     // avvolge la regola: e' la stessa forma che produce classifyStreamItem.
+    // The method reads the command from `item.command`, so the item passed wraps
+    // the rule: it is the same shape that classifyStreamItem produces.
     const runCommand = (ind, command) => realCommand.call(
         ind, ClutterStub,
         { notifyError: () => { ind._notified = true; } },
         () => {}, computeStreamDelete, { SOURCE_REMOVE: false },
         // gettext di test: le stringhe restano inglese, la sola cosa che
         // conta qui e' che i rami di uscita per errore restino eseguibili.
+        // Test gettext: the strings stay English, the only thing that matters here
+        // is that the error exit branches stay runnable.
         s => s, { sessionId: 's1', command },
     );
 
     // CASO A: BackSpace su due segmenti. Il segmento cancellato sparisce dal
     // modello E il file di contesto viene riscritto.
+    // CASE A: BackSpace on two segments. The deleted segment disappears from the
+    // model AND the context file is rewritten.
     const indA = commandIndicator(['Parole da cancellare. ']);
     runCommand(indA, { action: 'key', key: 'BackSpace' });
     check('DIF-1: BackSpace toglie il chunk dal modello dei segmenti',
@@ -466,11 +560,13 @@ const NOTIFY_PRELUDE = 'const notifyErrorIfEnabled = (t, b) => Main.notifyError(
         && indA._sentKeys.every(k => k === ClutterStub[KEY('BackSpace')]),
         );
     // Il testo che il backend legge non deve piu' contenere la frase cancellata.
+    // The text the backend reads must no longer contain the deleted sentence.
     check('DIF-1: il testo cancellato non resta nel file letto dal backend',
         !JSON.stringify(indA._liveTextWrites[0]).includes('da cancellare'),
         );
 
     // CASO B: il ramo delete, come riferimento: il comportamento noto resta.
+    // CASE B: the delete branch, as a reference: the known behavior stays.
     const indB = commandIndicator(['Parole da cancellare. ']);
     runCommand(indB, { action: 'delete', scope: 'chunk' });
     check('DIF-1: il ramo delete continua a svuotare il modello',
@@ -480,6 +576,9 @@ const NOTIFY_PRELUDE = 'const notifyErrorIfEnabled = (t, b) => Main.notifyError(
     // CASO C: tasto NON distruttivo. Nessuna modifica al modello: premere
     // "a capo" o "freccia" non cancella testo, e toccare i segmenti qui
     // inventerebbe una cancellazione che non e' avvenuta.
+    // CASE C: NON-destructive key. No change to the model: pressing "newline" or
+    // "arrow" does not delete text, and touching the segments here would invent
+    // a deletion that did not happen.
     const indC = commandIndicator(['Testo intatto. ']);
     runCommand(indC, { action: 'key', key: 'Return' });
     check('DIF-1: un tasto non distruttivo lascia i segmenti come sono',
@@ -489,6 +588,8 @@ const NOTIFY_PRELUDE = 'const notifyErrorIfEnabled = (t, b) => Main.notifyError(
 
     // CASO D: piu' segmenti. La cancellazione di chunk toglie l'ULTIMO, e il
     // file di contesto deve riflettere quello che resta, non la lista intera.
+    // CASE D: several segments. The chunk deletion removes the LAST one, and the
+    // context file must reflect what remains, not the whole list.
     const indD = commandIndicator(['Primo. ', 'Secondo. ']);
     runCommand(indD, { action: 'key', key: 'Delete' });
     check('DIF-1: con piu\' segmenti la cancellazione toglie solo l\'ultimo',
@@ -509,6 +610,18 @@ const NOTIFY_PRELUDE = 'const notifyErrorIfEnabled = (t, b) => Main.notifyError(
     // regge il primo uso (null dove serve .push, array dove serve .size),
     // questa sezione va ROSSA.
     // ====================================================================
+    // ====================================================================
+    // round 4 (F10): REAL _init on a freshly created Indicator.
+    //
+    // Before, this campaign had no proof that a freshly created Indicator held
+    // up: the fields that _init did not initialize (_streamSegments,
+    // _streamRules, _streamBlacklist, _monitor, ...) existed only after the first
+    // successful read, and an access in that hole gave "Cannot read properties of
+    // undefined" instead of a sentinel value. Here the REAL method is run with
+    // faithful stubs of St/PopupMenu/Gio/GLib/Clutter: if _init initializes a
+    // field with a value that does not hold up at first use (null where .push is
+    // needed, array where .size is needed), this section goes RED.
+    // ====================================================================
     console.log('== giro 4: _init reale, un Indicatore appena creato non deve esplodere ==');
 
     // Il corpo di _init dipende da super._init() e chiama metodi fratelli
@@ -518,6 +631,13 @@ const NOTIFY_PRELUDE = 'const notifyErrorIfEnabled = (t, b) => Main.notifyError(
     // una base finta che fa da PanelMenu.Button. I fratelli sono presi dal
     // SORGENTE VERO con lo stesso brace-matching dei casi precedenti: quello
     // che si eseguisce qui dentro e' il prodotto, non una sua ricostruzione.
+    // The body of _init depends on super._init() and calls sibling methods
+    // (_setAccessibleState, _idleGicon, _buildDiagnosticsSubmenu, the watchers,
+    // _startVirtualDevice, _refreshStatus, _refreshHistory), so it cannot run as
+    // a free function: it is mounted in a class that inherits from a fake base
+    // acting as PanelMenu.Button. The siblings are taken from the REAL SOURCE
+    // with the same brace-matching as the previous cases: what runs in here is
+    // the product, not a reconstruction of it.
     const initBody = methodBody(source, '\n    _init(extension) {');
     const sibling = (signature) => methodBody(source, `\n    ${signature} {`);
 
@@ -541,6 +661,11 @@ const NOTIFY_PRELUDE = 'const notifyErrorIfEnabled = (t, b) => Main.notifyError(
     // sezione (che guarda i campi che _init lascia inizializzati), e sostituirli
     // e' esattamente il tipo di copia che i casi precedenti rifiutano: qui si
     // dichiara cosa non gira, non si finge che giri.
+    // The methods that _init calls and that do NOT run here: they really read
+    // the disk or talk to the virtual keyboard. They are not the subject of this
+    // section (which looks at the fields that _init leaves initialized), and
+    // replacing them is exactly the kind of copy the previous cases refuse: here
+    // we declare what does not run, we do not pretend it does.
     const STUBBED_IO = `
         _watchStatusFile() { this._monitor = null; this._monitorId = 0; }
         _watchStreamStateFile() { this._streamMonitor = null; this._streamMonitorId = 0; }
@@ -602,6 +727,8 @@ const NOTIFY_PRELUDE = 'const notifyErrorIfEnabled = (t, b) => Main.notifyError(
         consumeStreamSnapshot, classifyStreamItem, parseBlacklist, computeStreamDelete);
 
     // L'estensione finta serve solo a openPreferences()/path, che _init non chiama.
+    // The fake extension only serves openPreferences()/path, which _init does
+    // not call.
     let fresh = null;
     let initError = null;
     try {
@@ -624,10 +751,17 @@ const NOTIFY_PRELUDE = 'const notifyErrorIfEnabled = (t, b) => Main.notifyError(
     // cui _refreshStatus/_refreshHistory fanno `x += 1`. Se tornassero
     // undefined, il primo giro produrrebbe NaN e la guardia `gen !== this._x`
     // lascerebbe passare la risposta vecchia: tornerebbe il difetto stale.
+    // The generation counters must be 0 and NOT undefined: it is the field on
+    // which _refreshStatus/_refreshHistory do `x += 1`. If they came back
+    // undefined, the first round would produce NaN and the guard `gen !==
+    // this._x` would let the old answer through: the stale defect would come
+    // back.
     check('F10: i contatori generazionali sono 0, non undefined',
         fresh._statusRefreshGen === 0 && fresh._historyRefreshGen === 0);
     // I campi che destroy() legge: se non esistessero, il teardown si fermerebbe
     // al primo `if (this._monitor)` che trova undefined come falso.
+    // The fields that destroy() reads: if they did not exist, the teardown would
+    // stop at the first `if (this._monitor)` that finds undefined as false.
     check('F10: i monitor sono inizializzati a null prima di essere creati',
         fresh._monitor === null && fresh._streamMonitor === null
         && fresh._monitorId === 0 && fresh._streamMonitorId === 0);
@@ -635,6 +769,9 @@ const NOTIFY_PRELUDE = 'const notifyErrorIfEnabled = (t, b) => Main.notifyError(
     // Il punto per cui il null conta: se _streamSegments fosse [] un comando
     // delete partirebbe da un campo "vuoto" e cancellerebbe a caso. Con null
     // computeStreamDelete non trova nulla da cancellare (fail-safe no-op).
+    // The point why null matters: if _streamSegments were [] a delete command
+    // would start from an "empty" field and delete at random. With null
+    // computeStreamDelete finds nothing to delete (fail-safe no-op).
     check('F10: un delete su un campo sconosciuto non cancella nulla',
         computeStreamDelete(fresh._streamSegments || [], 'chunk').count === 0
         && computeStreamDelete(fresh._streamSegments || [], 'word').count === 0);
@@ -650,23 +787,45 @@ const NOTIFY_PRELUDE = 'const notifyErrorIfEnabled = (t, b) => Main.notifyError(
     // test gira sull'indicatore REALE, quindi conta anche quello. Se il
     // teardown smettesse di ripulirlo, il valore sarebbe 0 e il verde di
     // sotto sparirebbe.
+    // destroy() right after the extension is switched on: the only source that
+    // exists is the one that _init has just armed at the end, the periodic
+    // timeout check timer (GLib.timeout_add_seconds). Everything else is already
+    // 0/null and must NOT generate removals: source_remove on a non-existent id
+    // is a runtime warning in the real GLib, and it is exactly the symptom that
+    // a badly copied teardown line produces.
+    //
+    // The number is 1 and not 0 because _init really arms that timer: this test
+    // runs on the REAL indicator, so it counts that one too. If the teardown
+    // stopped cleaning it up, the value would be 0 and the green below would
+    // vanish.
     const removedIds = [];
     const destroyBody = methodBody(source, '\n    destroy() {');
     // destroy() chiama super.destroy() in fondo: la super classe e' una base
     // finta che non fa niente, perche' qui si prova il TEARDOWN dell'estensione,
     // non quello di PanelMenu.Button (che vuole Mutter).
+    // destroy() calls super.destroy() at the end: the superclass is a fake base
+    // that does nothing, because here the extension's TEARDOWN is proven, not
+    // that of PanelMenu.Button (which needs Mutter).
     const makeDestroy = (onRemove) => new Function('GLib', 'Base',
         `return class extends Base { destroy() {${destroyBody}\n} }`)(
         { source_remove: onRemove },
         class { destroy() { /* base finta: super.destroy() non deve fare nulla */ } });
+/*
+ * fake base: super.destroy() must do nothing
+ */
     let destroyError = null;
     // destroy() azzera il campo dopo averlo usato: l'id va letto PRIMA.
+    // destroy() resets the field after using it: the id must be read BEFORE.
     const expectedId = fresh._timeoutCheckId;
     try {
         // Girando sull'indicatore davvero prodotto da _init (non su un'istanza
         // vuota), il teardown trova i campi nello stato in cui _init li ha
         // lasciati: e' esattamente il percorso che fa disable() su un
         // indicatore appena acceso.
+        // Running on the indicator really produced by _init (not on an empty
+        // instance), the teardown finds the fields in the state in which _init left
+        // them: it is exactly the path that disable() takes on a freshly switched-on
+        // indicator.
         makeDestroy(id => { removedIds.push(id); }).prototype.destroy.call(fresh);
     } catch (e) {
         destroyError = e;
@@ -682,11 +841,18 @@ const NOTIFY_PRELUDE = 'const notifyErrorIfEnabled = (t, b) => Main.notifyError(
     // fittizio in corso DEVE rimuoverlo. Se il test di sopra passasse per
     //che' il teardown non gira affatto, questa riga se ne accorgerebbe: il
     // GUARDIANO può essere verde solo perche' la rimozione c'e' davvero.
+    // Non-vacuity proof: the same destroy() on an instance with a fictitious
+    // timer in progress MUST remove it. If the test above passed because the
+    // teardown does not run at all, this line would notice: the GUARDIAN can be
+    // green only because the removal really exists.
     let removedLive = 0;
     try {
         // Secondo indicatore con i campi che _init scrive e DUE timer vivi:
         // quello di incolla e quello periodico (che _init aveva gia' azzerato
         // sopra, chiamando destroy su fresh, quindi va rimesso qui).
+        // Second indicator with the fields that _init writes and TWO live timers: the
+        // paste one and the periodic one (which _init had already reset above,
+        // calling destroy on fresh, so it must be put back here).
         const live = Object.create(Object.getPrototypeOf(fresh));
         Object.assign(live, fresh, { _streamPasteTimerId: 42, _timeoutCheckId: 7 });
         makeDestroy(() => { removedLive++; }).prototype.destroy.call(live);
@@ -707,6 +873,17 @@ const NOTIFY_PRELUDE = 'const notifyErrorIfEnabled = (t, b) => Main.notifyError(
     // e la verifica e' sugli EFFETTI: nessun tasto inviato, nessun timer
     // ri-armato, nessun toggle sparato, coda svuotata.
     // ====================================================================
+    // ====================================================================
+    // S3B: after destroy() the queued queue is no longer processed and the write
+    // timer does not restart.
+    //
+    // The gate used to guard a LETTER (`source.includes('this._streamDestroyed')`):
+    // it could stay green with the guard emptied, or with the flag removed and
+    // the guard left with no condition. Here the REAL methods extracted from
+    // extension.js run — _startStreamPasteWorker, _requestStreamEnd and destroy —
+    // and the check is on the EFFECTS: no key sent, no timer re-armed, no toggle
+    // fired, queue emptied.
+    // ====================================================================
     console.log('== S3B: teardown — coda svuotata e timer di scrittura non riparte ==');
 
     const workerBody = methodBody(source, '\n    _startStreamPasteWorker() {');
@@ -717,11 +894,11 @@ const NOTIFY_PRELUDE = 'const notifyErrorIfEnabled = (t, b) => Main.notifyError(
     const StRun = { ClipboardType: { CLIPBOARD: 0 }, Clipboard: { get_default: () => ({ set_text() {} }) } };
 
     function makeRun() {
-        const armed = [];      // callback dei sorgenti GLib vivi
-        const removed = [];    // id che il teardown ha chiesto a GLib
-        const toggles = [];    // toggle sparati DOPO il teardown
-        const errors = [];     // logError emessi DOPO il teardown
-        const notices = [];    // notifiche mostrate all'utente DOPO il teardown
+        const armed = [];      // callback dei sorgenti GLib vivi | callbacks of the live GLib sources
+        const removed = [];    // id che il teardown ha chiesto a GLib | ids the teardown asked GLib to remove
+        const toggles = [];    // toggle sparati DOPO il teardown | toggles fired AFTER the teardown
+        const errors = [];     // logError emessi DOPO il teardown | logError calls emitted AFTER the teardown
+        const notices = [];    // notifiche mostrate all'utente DOPO il teardown | notifications shown to the user AFTER the teardown
         const GLib = {
             PRIORITY_DEFAULT: 0, SOURCE_REMOVE: false,
             timeout_add: (_p, _ms, cb) => { armed.push(cb); return armed.length; },
@@ -739,6 +916,9 @@ const NOTIFY_PRELUDE = 'const notifyErrorIfEnabled = (t, b) => Main.notifyError(
             // Gio.Cancellable vero: cancel() è irreversibile e is_cancelled()
             // resta vero. È questa la condizione che le guardie leggono, quindi
             // se lo stub mentisse il teardown misurerebbe il nulla.
+            // Real Gio.Cancellable: cancel() is irreversible and is_cancelled() stays
+            // true. It is this condition that the guards read, so if the stub lied the
+            // teardown would measure nothing.
             _cancellable: { _c: false, cancel() { this._c = true; }, is_cancelled() { return this._c; } },
             _virtualDevice: { run_dispose() {} },
             _pasteShortcut: 'ctrl+v', _pasteChannel: 'clipboard', _pasteDelayMs: 5,
@@ -752,12 +932,20 @@ const NOTIFY_PRELUDE = 'const notifyErrorIfEnabled = (t, b) => Main.notifyError(
         // logError(error, tag): il tag e' il secondo argomento, quello che
         // dice COSA e' fallito. Raccolto con un resto di argomenti per non
         // dichiarare un primo parametro che qui non serve.
+        // logError(error, tag): the tag is the second argument, the one that says
+        // WHAT failed. Collected with a rest of arguments so as not to declare a
+        // first parameter that is not needed here.
         const collectError = (...args) => errors.push(args[1]);
         // Il corpo dichiara gia' `const item` al suo interno: non si passa
         // l'item come parametro (omonimo), il metodo lo prende dalla coda.
         // I metodi prendono il loro NOME VERO: cosi' le chiamate fra metodi
         // (il timer di pacing che rilancia il worker) risolvono come nel
         // sorgente, e non come in una ricostruzione.
+        // The body already declares `const item` inside it: the item is not passed
+        // as a parameter (same name), the method takes it from the queue. The
+        // methods take their REAL NAME: so the calls between methods (the pacing
+        // timer that relaunches the worker) resolve as in the source, and not as in
+        // a reconstruction.
         ind._startStreamPasteWorker = new Function('GLib', 'Main', 'St', 'Clutter', 'logError', '_', 'STREAM_SETTLE_MS',
             `${NOTIFY_PRELUDE}return function () {${workerBody}\n};`)(
             GLib, { notifyError: title => notices.push(title) }, StRun, ClutterRun,
@@ -771,9 +959,11 @@ const NOTIFY_PRELUDE = 'const notifyErrorIfEnabled = (t, b) => Main.notifyError(
     }
 
     // Il teardown REALE dello stesso blocco che gira in giro 4: nessuna copia.
+    // The REAL teardown of the same block that runs in round 4: no copy.
     const teardown = (run) => makeDestroy(id => run.removed.push(id)).prototype.destroy.call(run.ind);
 
     // --- coda accodata al teardown -------------------------------------
+    // --- queue queued at the teardown -------------------------------------
     const run = makeRun();
     run.ind._streamQueue.push({ action: 'paste', sessionId: 's1', index: 0, text: 'ciao' });
     run.ind._startStreamPasteWorker();
@@ -788,6 +978,8 @@ const NOTIFY_PRELUDE = 'const notifyErrorIfEnabled = (t, b) => Main.notifyError(
         && run.ind._virtualDevice === null);
 
     // Il timer era gia' armato: se il teardown non lo ferma, scade comunque.
+    // The timer was already armed: if the teardown does not stop it, it expires
+    // anyway.
     const keysAtTeardown = run.ind._keys.length;
     for (const cb of run.armed) cb();
     check('S3B: il timer gia armato NON invia piu tasti dopo il teardown',
@@ -804,6 +996,13 @@ const NOTIFY_PRELUDE = 'const notifyErrorIfEnabled = (t, b) => Main.notifyError(
     // e che nessuna delle altre guardie copre. Il worker deve uscire alla
     // prima riga, senza toccare la tastiera e senza notificare all'utente un
     // problema che non puo' piu' risolvere.
+    // The case that tells the FIRST guard from the others: destroy() empties the
+    // queue, so without a late-arriving chunk the worker's guard seems not to be
+    // needed (the empty queue makes it exit anyway). Here the chunk arrives AFTER
+    // the teardown: it is the situation that the `_streamDestroyed` flag stopped
+    // and that none of the other guards covers. The worker must exit at the first
+    // line, without touching the keyboard and without notifying the user of a
+    // problem it can no longer solve.
     run.ind._streamQueue.push({ action: 'paste', sessionId: 's1', index: 1, text: 'tardivo' });
     run.ind._startStreamPasteWorker();
     check('S3B: un chunk arrivato dopo il teardown non avvia lavoro',
@@ -813,6 +1012,7 @@ const NOTIFY_PRELUDE = 'const notifyErrorIfEnabled = (t, b) => Main.notifyError(
         && run.errors.length === 0);
 
     // --- il poll di fine sessione ---------------------------------------
+    // --- the end-of-session poll ---------------------------------------
     const runEnd = makeRun();
     runEnd.ind._streamQueue.push({ action: 'paste', sessionId: 's1', index: 0, text: 'ciao' });
     runEnd.ind._streamWorkerActive = true;
@@ -829,6 +1029,10 @@ const NOTIFY_PRELUDE = 'const notifyErrorIfEnabled = (t, b) => Main.notifyError(
     // carattere per carattere con un timer ricorsivo: senza la guardia in
     // `tick` il teardown lascerebbe il timer battere su un'istanza distrutta
     // (invio di tasti nel vuoto, o peggio, in un'altra finestra).
+    // 'type' channel: same question, second channel. `_typeStreamItem` types
+    // character by character with a recursive timer: without the guard in `tick`
+    // the teardown would let the timer beat on a destroyed instance (keys sent
+    // into the void, or worse, into another window).
     const typeBody = methodBody(source, '\n    _typeStreamItem(item) {');
     const ClutterType = { ...ClutterRun, KEY_Return: 36, KEY_Tab: 48,
         unicode_to_keysym: code => code };
@@ -839,6 +1043,8 @@ const NOTIFY_PRELUDE = 'const notifyErrorIfEnabled = (t, b) => Main.notifyError(
         `${NOTIFY_PRELUDE}return function (item) {${typeBody}\n};`)(
         // Lo stesso GLib del teardown, non una copia: i timer armati qui
         // devono finire nello stesso registro che il teardown ripulisce.
+        // The same GLib as the teardown, not a copy: the timers armed here must end
+        // up in the same registry that the teardown cleans.
         typeRun.GLib, { notifyError: title => typeRun.notices.push(title) },
         ClutterType, typeRun.collectError, s => s, 10);
     typeRun.ind._typeStreamItem({ text: 'ab' });
@@ -860,6 +1066,11 @@ const NOTIFY_PRELUDE = 'const notifyErrorIfEnabled = (t, b) => Main.notifyError(
     // una proprieta' che il codice non ha: copertura falsa.
     // Due chunk e non uno: il primo viene consegnato dal timer, il secondo
     // resta in coda, e resta li' a dimostrare che il lavoro continua.
+    // --- NON-VACUITY: the same effects without the teardown must fail. If these
+    // checks passed even with the teardown off, they would measure a property
+    // the code does not have: false coverage. Two chunks and not one: the first
+    // is delivered by the timer, the second stays in the queue, and stays there
+    // to show that the work continues.
     const broken = makeRun();
     for (const text of ['uno', 'due'])
         broken.ind._streamQueue.push({ action: 'paste', sessionId: 's1', index: 0, text });
@@ -877,6 +1088,11 @@ const NOTIFY_PRELUDE = 'const notifyErrorIfEnabled = (t, b) => Main.notifyError(
     // tastiera virtuale resta viva: e' esattamente il caso in cui la guardia
     // deve dire "non lavoro piu'". Se i controlli di sopra fossero verdi
     // anche in questo caso, misurerebbero una proprieta' che il codice non ha.
+    // Twin CONTRA: the hole that G1 forbids is the teardown that resets the
+    // guarded structure only halfway. Here the queue is emptied but the virtual
+    // keyboard stays alive: it is exactly the case in which the guard must say
+    // "I no longer work". If the checks above were green in this case too, they
+    // would measure a property the code does not have.
     const hole = makeRun();
     hole.ind._streamQueue.push({ action: 'paste', sessionId: 's1', index: 0, text: 'ciao' });
     hole.ind._startStreamPasteWorker();
@@ -900,16 +1116,31 @@ const NOTIFY_PRELUDE = 'const notifyErrorIfEnabled = (t, b) => Main.notifyError(
     // che fanno: campo del monitor, collegamento dell'handler, periodo del
     // timer e reset del riferimento si vedono tutti.
     // ====================================================================
+    // ====================================================================
+    // S4 (G9): watch-cache.mjs REALLY RUN.
+    //
+    // Before this extraction the directory monitor and the two debounces had NO
+    // test at all: round 4 avoids them, replacing
+    // _watchStatusFile/_watchStreamStateFile with fake stubs, so the teardown
+    // that consumes them was measured only on hand-written fields. Here the pure
+    // module is imported and run, with Gio/GLib stubs that NOTE what they do:
+    // monitor field, handler connection, timer period and reference reset are
+    // all visible.
+    // ====================================================================
     console.log('== S4: watch-cache.mjs reale (monitor di cache e debounce) ==');
 
     const watchSrc = fs.readFileSync(watchPath, 'utf8');
     // I commenti NON contano: il testo 'gi://' citato nella intestazione del
     // modulo renderebbe il controllo verde per Caso. Si misura il codice.
+    // Comments do NOT count: the text 'gi://' cited in the module's header would
+    // make the check green by Chance. The code is measured.
     const watchCode = watchSrc
         .replace(/\/\*[\s\S]*?\*\//g, '')
         .split('\n').filter(line => !line.trim().startsWith('//')).join('\n');
     // Purezza per costruzione, non per promessa: il modulo non ha una riga di
     // import, quindi non puo' aver importato St/Gtk/Gio (G7/G18).
+    // Purity by construction, not by promise: the module has no import line, so
+    // it cannot have imported St/Gtk/Gio (G7/G18).
     check('S4: watch-cache.mjs non importa nulla (nessun gi://): la purezza e\' per costruzione',
         !/^\s*import\s/m.test(watchCode) && !watchCode.includes('gi://'));
     // Se il modulo esistesse ma restasse dormiente, i verdi sotto passerebbero
@@ -921,6 +1152,15 @@ const NOTIFY_PRELUDE = 'const notifyErrorIfEnabled = (t, b) => Main.notifyError(
     // ioDeps, ...)` qui misurerebbe un metodo che nessuno invoca, e il gate
     // punirebbe la sua rimozione invece di premiare il percorso vero: la
     // prova del debounce sta piu' avanti, sul modulo ESEGUITO.
+    // If the module existed but stayed dormant, the greens below would pass
+    // anyway: this check ties the module to extension.js. The TWO watchers that
+    // _init really starts are the measurable hook points inside extension.js.
+    // The third is NOT: scheduleRefresh has no line in this file, it is
+    // watch-cache.mjs:67 that calls it inside watchStatusFile. A literal
+    // `scheduleRefresh(this, ioDeps, ...)` here would measure a method that
+    // nobody invokes, and the gate would punish its removal instead of rewarding
+    // the real path: the proof of the debounce comes later, on the module that
+    // is RUN.
     check('S4: extension.js importa watch-cache.mjs e gli delega i due watcher che _init avvia',
         source.includes("from './watch-cache.mjs'")
         && source.includes('watchStatusFile(this, ioDeps, STATUS_PATH, REFRESH_DEBOUNCE_MS)')
@@ -929,6 +1169,8 @@ const NOTIFY_PRELUDE = 'const notifyErrorIfEnabled = (t, b) => Main.notifyError(
     // Stub di Gio/GLib che REGISTRANO le operazioni. Ogni id di timer e' un
     // numero progressivo, come fa GLib: cosi' "stesso id" e' un fatto e non
     // un confronto di stringhe.
+    // Gio/GLib stubs that RECORD the operations. Every timer id is a progressive
+    // number, as GLib does: so "same id" is a fact and not a string comparison.
     function wcMakeIo() {
         const calls = [];
         const io = { calls, fired: [] };
@@ -982,6 +1224,7 @@ const NOTIFY_PRELUDE = 'const notifyErrorIfEnabled = (t, b) => Main.notifyError(
     };
 
     // --- il percorso vero: creare la directory, poi osservarla ----------
+    // --- the real path: create the directory, then watch it ----------
     const wcIoA = wcMakeIo();
     const wcIndA = { _monitor: null, _monitorId: 0 };
     watchCacheFile(wcIndA, wcIoA, '/tmp/cache/status.json', () => {},
@@ -993,6 +1236,8 @@ const NOTIFY_PRELUDE = 'const notifyErrorIfEnabled = (t, b) => Main.notifyError(
     check('S4: monitor e id finiscono nei campi che destroy() legge per nome',
         wcIndA._monitor !== null && wcIndA._monitorId === 7);
     // L'handler collegato e' quello passato dal chiamante: si preme davvero.
+    // The connected handler is the one passed by the caller: it is really
+    // pressed.
     let wcFiredA = 0;
     const wcIoA2 = wcMakeIo();
     const wcIndA2 = { _monitor: null, _monitorId: 0 };
@@ -1003,6 +1248,8 @@ const NOTIFY_PRELUDE = 'const notifyErrorIfEnabled = (t, b) => Main.notifyError(
 
     // I campi passati per NOME: con un nome fisso uno dei due teardown
     // (quello del monitor stream) smetterebbe di disconnettere.
+    // The fields passed by NAME: with a fixed name one of the two teardowns (the
+    // stream monitor's) would stop disconnecting.
     const wcIoB = wcMakeIo();
     const wcIndB = { _streamMonitor: null, _streamMonitorId: 0 };
     watchCacheFile(wcIndB, wcIoB, '/tmp/cache/stream_state.json', () => {},
@@ -1011,6 +1258,7 @@ const NOTIFY_PRELUDE = 'const notifyErrorIfEnabled = (t, b) => Main.notifyError(
         wcIndB._streamMonitorId === 7 && wcIndB._monitor === undefined && wcIndB._monitorId === undefined);
 
     // --- EXISTS sul mkdir non e\' un errore da segnalare ----------------
+    // --- EXISTS on mkdir is not an error to report ----------------
     const wcIoC = wcMakeIo();
     const wcIndC = { _monitor: null, _monitorId: 0 };
     wcIoC.Gio.File.new_for_path = path =>
@@ -1021,6 +1269,7 @@ const NOTIFY_PRELUDE = 'const notifyErrorIfEnabled = (t, b) => Main.notifyError(
         !wcIoC.calls.some(c => c[0] === 'logError') && wcIndC._monitorId === 7);
 
     // --- mkdir fallito davvero: si avvisa, ma si monitora lo stesso -----
+    // --- mkdir really failed: a warning is given, but we monitor anyway -----
     const wcIoD = wcMakeIo();
     const wcIndD = { _monitor: null, _monitorId: 0 };
     wcIoD.Gio.File.new_for_path = path =>
@@ -1035,6 +1284,9 @@ const NOTIFY_PRELUDE = 'const notifyErrorIfEnabled = (t, b) => Main.notifyError(
     // --- monitor non creato: il campo NON resta sporco -----------------
     // createLabel e watchLabel sono VOLUTAMENTE diversi: i due messaggi non
     // possono confondersi, e un monitor fallito non deve dirsi "creazione".
+    // --- monitor not created: the field does NOT stay dirty -----------------
+    // createLabel and watchLabel are DELIBERATELY different: the two messages
+    // cannot be confused, and a failed monitor must not call itself "creation".
     const wcIoE = wcMakeIo();
     const wcStale = { cancelled: 0, cancel() { this.cancelled++; } };
     const wcIndE = { _monitor: wcStale, _monitorId: 9 };
@@ -1061,11 +1313,15 @@ const NOTIFY_PRELUDE = 'const notifyErrorIfEnabled = (t, b) => Main.notifyError(
         wcFirstId === 1 && wcIoF.calls.some(c => c[0] === 'timeout_add' && c[1] === 250));
     // Scrittura atomica = eventi ravvicinati: senza reset, due timer leggerebbero
     // lo stesso file e il lavoro raddopperebbe (G6: rimuovere PRIMA di ri-armare).
+    // Atomic write = close events: without a reset, two timers would read the
+    // same file and the work would double (G6: remove BEFORE re-arming).
     wcIndF._monitor.connected[0][1]();
     check('S4: un secondo evento rimuove la sorgente gia\' armata prima di ri-armare',
         wcIoF.calls.filter(c => c[0] === 'source_remove' && c[1] === wcFirstId).length === 1
         && wcIndF._refreshDebounceId === 2);
     // Il timer che scade fa il lavoro una volta sola e si rimuove dal campo.
+    // The timer that expires does the work once and removes itself from the
+    // field.
     wcIoF.fired[1]();
     check('S4: il debounce scaduto legge stato E cronologia, poi azzera il campo',
         wcIndF.refreshed === 2 && wcIndF._refreshDebounceId === null);
@@ -1078,6 +1334,14 @@ const NOTIFY_PRELUDE = 'const notifyErrorIfEnabled = (t, b) => Main.notifyError(
     // che si misura e' il periodo che ARRIVA al debounce, non una lettera.
     // Perche' la misura resti quella dichiarata dal file, i due periodi si
     // leggono dalla fonte e non si riscrivono qui.
+    // --- the delegation of extension.js RUN, not its text -----------
+    // The check above on the source says THAT extension.js names the two
+    // watchers; this one says that the delegation WORKS. The two bodies are taken
+    // from the DEFINITION with the same brace-matching as the destroy() further
+    // down and run against the real module, with the Gio/GLib stubs: what is
+    // measured is the period that ARRIVES at the debounce, not a letter. So that
+    // the measure stays the one declared by the file, the two periods are read
+    // from the source and not rewritten here.
     const wcConstMs = (name) => {
         const m = source.match(new RegExp('^const ' + name + ' = (\\d+);$', 'm'));
         assert.ok(m, `${name} non trovato in extension.js`);
@@ -1087,6 +1351,8 @@ const NOTIFY_PRELUDE = 'const notifyErrorIfEnabled = (t, b) => Main.notifyError(
     const wcStreamMs = wcConstMs('STREAM_DEBOUNCE_MS');
     // makeWatcher monta il corpo vero su un `ioDeps` finto: lo stesso oggetto
     // che extension.js:121 costruisce, con dentro gli stub che annotano.
+    // makeWatcher mounts the real body on a fake `ioDeps`: the same object that
+    // extension.js:121 builds, with the noting stubs inside.
     const makeWatcher = (body, deps, refreshMs, streamMs) => new Function(
         'watchStatusFile', 'watchStreamStateFile', 'ioDeps',
         'STATUS_PATH', 'STREAM_STATE_PATH', 'REFRESH_DEBOUNCE_MS', 'STREAM_DEBOUNCE_MS',
@@ -1113,6 +1379,9 @@ const NOTIFY_PRELUDE = 'const notifyErrorIfEnabled = (t, b) => Main.notifyError(
     // Il periodo che si misura e' quello ARRIVATO al GLib finto, non quello
     // scritto qui: se extension.js passasse il periodo sbagliato il verde
     // sotto andrebbe rosso anche se il sorgente restasse identico.
+    // The period being measured is the one that ARRIVED at the fake GLib, not
+    // the one written here: if extension.js passed the wrong period the green
+    // below would go red even if the source stayed identical.
     wcIndP._monitor.connected[0][1]();
     wcIndP._streamMonitor.connected[0][1]();
     check('S4: ...e armano i due debounce con il periodo che extension.js dichiara',
@@ -1125,6 +1394,11 @@ const NOTIFY_PRELUDE = 'const notifyErrorIfEnabled = (t, b) => Main.notifyError(
     // seguente non potrebbe esistere. Il percorso e' identico: cambia solo
     // la costante passata, quindi e' la prova che la misura legge il
     // codice e non la propria aspettativa.
+    // TWIN CONTRA: same real bodies, DIFFERENT periods. If the check above were
+    // vacuous (period read by the test and not by the executed code), here the
+    // recorded values would stay the declared ones and the following green could
+    // not exist. The path is identical: only the passed constant changes, so it
+    // is the proof that the measure reads the code and not its own expectation.
     const wcIoQ = wcMakeIo();
     const wcIndQ = wcRunWatchers(
         { Gio: wcIoQ.Gio, GLib: wcIoQ.GLib, logError: wcIoQ.logError }, 120, 340);
@@ -1135,6 +1409,7 @@ const NOTIFY_PRELUDE = 'const notifyErrorIfEnabled = (t, b) => Main.notifyError(
             .map(c => c[1])) === JSON.stringify([120, 340]));
 
     // --- debounce dello stream: campo e periodo suoi -------------------
+    // --- stream debounce: its own field and period -------------------
     const wcIoG = wcMakeIo();
     const wcIndG = { _streamMonitor: null, _streamMonitorId: 0, _streamDebounceId: null,
         _refreshDebounceId: null, streamReads: 0 };
@@ -1151,6 +1426,10 @@ const NOTIFY_PRELUDE = 'const notifyErrorIfEnabled = (t, b) => Main.notifyError(
     // --- PROVA DI NON VACUITA': i campi scritti dal modulo sono gli stessi
     // che il teardown REALE di destroy() legge. Gli id sono letti PRIMA del
     // teardown: leggerli dopo darebbe null e il controllo passerebbe sempre.
+    // --- NON-VACUITY PROOF: the fields written by the module are the same ones
+    // that the REAL teardown of destroy() reads. The ids are read BEFORE the
+    // teardown: reading them after would give null and the check would always
+    // pass.
     const wcIoH = wcMakeIo();
     const wcIndH = { _cancellable: { _c: false, cancel() { this._c = true; }, is_cancelled() { return this._c; } },
         _monitor: null, _monitorId: 0, _streamMonitor: null, _streamMonitorId: 0,
@@ -1182,6 +1461,13 @@ const NOTIFY_PRELUDE = 'const notifyErrorIfEnabled = (t, b) => Main.notifyError(
     // Il cancellable e' quello vero (cancel irreversibile): e' la prima
     // istruzione di destroy(), quindi senza questo oggetto il teardown nemmeno
     // arriva ai campi che il modulo scrive.
+    // --- TWIN CONTRA: the same question from the opposite side. If the module
+    // stopped writing the fields, the teardown would have nothing to remove:
+    // this check would notice while the green above would stay true (false
+    // coverage). No module is called: the field is born null already, like on a
+    // freshly initialized indicator. The cancellable is the real one (cancel is
+    // irreversible): it is the first instruction of destroy(), so without this
+    // object the teardown does not even reach the fields the module writes.
     const wcCancellable = () => ({
         _c: false,
         cancel() { this._c = true; },
@@ -1196,6 +1482,10 @@ const NOTIFY_PRELUDE = 'const notifyErrorIfEnabled = (t, b) => Main.notifyError(
     // scadenza, il teardown successivo rimuoverebbe un id morto. GLib
     // avvisa su source_remove di un id inesistente: qui si vede che il
     // reset e'cio' che lo impedisce, misurato sul campo vero.
+    // And the opposite: if the module left the field ARMED after the expiry, the
+    // following teardown would remove a dead id. GLib warns on source_remove of
+    // a non-existent id: here it is seen that the reset is what prevents it,
+    // measured on the real field.
     const wcIoV = wcMakeIo();
     const wcIndV = { _cancellable: wcCancellable(), _monitor: null, _monitorId: 0,
         _refreshDebounceId: null, refreshed: 0 };
@@ -1218,6 +1508,14 @@ const NOTIFY_PRELUDE = 'const notifyErrorIfEnabled = (t, b) => Main.notifyError(
     // finisce nel teardown), nessuna asserzione guardava cosa fa. Qui il
     // modulo puro gira con uno St.Icon finto che registra opacity e classi.
     // ====================================================================
+    // ====================================================================
+    // S4 (G9): recording-blink.mjs REALLY RUN.
+    //
+    // _setRecordingBlink was the only method of extension.js that no test named:
+    // round 4 exercises it only by EFFECT (if it switches it on, the id ends up
+    // in the teardown), no assertion looked at what it does. Here the pure module
+    // runs with a fake St.Icon that records opacity and classes.
+    // ====================================================================
     console.log('== S4: recording-blink.mjs reale (lampeggio) ==');
 
     const blinkSrc = fs.readFileSync(blinkPath, 'utf8');
@@ -1234,6 +1532,10 @@ const NOTIFY_PRELUDE = 'const notifyErrorIfEnabled = (t, b) => Main.notifyError(
     // sorgente, quindi `fire(id)` dopo la rimozione non deve eseguire nulla.
     // Con uno stub che conserva i callback, l'asserzione "dopo lo spegnimento
     // l'icona non si tocca" misurerebbe lo stub e non il codice.
+    // Stub faithful to GLib on a point that matters: `source_remove` REVOKES the
+    // source, so `fire(id)` after the removal must not execute anything. With a
+    // stub that keeps the callbacks, the assertion "after switching off the icon
+    // is not touched" would measure the stub and not the code.
     function makeBlinkIo() {
         const calls = [];
         const sources = new Map();
@@ -1253,6 +1555,7 @@ const NOTIFY_PRELUDE = 'const notifyErrorIfEnabled = (t, b) => Main.notifyError(
             },
         };
         // Fa scadere la sorgente se e' ancora viva; dice se e' successo.
+        // Makes the source expire if it is still alive; says whether it happened.
         io.fire = id => {
             const cb = sources.get(id);
             if (!cb) return false;
@@ -1273,6 +1576,7 @@ const NOTIFY_PRELUDE = 'const notifyErrorIfEnabled = (t, b) => Main.notifyError(
         },
     });
     // Il fake _icon deve sapere chi e' il suo proprietario per annotare le classi.
+    // The fake _icon must know who its owner is in order to note the classes.
     const newBlink = () => {
         const ind = makeBlinkIndicator();
         ind._icon.owner = ind;
@@ -1288,6 +1592,7 @@ const NOTIFY_PRELUDE = 'const notifyErrorIfEnabled = (t, b) => Main.notifyError(
         && JSON.stringify(bInd.classes) === JSON.stringify([['add', 'bravoric-recording-icon']])
         && bIo.calls.some(c => c[0] === 'timeout_add' && c[1] === 500));
     // Il callback continua a girare: e' un lampeggio, non un one-shot.
+    // The callback keeps running: it is a blink, not a one-shot.
     bIo.fire(1);
     check('S4: il primo giro porta l\'opacita\' a 80 (il toggle parte da 255)',
         bInd._icon.opacity === 80 && bIo.calls.length === 1);
@@ -1297,6 +1602,8 @@ const NOTIFY_PRELUDE = 'const notifyErrorIfEnabled = (t, b) => Main.notifyError(
 
     // Riaccendere mentre lampeggia non deve creare un SECONDO timer: due
     // timer sullo stesso campo significa che lo spegnimento ne lascia uno vivo.
+    // Switching on again while blinking must not create a SECOND timer: two
+    // timers on the same field means the switch-off leaves one alive.
     setRecordingBlink(bInd, bIo, true, 'bravoric-recording-icon', 500);
     check('S4: riaccendere mentre lampeggia NON arma un secondo timer',
         bInd._blinkTimeoutId === 1 && bIo.calls.filter(c => c[0] === 'timeout_add').length === 1
@@ -1307,6 +1614,11 @@ const NOTIFY_PRELUDE = 'const notifyErrorIfEnabled = (t, b) => Main.notifyError(
     // ripristino dell'opacita' sparisse dal ramo di spegnimento, qui
     // l'asserzione diventerebbe ROSSA. Con l'opacita' gia' a 255 il controllo
     // passerebbe comunque e non misurerebbe niente.
+    // --- switching off: the timer is removed and the field reset ---------
+    // Before switching off the icon is at 80 (a round done on purpose): if the
+    // opacity restore disappeared from the switch-off branch, here the assertion
+    // would turn RED. With the opacity already at 255 the check would pass
+    // anyway and measure nothing.
     bIo.fire(1);
     check('S4: prima dello spegnimento l\'opacita\' e\' davvero cambiata (80)',
         bInd._icon.opacity === 80);
@@ -1320,12 +1632,18 @@ const NOTIFY_PRELUDE = 'const notifyErrorIfEnabled = (t, b) => Main.notifyError(
     // Dopo lo spegnimento la sorgente NON esiste piu': questo e' il fatto che
     // impedisce all'icona di continuare a lampeggiare da sola, e si misura
     // sul registro delle sorgenti vive, non chiamando il callback a mano.
+    // After the switch-off the source NO LONGER exists: this is the fact that
+    // prevents the icon from continuing to blink by itself, and it is measured
+    // on the registry of live sources, not by calling the callback by hand.
     check('S4: dopo lo spegnimento non resta NESSUNA sorgente viva',
         bIo.live() === 0 && bIo.fire(1) === false);
 
     // CONTRO gemello: la stessa sorgente, PRIMA dello spegnimento, gira
     // davvero. Se il verde sopra fosse vacuo (stub che non esegue nulla),
     // questo diventa falso.
+    // Twin CONTRA: the same source, BEFORE the switch-off, really runs. If the
+    // green above were vacuous (a stub that executes nothing), this becomes
+    // false.
     const cIo = makeBlinkIo();
     const cInd = newBlink();
     setRecordingBlink(cInd, cIo, true, 'bravoric-recording-icon', 500);
@@ -1336,6 +1654,9 @@ const NOTIFY_PRELUDE = 'const notifyErrorIfEnabled = (t, b) => Main.notifyError(
     // --- spegnere da fermo non genera rimozioni fantasma --------------
     // source_remove su un id inesistente e' un CRITICAL di GLib: qui si vede
     // che la guardia e' il campo, non il ramo.
+    // --- switching off from idle generates no phantom removals --------
+    // source_remove on a non-existent id is a GLib CRITICAL: here it is seen
+    // that the guard is the field, not the branch.
     const sIo = makeBlinkIo();
     const sInd = newBlink();
     setRecordingBlink(sInd, sIo, false, 'bravoric-recording-icon', 500);
@@ -1343,6 +1664,7 @@ const NOTIFY_PRELUDE = 'const notifyErrorIfEnabled = (t, b) => Main.notifyError(
         sIo.calls.length === 0 && sInd._blinkTimeoutId === null);
 
     // --- il teardown reale deve poter rimuovere il timer del lampeggio --
+    // --- the real teardown must be able to remove the blink timer --
     const tIo = makeBlinkIo();
     const tInd = {
         _cancellable: wcCancellable(),
@@ -1361,6 +1683,11 @@ const NOTIFY_PRELUDE = 'const notifyErrorIfEnabled = (t, b) => Main.notifyError(
     // Notifiche dell'estensione: ogni notifica ha il suo interruttore
     // GSettings (notify-errors / notify-status). Gli helper VERI sono estratti
     // dal sorgente ed eseguiti con un Main e un GSettings finti.
+    // ====================================================================
+    // ====================================================================
+    // Extension notifications: each notification has its own GSettings switch
+    // (notify-errors / notify-status). The REAL helpers are extracted from the
+    // source and run with a fake Main and a fake GSettings.
     // ====================================================================
     console.log('== notifiche estensione: interruttori GSettings (helper reali) ==');
     const helpersStart = source.indexOf('let notificationSettings = null;');
@@ -1440,6 +1767,8 @@ const NOTIFY_PRELUDE = 'const notifyErrorIfEnabled = (t, b) => Main.notifyError(
 
     // enable/disable: le impostazioni vengono passate agli helper PRIMA
     // dell'indicatore (la sua costruzione puo' notificare) e azzerate dopo.
+    // enable/disable: the settings are passed to the helpers BEFORE the
+    // indicator (its construction can notify) and reset afterwards.
     const enableAt = source.indexOf('    enable() {');
     const enableBody = source.slice(enableAt, source.indexOf('    disable() {', enableAt));
     check('enable(): notificationSettings impostato PRIMA di creare l\'indicatore',
