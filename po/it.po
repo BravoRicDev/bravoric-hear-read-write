@@ -62,6 +62,14 @@ msgstr "OCR: elaborazione in corso"
 msgid "OCR: no image in clipboard"
 msgstr "OCR: nessuna immagine in clipboard"
 
+#: src/bravoric_stt_clipboard/ocr.py:37
+msgid "OCR: screenshot tool missing"
+msgstr "OCR: strumento screenshot assente"
+
+#: src/bravoric_stt_clipboard/ocr.py:37
+msgid "Install gnome-screenshot to use this feature"
+msgstr "Installa gnome-screenshot per usare questa funzione"
+
 #: src/bravoric_stt_clipboard/ocr.py:47
 msgid "OCR: extraction error"
 msgstr "OCR: errore estrazione"

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import shutil
 import subprocess
 import tempfile
 from pathlib import Path
@@ -14,6 +15,14 @@ logger = logging.getLogger(__name__)
 # con lo stato bloccato su "processing" (stessa logica di STOP_TIMEOUT in
 # stream.py: un'attesa bloccante ha sempre un tetto).
 SELECTION_TIMEOUT_SECONDS = 120
+
+
+def is_available() -> bool:
+    """gnome-screenshot e' installato? Il chiamante lo usa per avvisare
+    l'utente UNA volta, in modo chiaro, invece di lasciare capture_area_png
+    fallire in silenzio ad ogni pressione (stesso trattamento del vero
+    annullamento, indistinguibile per l'utente da 'non funziona e basta')."""
+    return shutil.which("gnome-screenshot") is not None
 
 
 def capture_area_png() -> bytes | None:

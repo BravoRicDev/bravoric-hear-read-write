@@ -5407,6 +5407,39 @@ def main() -> int:
     finally:
         status.STATUS_PATH = _st_saved_reentr
 
+    print("== ocr.py: capture_screenshot=True, gnome-screenshot assente ==")
+    # Diverso dall'annullamento: qui la feature e' attivata ma non puo'
+    # funzionare MAI, ad ogni pressione — deve avvisare, non tacere come un
+    # cambio idea. Senza screenshot.is_available(), questo caso era
+    # indistinguibile per l'utente da un Esc silenzioso.
+    with mock.patch.object(ocr, "screenshot") as _shot_missing, \
+         mock.patch.object(ocr, "clipboard") as _clip_missing, \
+         mock.patch.object(ocr, "try_with_fallback") as _chain_missing, \
+         mock.patch.object(ocr, "status") as _st_missing, \
+         mock.patch.object(ocr, "notify") as _notify_missing, \
+         mock.patch.object(ocr, "storage"), \
+         mock.patch.object(ocr, "output_history"):
+        _st_missing.STATE_PROCESSING = status.STATE_PROCESSING
+        _st_missing.STATE_ERROR = status.STATE_ERROR
+        _st_missing.read_status.return_value = {"state": status.STATE_IDLE}
+        _shot_missing.is_available.return_value = False
+        ocr.handle_capture(cast(Any, cfg_shot))
+        _missing_capture_calls = _shot_missing.capture_area_png.call_count
+        _missing_chain_calls = _chain_missing.call_count
+        _missing_clip_calls = _clip_missing.write_text.call_count
+        _missing_states = [c.args[0] for c in _st_missing.write_status.call_args_list]
+        _missing_notified = _notify_missing.send.call_count >= 1
+    check("ocr gnome-screenshot assente: non tenta la cattura (l'avviso e' PRIMA)",
+          _missing_capture_calls == 0)
+    check("ocr gnome-screenshot assente: la catena OCR non viene chiamata",
+          _missing_chain_calls == 0)
+    check("ocr gnome-screenshot assente: nessuna scrittura in clipboard",
+          _missing_clip_calls == 0)
+    check("ocr gnome-screenshot assente: stato ERROR, non IDLE silenzioso",
+          _missing_states and _missing_states[-1] == status.STATE_ERROR)
+    check("ocr gnome-screenshot assente: l'utente viene avvisato (a differenza di Esc)",
+          _missing_notified)
+
     print("== config.py: ocr_capture_screenshot (default e parsing) ==")
     check("Config: ocr_capture_screenshot default False su cfg_stream_min",
           cfg_stream_min.ocr_capture_screenshot is False)

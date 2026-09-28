@@ -25,6 +25,17 @@ def handle_capture(cfg: Config) -> None:
         if current.get("state") == status.STATE_PROCESSING and current.get("service") == "ocr":
             logger.info("cattura OCR gia' in corso, secondo tasto ignorato")
             return
+        # Diverso dall'annullamento (Esc) gestito piu' sotto: qui la feature
+        # e' STATA attivata dall'utente ma non puo' funzionare AFFATTO,
+        # sempre, ad ogni pressione — merita un avviso esplicito UNA volta,
+        # non lo stesso silenzio di un cambio idea. Senza questo controllo
+        # capture_area_png() fallirebbe comunque in modo sicuro (None), ma
+        # l'utente non avrebbe alcun segnale del perche' non succede nulla.
+        if not screenshot.is_available():
+            status.write_status(status.STATE_ERROR)
+            if cfg.notifications:
+                notify.send(_("OCR: screenshot tool missing"), _("Install gnome-screenshot to use this feature"), icon=notify.resolve_icon("error_general", cfg.icons.error_general))
+            return
     try:
         status.write_status(status.STATE_PROCESSING, service="ocr")
     except Exception:
