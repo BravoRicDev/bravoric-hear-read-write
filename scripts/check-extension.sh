@@ -471,6 +471,15 @@ else
     bad "test-e2e-stt.py"
 fi
 
+# Streaming end-to-end: supervisore vero, VAD vero, ffmpeg finto che emette voce e silenzio.
+# Streaming end-to-end: real supervisor, real VAD, fake ffmpeg emitting speech and silence.
+echo "== streaming end-to-end =="
+if python3 "$REPO/scripts/test-e2e-stream.py"; then
+    ok "test-e2e-stream.py"
+else
+    bad "test-e2e-stream.py"
+fi
+
 echo "== bottoni rapidi (unit) =="
 if node "$REPO/scripts/test-quick-buttons.js"; then
     ok "test-quick-buttons.js"
