@@ -72,6 +72,14 @@ export default class ShellProbe extends Extension {
                         }
                         result = JSON.stringify({ hasMonitor: !!ind._monitor, id: ind._monitorId, events: this._events ?? -1, cancelled: ind._monitor?.is_cancelled?.() });
                     }
+                    if (cmd === 'labels') {
+                        const ind = Main.panel.statusArea['bravoric-indicator@local'];
+                        result = JSON.stringify({
+                            dictation: ind._dictationItem.label.text,
+                            ocr: ind._ocrItem.label.text,
+                            stream: ind._streamItem.label.text,
+                        });
+                    }
                     if (cmd === 'refresh') {
                         Main.panel.statusArea['bravoric-indicator@local']._refreshStatus();
                         result = 'refreshed';

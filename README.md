@@ -124,6 +124,15 @@ that execute real extracted functions/classes from the extension source
 (not hand-written copies), and 800+ backend assertions covering the fallback
 chain, circuit breaker, atomic writes, and the streaming VAD/dispatch logic.
 
+It also loads the whole extension and the whole preferences window (real
+widgets, real backend on a temporary config) and, when headless `gnome-shell`
+is available, runs the extension inside a real GNOME Shell on an isolated D-Bus
+session with temporary directories, in English and in Italian: quick buttons
+appearing from the settings, their order and size, clicks launching the backend
+binary, state changes, disable/enable, translations. It skips itself when
+headless Shell is unavailable; `BRV_SKIP_SHELL=1` skips it explicitly (about 40 s
+per language), `BRV_LANG=it scripts/test-shell-real.sh` runs one language alone.
+
 ## Security and privacy
 
 Dictated text and audio are sensitive, so the backend treats them that way

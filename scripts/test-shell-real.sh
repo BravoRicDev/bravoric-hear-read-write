@@ -67,7 +67,22 @@ done
 
 export XDG_CONFIG_HOME="$T/config" XDG_DATA_HOME="$T/data" XDG_CACHE_HOME="$T/cache" XDG_RUNTIME_DIR="$T/runtime"
 export HOME="$T/home" BRV_PROBE_DIR="$T/probe" T EXT_SRC
-export LANG=C LC_ALL=C
+# Lingua del gnome-shell sotto test: BRV_LANG=en (default) o it. Con it si verifica anche
+# che i cataloghi .mo dell'estensione siano davvero caricati nel Shell vero.
+# Language of the gnome-shell under test: BRV_LANG=en (default) or it. With it the test
+# also verifies that the extension's .mo catalogs are really loaded in the real Shell.
+case "${BRV_LANG:-en}" in
+    it)
+        export LANG=it_IT.UTF-8 LC_ALL=it_IT.UTF-8 LANGUAGE=it
+        N_DICT_START="Avvia la dettatura"; N_DICT_STOP="Ferma la dettatura"
+        N_STREAM_STOP="Ferma la dettatura in streaming"; MENU_DICT="Dettatura"
+        ;;
+    *)
+        export LANG=C LC_ALL=C
+        N_DICT_START="Start dictation"; N_DICT_STOP="Stop dictation"
+        N_STREAM_STOP="Stop streaming dictation"; MENU_DICT="Dictation"
+        ;;
+esac
 
 # Parte dentro la sessione D-Bus isolata: scrive nei file di $T e stampa PASS/FAIL.
 # Runs inside the isolated D-Bus session: writes to the files in $T and prints PASS/FAIL.
@@ -146,7 +161,7 @@ in_session() {
     cat "$T/inner-out" 2>/dev/null
 }
 
-ext_state() { in_session "gnome-extensions info $1" | awk '/State:/ {print $2}'; }
+ext_state() { in_session "LC_ALL=C LANGUAGE=C gnome-extensions info $1" | awk '/State:/ {print $2}'; }
 setkey() { in_session "gsettings --schemadir '$EXT_SRC/schemas' set org.gnome.shell.extensions.bravoric-indicator $1 $2" >/dev/null; }
 dump() { cat "$T/probe/dump.json" 2>/dev/null; }
 wait_dump() {  # wait_dump <python-condition on `items`>
@@ -248,24 +263,43 @@ apply_state() {  # apply_state <state> [service]
 }
 by_key="{i['role'].rsplit('-',1)[-1]: i for i in items if i['quick']}"
 apply_state recording stt
-wait_dump "(lambda b: b['dictation']['reactive'] and b['dictation']['accessible_name']=='Stop dictation' and not b['ocr']['reactive'] and not b['stream']['reactive'])($by_key)" \
+wait_dump "(lambda b: b['dictation']['reactive'] and b['dictation']['accessible_name']=='${N_DICT_STOP}' and not b['ocr']['reactive'] and not b['stream']['reactive'])($by_key)" \
     && pass "in registrazione (stt): la dettatura e' cliccabile e diventa 'Stop dictation', OCR e streaming disabilitati" \
     || fail "stato recording/stt non rispecchiato dai bottoni: $(dump)"
 apply_state processing stt
 wait_dump "(lambda b: not any(x['reactive'] for x in b.values()))($by_key)" \
     && pass "in elaborazione nessun bottone e' cliccabile" || fail "in elaborazione i bottoni restano cliccabili: $(dump)"
 apply_state recording stream
-wait_dump "(lambda b: b['stream']['reactive'] and b['stream']['accessible_name']=='Stop streaming dictation' and not b['dictation']['reactive'])($by_key)" \
+wait_dump "(lambda b: b['stream']['reactive'] and b['stream']['accessible_name']=='${N_STREAM_STOP}' and not b['dictation']['reactive'])($by_key)" \
     && pass "in registrazione (stream): lo streaming diventa 'Stop', la dettatura e' disabilitata" \
     || fail "stato recording/stream non rispecchiato dai bottoni: $(dump)"
 apply_state idle
-wait_dump "(lambda b: all(x['reactive'] for x in b.values()) and b['dictation']['accessible_name']=='Start dictation')($by_key)" \
+wait_dump "(lambda b: all(x['reactive'] for x in b.values()) and b['dictation']['accessible_name']=='${N_DICT_START}')($by_key)" \
     && pass "tornati a idle tutti cliccabili e con il nome 'Start ...'" || fail "ritorno a idle non rispecchiato: $(dump)"
 
 echo "== spegnere un bottone / turning one off =="
 setkey show-ocr-button false
 wait_dump "[i['role'].rsplit('-',1)[-1] for i in items if i['quick']]==['dictation','stream']" \
     && pass "spento l'OCR restano dettatura e streaming, nello stesso ordine" || fail "spegnimento errato: $(dump)"
+
+echo "== disabilita e riabilita l'estensione / disable and re-enable the extension =="
+in_session "gnome-extensions disable bravoric-indicator@local" >/dev/null
+wait_dump "not any(i['quick'] for i in items) and not any(i['role']=='bravoric-indicator@local' for i in items)" \
+    && pass "disabilitata: spariscono indicatore e bottoni rapidi" || fail "dopo disable restano widget: $(dump)"
+in_session "gnome-extensions enable bravoric-indicator@local" >/dev/null
+wait_dump "[i['role'].rsplit('-',1)[-1] for i in items if i['quick']]==['dictation','stream'] and any(i['role']=='bravoric-indicator@local' for i in items)" \
+    && pass "riabilitata: tornano indicatore e i due bottoni ancora accesi" || fail "dopo enable stato errato: $(dump)"
+[ "$(ext_state bravoric-indicator@local)" = ACTIVE ] && pass "di nuovo ACTIVE dopo il ciclo" || fail "non ACTIVE dopo il ciclo"
+
+echo "== lingua / language (${BRV_LANG:-en}) =="
+LABELS="$(probe_cmd labels)"
+if printf '%s' "$LABELS" | python3 -c "import json,sys; sys.exit(0 if json.load(sys.stdin)['dictation']==sys.argv[1] else 1)" "$MENU_DICT"; then
+    pass "il menu dell'indicatore e' nella lingua attesa ($MENU_DICT)"
+else
+    fail "etichette del menu inattese: $LABELS"
+fi
+wait_dump "any(i['accessible_name']=='${N_DICT_START}' for i in items if i['quick'])" \
+    && pass "i nomi accessibili dei bottoni sono nella lingua attesa ($N_DICT_START)" || fail "nomi accessibili inattesi: $(dump)"
 
 echo "== errori JavaScript / JavaScript errors =="
 if grep -E "JS ERROR|bravoric" "$T/shell.log" | grep -viE "backend not installed" | grep -qi "error"; then
