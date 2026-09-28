@@ -1047,13 +1047,6 @@ msgstr "Errore file di stato"
 msgid "Check config.toml"
 msgstr "Controlla config.toml"
 
-#~ msgid ""
-#~ "Send chunks to this endpoint at the same time as the other levels marked "
-#~ "parallel, up to the slot limit below"
-#~ msgstr ""
-#~ "Manda i chunk a questo endpoint contemporaneamente con gli altri livelli "
-#~ "marcati come paralleli, fino al limite di slot qui sotto"
-
 #: gnome-extension/bravoric-indicator@local/prefs.js:838
 msgid "Blacklist conflicts with a voice command"
 msgstr "La blacklist e' in conflitto con un comando vocale"

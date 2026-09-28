@@ -6789,6 +6789,14 @@ max_entries = 20
         finally:
             config_editor.CONFIG_PATH = _saved_gf
 
+    # Anti-drift GUI/backend: ogni campo scrivibile via set-general ha una
+    # riga in prefs.js che lo scrive, e viceversa prefs.js non scrive campi
+    # che il backend rifiuterebbe.
+    _prefs_gen = (ROOT / "gnome-extension" / "bravoric-indicator@local" / "prefs.js").read_text(encoding="utf-8")
+    _gui_fields = set(re.findall(r"setGeneralField\('(\w+)', '(\w+)'", _prefs_gen))
+    check("GENERAL_FIELDS == campi scritti dalla GUI (nessun campo senza riga, nessuna riga orfana)",
+          _gui_fields == set(config_editor.GENERAL_FIELDS))
+
     # --- 10. il percorso di default e' quello vero, non un doppione -------
     # (la verifica che il percorso reale non sia stato TOCCATO da nessun test
     # e' in fondo a main(): confronta mtime+size reali, non stringhe di path
