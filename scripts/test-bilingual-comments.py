@@ -39,11 +39,11 @@ SKIP = {"scripts/test-bilingual-comments.py"}
 IT = re.compile(
     r"\b(il|lo|la|le|gli|di|del|della|dei|delle|che|per|con|non|nel|nella|sono|quando|come|"
     r"solo|una|un|si|dopo|prima|anche|questo|questa|deve|puo'|piu')\b|[àèìòù]",
-    re.I)
+    re.IGNORECASE)
 EN = re.compile(
     r"\b(the|of|is|are|and|for|with|that|this|it|not|be|to|from|when|then|only|must|does|"
-    r"which|here|there|because|without)\b", re.I)
-DIRECTIVE = re.compile(r"(noqa|type:\s*ignore|pragma|pylint|shellcheck|eslint|fmt:|nosec|isort:|mypy:|@ts-)", re.I)
+    r"which|here|there|because|without)\b", re.IGNORECASE)
+DIRECTIVE = re.compile(r"(noqa|type:\s*ignore|pragma|pylint|shellcheck|eslint|fmt:|nosec|isort:|mypy:|@ts-)", re.IGNORECASE)
 CODE_LIKE = re.compile(r"[{};=]\s*$|^\s*(if|for|const|let|def|return)\b")
 
 

@@ -69,7 +69,7 @@ for voice, seconds in plan:
 """
 
 
-def write_stream_config(env: "e2e.Env", url: str) -> None:
+def write_stream_config(env: e2e.Env, url: str) -> None:
     text = (
         "[general]\nnotifications = true\nclipboard_tool = \"wl-copy\"\nclipboard_paste_tool = \"wl-paste\"\n"
         "notify_timeout_seconds = 5\n"
@@ -83,14 +83,14 @@ def write_stream_config(env: "e2e.Env", url: str) -> None:
     cfg.chmod(0o600)
 
 
-def run_stream(env: "e2e.Env", *args: str) -> subprocess.CompletedProcess:
+def run_stream(env: e2e.Env, *args: str) -> subprocess.CompletedProcess:
     code = ("import sys; from bravoric_stt_clipboard.cli import stream_toggle_main; "
             "raise SystemExit(stream_toggle_main(sys.argv[1:]))")
     return subprocess.run([sys.executable, "-c", code, *args], env=env.env(), capture_output=True,
-                          text=True, timeout=90, cwd=str(env.root))
+                          text=True, timeout=90, cwd=str(env.root), check=False)
 
 
-def state_of(env: "e2e.Env") -> dict:
+def state_of(env: e2e.Env) -> dict:
     path = env.home / ".cache" / "bravoric-stt-clipboard" / "stream_state.json"
     try:
         return json.loads(path.read_text())
@@ -107,7 +107,7 @@ def wait_for(cond, seconds: float) -> bool:
     return False
 
 
-def kill_leftovers(env: "e2e.Env") -> None:
+def kill_leftovers(env: e2e.Env) -> None:
     """Rete di sicurezza: nessun supervisore o ffmpeg finto deve sopravvivere al test.
     Safety net: no supervisor or fake ffmpeg may survive the test."""
     lock = env.runtime / "bravoric-stt-clipboard" / "stream.lock"

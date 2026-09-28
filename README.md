@@ -124,13 +124,23 @@ that execute real extracted functions/classes from the extension source
 (not hand-written copies), and 800+ backend assertions covering the fallback
 chain, circuit breaker, atomic writes, and the streaming VAD/dispatch logic.
 
+End-to-end tests run the real commands (`stt_toggle_main`, `ocr_capture_main`,
+`stream_toggle_main`) against fake `ffmpeg`/`wl-copy`/`wl-paste`/`notify-send`/
+`gnome-screenshot` executables and a local OpenAI-compatible HTTP server, in a
+temporary HOME/runtime/TMPDIR: recording lock, real VAD, fallback between
+endpoints, LLM cleanup, clipboard writes, translated notifications, and the
+config switches (master notification switch, double injection, cleanup ratio,
+blacklist, clipboard and screenshot timeouts) are checked as behaviour, not
+just as values.
+
 It also loads the whole extension and the whole preferences window (real
 widgets, real backend on a temporary config) and, when headless `gnome-shell`
 is available, runs the extension inside a real GNOME Shell on an isolated D-Bus
 session with temporary directories, in English and in Italian: quick buttons
 appearing from the settings, their order and size, clicks launching the backend
 binary, state changes, disable/enable, translations. It skips itself when
-headless Shell is unavailable; `BRV_SKIP_SHELL=1` skips it explicitly (about 40 s
+headless Shell is unavailable; `BRV_SKIP_E2E=1` skips the end-to-end tests and
+`BRV_SKIP_SHELL=1` skips it explicitly (about 40 s
 per language), `BRV_LANG=it scripts/test-shell-real.sh` runs one language alone.
 
 ## Security and privacy

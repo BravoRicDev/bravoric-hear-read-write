@@ -32,6 +32,7 @@ import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from typing import ClassVar
 
 ROOT = Path(__file__).resolve().parents[1]
 PASS = 0
@@ -55,7 +56,7 @@ class FakeApi(BaseHTTPRequestHandler):
     transcript = "ciao mondo prova"
     cleaned = "Ciao mondo, prova."
     ocr_text = "testo letto dall'immagine"
-    hits: list[str] = []
+    hits: ClassVar[list[str]] = []
 
     def log_message(self, *args) -> None:  # silenzio / silence
         pass
@@ -68,7 +69,8 @@ class FakeApi(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
-    def do_POST(self) -> None:  # noqa: N802 - nome imposto da http.server | name imposed by http.server
+    # Nome imposto da http.server. / Name imposed by http.server.
+    def do_POST(self) -> None:
         length = int(self.headers.get("Content-Length", 0))
         raw_body = self.rfile.read(length)
         FakeApi.hits.append(self.path)
@@ -130,7 +132,7 @@ class Env:
             self._tool("wl-copy", f'cat >> "{self.clip_log}"\nprintf "\\n<<END>>\\n" >> "{self.clip_log}"\n')
 
     def write_config(self, levels: list[str], cleanup: bool = True, extra_general: str = "",
-                     extra_audio: str = "") -> None:
+                     extra_audio: str = "", extra_tail: str = "") -> None:
         def level(url: str, name: str) -> str:
             return (f'[[%s]]\nname = "{name}"\nendpoint = "{url}"\nmodel = "m"\napi_key = "k"\n'
                     'timeout_seconds = 5\n')
@@ -144,6 +146,7 @@ class Env:
             text += level(url, f"l{i}") % "stt.fallback"
         if cleanup:
             text += level(levels[-1], "c0") % "stt_cleanup.fallback"
+        text += extra_tail
         cfg = self.home / ".config" / "bravoric-stt-clipboard" / "config.toml"
         cfg.write_text(text)
         cfg.chmod(0o600)
@@ -181,7 +184,7 @@ class Env:
     def ocr(self, language: str = "en") -> subprocess.CompletedProcess:
         code = "from bravoric_stt_clipboard.cli import ocr_capture_main; raise SystemExit(ocr_capture_main())"
         return subprocess.run([sys.executable, "-c", code], env=self.env(language), capture_output=True,
-                              text=True, timeout=90, cwd=str(self.root))
+                              text=True, timeout=90, cwd=str(self.root), check=False)
 
     def env(self, language: str = "en") -> dict:
         e = dict(os.environ)
@@ -198,7 +201,7 @@ class Env:
     def toggle(self, language: str = "en") -> subprocess.CompletedProcess:
         code = "from bravoric_stt_clipboard.cli import stt_toggle_main; raise SystemExit(stt_toggle_main())"
         return subprocess.run([sys.executable, "-c", code], env=self.env(language), capture_output=True,
-                              text=True, timeout=60, cwd=str(self.root))
+                              text=True, timeout=60, cwd=str(self.root), check=False)
 
     def clipboard_writes(self) -> list[str]:
         if not self.clip_log.exists():
@@ -328,6 +331,66 @@ def main() -> int:
               elapsed < 9, f"{elapsed:.1f}s")
         check("l'utente e' avvisato dell'errore sugli appunti", any("clipboard error" in n for n in env.notifications()), str(env.notifications()))
     finally:
+        env.cleanup()
+
+    print("== interruttori e regole della config applicati davvero / config switches and rules really applied ==")
+    env = Env()
+    try:
+        env.write_config([good], extra_general="")
+        cfg = env.home / ".config" / "bravoric-stt-clipboard" / "config.toml"
+        cfg.write_text(cfg.read_text().replace("notifications = true", "notifications = false", 1))
+        dictate(env)
+        check("[general] notifications = false: nessuna notifica del backend, testo negli appunti comunque",
+              env.notifications() == [] and env.clipboard_writes() != [], str(env.notifications()))
+    finally:
+        env.cleanup()
+    env = Env()
+    try:
+        env.write_config([good], extra_tail="[clipboard]\ndouble_injection = false\n")
+        dictate(env)
+        check("[clipboard] double_injection = false: una sola scrittura, col testo finale pulito",
+              env.clipboard_writes() == ["Ciao mondo, prova."], str(env.clipboard_writes()))
+    finally:
+        env.cleanup()
+    env = Env()
+    try:
+        env.write_config([good], extra_tail="[notifications]\nstt_on_raw_ready = false\n")
+        dictate(env)
+        titles = env.notifications()
+        check("stt_on_raw_ready = false: niente notifica del grezzo, resta quella del testo pulito",
+              not any("raw text ready" in n for n in titles) and any("cleaned text ready" in n for n in titles), str(titles))
+    finally:
+        env.cleanup()
+    env = Env()
+    try:
+        FakeApi.cleaned = "x"
+        env.write_config([good], extra_general="cleanup_min_length_ratio = 0.7\n")
+        dictate(env)
+        check("cleanup_min_length_ratio = 0.7: una pulizia troppo corta viene scartata, restano gli appunti col testo grezzo",
+              set(env.clipboard_writes()) == {"ciao mondo prova"}, str(env.clipboard_writes()))
+    finally:
+        FakeApi.cleaned = "Ciao mondo, prova."
+        env.cleanup()
+    env = Env()
+    try:
+        FakeApi.cleaned = "x"
+        env.write_config([good], extra_general="cleanup_min_length_ratio = 0\n")
+        dictate(env)
+        check("cleanup_min_length_ratio = 0: la stessa pulizia corta viene accettata",
+              env.clipboard_writes()[-1:] == ["x"], str(env.clipboard_writes()))
+    finally:
+        FakeApi.cleaned = "Ciao mondo, prova."
+        env.cleanup()
+    env = Env()
+    try:
+        FakeApi.transcript = "Grazie."
+        env.write_config([good], cleanup=False, extra_tail='[stream]\nblacklist = "grazie, thank you"\n')
+        dictate(env)
+        check("blacklist: un'allucinazione come INTERA trascrizione non tocca gli appunti e avvisa",
+              env.clipboard_writes() == [] and any("transcription error" in n for n in env.notifications()),
+              f"{env.clipboard_writes()} {env.notifications()}")
+    finally:
+        FakeApi.transcript = "ciao mondo prova"
         env.cleanup()
 
     print("== OCR dagli appunti: immagine -> visione -> appunti / OCR from the clipboard ==")
