@@ -1460,13 +1460,13 @@ export default class BravoricPreferences extends ExtensionPreferences {
         });
         entry(clipGroup, {
             title: N_('Copy command'),
-            subtitle: N_('Command that writes to the clipboard (default: wl-copy)'),
+            subtitle: N_('Must behave like wl-copy: reads the text on stdin and puts it in the clipboard (default: wl-copy)'),
             text: general.clipboard_tool ?? 'wl-copy',
             save: v => setGeneralField('general', 'clipboard_tool', v),
         });
         entry(clipGroup, {
             title: N_('Paste command'),
-            subtitle: N_('Command that reads the clipboard (default: wl-paste)'),
+            subtitle: N_('Must behave like wl-paste: called with -t image/png to read a screenshot for OCR (default: wl-paste)'),
             text: general.clipboard_paste_tool ?? 'wl-paste',
             save: v => setGeneralField('general', 'clipboard_paste_tool', v),
         });

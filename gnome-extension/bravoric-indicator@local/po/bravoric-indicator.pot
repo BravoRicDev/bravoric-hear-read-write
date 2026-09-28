@@ -1126,7 +1126,7 @@ msgid "Copy command"
 msgstr ""
 
 #: gnome-extension/bravoric-indicator@local/prefs.js
-msgid "Command that writes to the clipboard (default: wl-copy)"
+msgid "Must behave like wl-copy: reads the text on stdin and puts it in the clipboard (default: wl-copy)"
 msgstr ""
 
 #: gnome-extension/bravoric-indicator@local/prefs.js
@@ -1134,7 +1134,7 @@ msgid "Paste command"
 msgstr ""
 
 #: gnome-extension/bravoric-indicator@local/prefs.js
-msgid "Command that reads the clipboard (default: wl-paste)"
+msgid "Must behave like wl-paste: called with -t image/png to read a screenshot for OCR (default: wl-paste)"
 msgstr ""
 
 #: gnome-extension/bravoric-indicator@local/prefs.js

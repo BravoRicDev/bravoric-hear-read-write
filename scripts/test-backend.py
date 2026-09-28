@@ -978,6 +978,20 @@ def main() -> int:
             args.index("-i") < args.index("--"),
         )
 
+    # notify-send appeso (server di notifiche muto): timeout, mai eccezione.
+    with mock.patch("bravoric_stt_clipboard.notify.subprocess.run") as m_run:
+        notify.send("titolo", "corpo")
+        check("notify.send passa un timeout a notify-send",
+              m_run.call_args.kwargs.get("timeout") not in (None, 0))
+    with mock.patch("bravoric_stt_clipboard.notify.subprocess.run",
+                    side_effect=subprocess.TimeoutExpired("notify-send", 10)):
+        try:
+            notify.send("titolo", "corpo")
+            _notify_hang_ok = True
+        except Exception:
+            _notify_hang_ok = False
+        check("notify.send non solleva se notify-send va in timeout", _notify_hang_ok)
+
     # --- config_editor.py: scritture concorrenti non si perdono (giro 12) --
     # _atomic_replace usava un path tmp fisso condiviso da tutti i comandi
     # GUI: due scritture concorrenti sullo stesso tmp potevano far perdere

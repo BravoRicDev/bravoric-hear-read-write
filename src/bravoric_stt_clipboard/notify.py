@@ -62,8 +62,11 @@ def send(title: str, body: str = "", icon: str = ICON_READY) -> None:
     # riprodotto dal vivo: ogni notifica falliva silenziosamente (exit 1).
     # B27b: cattura OSError (non solo FileNotFoundError) per evitare
     # che un errore di notify interrompa il flusso principale.
-    with contextlib.suppress(OSError):
-        subprocess.run(["notify-send", "-i", icon, "--", title, body], check=False)
+    # Timeout come per wl-copy/wl-paste (B26): senza, un server di notifiche
+    # che non risponde blocca notify-send sul timeout D-Bus e con lui il
+    # flusso chiamante. TimeoutExpired NON e' un OSError.
+    with contextlib.suppress(OSError, subprocess.TimeoutExpired):
+        subprocess.run(["notify-send", "-i", icon, "--", title, body], check=False, timeout=10)
 
 
 def maybe_send(

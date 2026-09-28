@@ -1177,16 +1177,16 @@ msgid "Copy command"
 msgstr "Comando di copia"
 
 #: gnome-extension/bravoric-indicator@local/prefs.js
-msgid "Command that writes to the clipboard (default: wl-copy)"
-msgstr "Comando che scrive negli appunti (predefinito: wl-copy)"
+msgid "Must behave like wl-copy: reads the text on stdin and puts it in the clipboard (default: wl-copy)"
+msgstr "Deve comportarsi come wl-copy: legge il testo da stdin e lo mette negli appunti (predefinito: wl-copy)"
 
 #: gnome-extension/bravoric-indicator@local/prefs.js
 msgid "Paste command"
 msgstr "Comando di incolla"
 
 #: gnome-extension/bravoric-indicator@local/prefs.js
-msgid "Command that reads the clipboard (default: wl-paste)"
-msgstr "Comando che legge gli appunti (predefinito: wl-paste)"
+msgid "Must behave like wl-paste: called with -t image/png to read a screenshot for OCR (default: wl-paste)"
+msgstr "Deve comportarsi come wl-paste: viene chiamato con -t image/png per leggere lo screenshot dell'OCR (predefinito: wl-paste)"
 
 #: gnome-extension/bravoric-indicator@local/prefs.js
 msgid "Chunk log size (lines)"
