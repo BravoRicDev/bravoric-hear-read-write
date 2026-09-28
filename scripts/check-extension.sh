@@ -3,6 +3,10 @@
 # Non richiede GNOME: sintassi, metadata.json, i18n (entrambe le po), logica di
 # timeout e test del backend Python.
 # Uso: scripts/check-extension.sh   (exit != 0 se qualcosa fallisce)
+# check-extension.sh — quick regression guard (extension + backend).
+# It does not require GNOME: syntax, metadata.json, i18n (both po files),
+# timeout logic and Python backend tests.
+# Usage: scripts/check-extension.sh   (exit != 0 if anything fails)
 set -uo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -77,6 +81,12 @@ def msgids(path):
     # lati sarebbero stati scartati identicamente ("" - {""}), niente falso
     # positivo oggi, ma un futuro msgid multilinea davvero mancante non
     # sarebbe stato rilevato qui. Parser che segue le righe di continuazione.
+    # Round 16: a single-line regex missed msgids wrapped over several lines
+    # (msgid "" followed by "..." continuation, xgettext produces them for long
+    # strings — a real case already present in this .po) — both sides would have
+    # been discarded identically ("" - {""}), no false positive today, but a
+    # future really-missing multiline msgid would not have been detected here.
+    # Parser that follows the continuation lines.
     txt = open(path, encoding="utf-8").read()
     result, cur, mode = set(), None, None
     for raw in txt.splitlines():
@@ -109,6 +119,10 @@ then ok "it.po completo, nessun fuzzy"; else bad "i18n"; fi
 # Copertura reale: ogni stringa _()/N_() del sorgente deve risolversi nel .mo.
 # (Il controllo sopra confronta solo .po vs .pot: se il .pot e' stantio, il gap
 # non emerge. Qui si estrae dal sorgente JS e si interroga gettext davvero.)
+# Real coverage: every _()/N_() string of the source must resolve in the .mo.
+# (The check above compares only .po vs .pot: if the .pot is stale, the gap
+# does not emerge. Here we extract from the JS source and really query
+# gettext.)
 if EXT_I18N_OUT=$(python3 - "$EXT" <<'PY'
 import gettext, os, re, sys
 ext = sys.argv[1]
@@ -140,6 +154,8 @@ t = gettext.translation(
     fallback=True,
 )
 # Identiche per costruzione (acronimi, segnaposto puri, termini tecnici invariati): non serve tradurle.
+# Identical by construction (acronyms, pure placeholders, unchanged
+# technical terms): no need to translate them.
 IDENTICAL = {"OCR", "OK", "Endpoint", "Streaming", "Mode", "Venv: %s", "Schema: %s", "[%s] %s"}
 untranslated = [s for s in sorted(strings) if t.gettext(s) == s and s not in IDENTICAL]
 if untranslated:
@@ -161,6 +177,7 @@ po, pot = sys.argv[1], sys.argv[2]
 
 def msgids(path):
     # Giro 16: stesso fix del blocco estensione sopra, msgid multilinea.
+    # Round 16: same fix as the extension block above, multiline msgid.
     txt = open(path, encoding="utf-8").read()
     result, cur, mode = set(), None, None
     for raw in txt.splitlines():
@@ -194,6 +211,11 @@ then ok "po/it.po backend completo, nessun fuzzy"; else bad "i18n backend"; fi
 # Una voce presente con msgstr "" passava, e gettext in Python restituiva
 # l'inglese. Il blocco dell'estensione (riga 109) faceva gia' il controllo
 # giusto: qui si replica per il dominio backend, interrogando il .mo compilato.
+# Round 2 (F6): the block above compares only .po vs .pot (presence of the
+# msgid). An entry present with msgstr "" passed, and gettext in Python
+# returned English. The extension block (line 109) already did the right
+# check: here it is replicated for the backend domain, querying the compiled
+# .mo.
 if BACKEND_I18N_OUT=$(python3 - "$REPO/src/bravoric_stt_clipboard" <<'PY'
 import gettext, os, re, sys
 src_root = sys.argv[1]
@@ -226,6 +248,9 @@ strings = {s for s in strings if s}
 # Guardia di non-vacuità: se l'estrazione non trova nulla il controllo passerebbe
 # SEMPRE, cioè esattamente il difetto che questa voce deve chiudere. Il .pot del
 # backend è la lista attesa: se le stringhe estratte sono meno, il gate è rotto.
+# Non-vacuity guard: if the extraction finds nothing the check would ALWAYS
+# pass, i.e. exactly the defect this entry must close. The backend .pot is
+# the expected list: if the extracted strings are fewer, the gate is broken.
 pot = os.path.join(os.path.dirname(src_root), "po", "bravoric-stt-clipboard.pot")
 pot_ids = set()
 if os.path.exists(pot):
@@ -250,6 +275,7 @@ t = gettext.translation(
     fallback=True,
 )
 # Identiche per costruzione: acronimi e termini tecnici invariati.
+# Identical by construction: unchanged acronyms and technical terms.
 IDENTICAL = {"OCR", "OK", "STT", "API", "HTTP", "HTTPS", "JSON", "URL", "GET", "POST",
              "Venv: %s", "Schema: %s", "Endpoint", "Streaming", "Mode", "[%s] %s"}
 untranslated = [s for s in sorted(strings) if t.gettext(s) == s and s not in IDENTICAL]
@@ -269,6 +295,10 @@ fi
 # fallire msgfmt/gettext (JSON valido, testo sbagliato) — verificato una
 # tantum al giro 8 ma mai controllato automaticamente da questa suite.
 # Parser minimale che gestisce anche msgstr "" seguito da righe "..." avvolte.
+# Round 14 guard: a %s/%d placeholder mismatch between msgid and msgstr does
+# not make msgfmt/gettext fail (valid JSON, wrong text) — verified once at
+# round 8 but never checked automatically by this suite. Minimal parser that
+# also handles msgstr "" followed by wrapped "..." lines.
 echo "== i18n segnaposto %s/%d (entrambi i domini) =="
 if python3 - "$EXT/po/it.po" "$REPO/po/it.po" <<'PY'
 import sys
@@ -330,6 +360,11 @@ if command -v gjs >/dev/null 2>&1; then
     # una scorciotia che Mutter rifiuta finiva in dconf per sempre e non
     # accadeva mai, senza messaggio. Qui si esegue la funzione REALE estratta
     # da prefs.js sotto gjs vero.
+    # Round 4 (F5): the Shortcuts page validated CONFLICTS (identical string in
+    # five system schemas) but not the VALIDITY of the accelerator: a shortcut
+    # that Mutter rejects ended up in dconf forever and never fired, with no
+    # message. Here the REAL function extracted from prefs.js is run under real
+    # gjs.
     echo "== validazione acceleratori (gjs, funzione reale) =="
     if (cd "$REPO" && gjs -m "$REPO/scripts/test-shortcut-accelerator.js"); then
         ok "test-shortcut-accelerator.js (21 asserzioni)"
@@ -340,6 +375,9 @@ if command -v gjs >/dev/null 2>&1; then
     # Giro 2 (F2): TomlBoolEditor rendeva config.toml illeggibile. Il test
     # esegue la CLASSE REALE estratta da prefs.js e valida il risultato con
     # tomllib: non un confronto di stringhe, un parser vero.
+    # Round 2 (F2): TomlBoolEditor made config.toml unreadable. The test runs
+    # the REAL CLASS extracted from prefs.js and validates the result with
+    # tomllib: not a string comparison, a real parser.
     echo "== TomlBoolEditor (gjs, classe reale) =="
     if (cd "$REPO" && gjs -m "$REPO/scripts/test-toml-bool-editor.js"); then
         ok "test-toml-bool-editor.js"
@@ -371,6 +409,14 @@ fi
 # install.sh viene ESEGUITO davvero in un XDG_DATA_HOME finto: non viene
 # eseguito install.sh per intero, che scriverebbe in ~/.config e
 # ~/.local/share reali.
+# Round 4 (F1 + F2): `ln -sfn` is silently inert if the destination is a
+# REAL directory (the copy of `gnome-extensions install`), so the lines
+# after it run on the copy and the key gate passes: upgrade apparently
+# successful with the old module in memory. And the only message about the
+# reload spoke only of the first installation, the opposite of what is
+# needed after a `git pull`. The "GNOME Shell extension" block of install.sh
+# is REALLY RUN in a fake XDG_DATA_HOME: install.sh is not run as a whole,
+# which would write into the real ~/.config and ~/.local/share.
 echo "== install.sh (F1/F2, blocco estensione in XDG finto) =="
 if bash "$REPO/scripts/test-install-extension-dir.sh" >/dev/null 2>&1; then
     ok "test-install-extension-dir.sh (20 controlli)"
@@ -388,6 +434,11 @@ PY=""
 # XDG_DATA_HOME impostato il venv reale non veniva trovato, si cadeva sul
 # python3 di sistema (senza 'requests') e la suite falliva con un FAIL
 # fuorviante su un'installazione corretta.
+# P2 (round 15): install.sh respects XDG_DATA_HOME (multi-machine
+# portability, e.g. NixOS/separate home); here it was hardcoded to
+# ~/.local/share, so with XDG_DATA_HOME set the real venv was not found, it
+# fell back on the system python3 (without 'requests') and the suite failed
+# with a misleading FAIL on a correct installation.
 XDG_DATA_HOME_="${XDG_DATA_HOME:-$HOME/.local/share}"
 for cand in "$XDG_DATA_HOME_/bravoric-stt-clipboard/venv/bin/python" "$REPO/.venv/bin/python"; do
     if [ -x "$cand" ]; then PY="$cand"; break; fi
@@ -407,6 +458,9 @@ else
     # Giro 16: prima lo stderr era scartato (2>/dev/null) — un'eccezione
     # Python non gestita prima della riga finale dava solo "FAIL
     # test-backend.py" senza traceback, costringendo a rilanciare a mano.
+    # Round 16: before, stderr was discarded (2>/dev/null) — an unhandled Python
+    # exception before the final line gave only "FAIL test-backend.py" without a
+    # traceback, forcing a manual rerun.
     if [ -n "$BACKEND_STDERR" ]; then
         # ${var//pattern/repl} non antepone il prefisso a OGNI riga di una
         # variabile multi-riga, solo sostituisce match letterali; qui serve
@@ -419,6 +473,9 @@ fi
 
 # Stessa suite con la lingua di sistema opposta: i messaggi tradotti (CLI
 # chunk-log, notifiche) non devono far dipendere l'esito dalla locale.
+# Same suite with the opposite system language: the translated messages
+# (chunk-log CLI, notifications) must not make the outcome depend on the
+# locale.
 if [ -n "$PY" ]; then
     for TEST_LANG in en it; do
         LANG_SUMMARY="$(LANGUAGE="$TEST_LANG" LC_ALL="$TEST_LANG" PYTHONPATH="$REPO/src" "$PY" "$REPO/scripts/test-backend.py" 2>/dev/null | tail -1)"

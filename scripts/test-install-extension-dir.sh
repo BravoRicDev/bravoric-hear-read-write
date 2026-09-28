@@ -14,6 +14,23 @@
 #       modulo vecchio ancora in memoria.
 #  F2 — l'unico messaggio sull'reload parlava solo della PRIMA installazione,
 #       dicendo il contrario di quello che serve a chi ha fatto `git pull`.
+# test-install-extension-dir.sh — F1 + F2 (round 4).
+#
+# It does not run install.sh (it would write into the real ~/.config and
+# ~/.local/share). It extracts the "GNOME Shell extension" block from
+# install.sh and really runs it in a fake XDG_DATA_HOME: the product is
+# measured, not a rewrite.
+#
+# The two defects, measured by the reviewer:
+#  F1 — `ln -sfn` is silently INERT if the destination is a REAL directory:
+#       -n applies only to symlinks, so `ln` exits 0 and the link ends up
+#       INSIDE. The lines after it (glib-compile-schemas, key gate, .mo) run
+#       on the stale copy, which is also the one GNOME Shell loads, and the
+#       key gate would PASS: upgrade apparently successful with the old
+#       module still in memory.
+#  F2 — the only message about the reload spoke only of the FIRST
+#       installation, saying the opposite of what is needed by whoever did
+#       `git pull`.
 set -uo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -32,6 +49,7 @@ check() {
 }
 
 # grepany <pattern> <file...> -> 1 se trova, 0 se non trova (-nessun output-)
+# grepany <pattern> <file...> -> 1 if found, 0 if not found (-no output-)
 grepany() {
     local pat="$1"
     shift
@@ -44,6 +62,7 @@ grepany() {
 
 block="$(awk '/^say "== estensione GNOME Shell =="/{f=1} f&&/^say "== fatto =="/{exit} f' "$INSTALL_SH")"
 # Helper di lingua (say/INSTALL_LANG): il blocco da solo non li definisce.
+# Language helper (say/INSTALL_LANG): the block alone does not define them.
 i18n_block="$(awk '/^# i18n-begin/{f=1} f{print} /^# i18n-end/{exit}' "$INSTALL_SH")"
 if [ -z "$i18n_block" ]; then
     echo "  FAIL  helper i18n non trovato in install.sh"
@@ -68,6 +87,9 @@ RUNNER="$WORK/runner.sh"
 # Entrata: XDG_DATA_HOME finto, PROJECT_DIR = RADICE del checkout finto (la
 # sorgente ci vive dentro, sotto gnome-extension/). Scrive out.txt/err.txt e
 # restituisce l'exit code del blocco.
+# Entry: fake XDG_DATA_HOME, PROJECT_DIR = ROOT of the fake checkout (the
+# source lives inside it, under gnome-extension/). It writes out.txt/err.txt
+# and returns the block's exit code.
 run_block() {
     local xdg="$1"
     local proj="$2"
@@ -87,19 +109,28 @@ run_block() {
 # i file di log verrebbero creati dentro gnome-shell/extensions PRIMA del symlink
 # e falserebbero la misura (e il gate delle chiavi leggerebbe una dir senza
 # schemas solo per via del log).
+# Where the stdout/stderr of every case go: OUTSIDE $XDG_DATA_HOME,
+# otherwise the log files would be created inside gnome-shell/extensions
+# BEFORE the symlink and would distort the measurement (and the key gate
+# would read a dir without schemas just because of the log).
 outof() { printf '%s/log-%s/%s' "$WORK" "$(basename "$(dirname "$1")")" "$2"; }
 
 echo "== F1/F2: blocco estensione di install.sh eseguito in XDG finto =="
 
 # --- Caso 1: destinazione REALE (la copia di `gnome-extensions install`) ---
+# --- Case 1: REAL destination (the copy of `gnome-extensions install`) ---
 W1="$WORK/caso1"
 EXT1="$W1/xdg/gnome-shell/extensions/bravoric-indicator@local"
 # PROJECT_DIR = radice del checkout, quindi la sorgente vive sotto proj/.
+# PROJECT_DIR = root of the checkout, so the source lives under proj/.
 mkdir -p "$W1/proj/gnome-extension"
 cp -r "$SRC_EXT" "$W1/proj/gnome-extension/bravoric-indicator@local"
 # Copia REALE, come la produce `gnome-extensions install`: l'intera estensione
 # (schemas compresi, altrimenti il gate delle chiavi fallirebbe per motivi
 # sbagliati e non misurerebbe nulla) piu' un file che prova l'antichita'.
+# REAL copy, as `gnome-extensions install` produces it: the whole extension
+# (schemas included, otherwise the key gate would fail for the wrong reasons
+# and would measure nothing) plus a file that proves its age.
 mkdir -p "$EXT1"
 cp -r "$SRC_EXT/." "$EXT1/"
 echo "marcatore" >"$EXT1/marker.txt"
@@ -122,6 +153,7 @@ check "F1: la copia preesistente NON viene cancellata (niente rm -rf non richies
 check "F1: avvisa anche che la copia e' ancora reale dopo la ln" "$(grepany 'ancora una copia reale' "${both1[@]}")"
 
 # --- Caso 2: destinazione assente (percorso normale, symlink) -------------
+# --- Case 2: missing destination (normal path, symlink) -------------
 W2="$WORK/caso2"
 mkdir -p "$W2/proj/gnome-extension"
 cp -r "$SRC_EXT" "$W2/proj/gnome-extension/bravoric-indicator@local"
@@ -141,6 +173,7 @@ check "F1: nessun avviso di copia nel caso normale (nessun rumore introdotto)" "
 check "F1: 'Estensione linkata' dichiara il vero quando il link c'e'" "$(grepany 'Estensione linkata' "$OUT2")"
 
 # --- F2: il messaggio sul reload, in entrambi i casi -----------------------
+# --- F2: the message about the reload, in both cases -----------------------
 for n in 1 2; do
     if [ "$n" = "1" ]; then out="$OUT1"; else out="$OUT2"; fi
     check "F2 (caso $n): dice che serve un reload su Wayland" "$(grepany 'logout|Alt.F2' "$out")"
@@ -151,6 +184,8 @@ done
 
 # --- Non-vacuità statica di F2: il vecchio testo e' cio' che rendeva l'avviso
 # falso per l'upgrade (diceva solo 'prima volta' e non nominava il reload).
+# --- Static non-vacuity of F2: the old text is what made the warning false
+# for the upgrade (it only said 'first time' and did not name the reload).
 if grep -qi 'per la prima volta' "$INSTALL_SH"; then v1=0; else v1=1; fi
 check "F2: il vecchio messaggio 'per la prima volta' non e' piu' in install.sh" "$v1"
 install_echoes="$(grep -nE '^[[:space:]]*(echo|say)' "$INSTALL_SH")"
@@ -158,6 +193,8 @@ check "F2: l'output di install.sh nomina il reload (logout/Alt+F2/ricarica)" "$(
 
 # --- Non-vacuità meccanica di F1: il puro `ln -sfn` e' davvero inerte sulla
 # directory reale (e' il fatto che rendeva il fallimento silenzioso).
+# --- Mechanical non-vacuity of F1: plain `ln -sfn` is really inert on the
+# real directory (it is the fact that made the failure silent).
 LNT="$WORK/lntest"
 mkdir -p "$LNT/parent/ext_real" "$LNT/src_ext"
 ln -sfn "$LNT/src_ext" "$LNT/parent/ext_real" 2>/dev/null
@@ -167,6 +204,9 @@ check "F1: il meccanismo e' reale — ln -sfn su directory non la sostituisce" "
 # --- Inglese: stessa fixture, lingua di sistema diversa da it ---------------
 # Il caso 1 (copia reale) e il caso 2 (symlink) devono parlare inglese, senza
 # residui italiani, e nominare le stesse cose (copia, git pull, reload).
+# --- English: same fixture, system language other than it ---------------
+# Case 1 (real copy) and case 2 (symlink) must speak English, with no
+# Italian leftovers, and name the same things (copy, git pull, reload).
 export TEST_LANG=en
 E1="$WORK/en1"
 mkdir -p "$E1/proj/gnome-extension" "$E1/xdg/gnome-shell/extensions"
