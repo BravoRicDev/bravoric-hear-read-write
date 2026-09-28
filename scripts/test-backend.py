@@ -6475,6 +6475,51 @@ max_entries = 20
     check("extension.js: stream_live_text.json creato con Gio.FileCreateFlags.PRIVATE (0600)",
           "Gio.FileCreateFlags.PRIVATE" in _live_block)
 
+    # --- audio.ensure_private_dir: dir di runtime con la VOCE dell'utente ------
+    _pd_root = Path(tempfile.mkdtemp(prefix="brv-privdir-"))
+    _old_um = os.umask(0o022)
+    try:
+        _pd_new = _pd_root / "a" / "b"
+        audio.ensure_private_dir(_pd_new)
+        check("ensure_private_dir: directory nuova (umask 022) e' 0700",
+              (_pd_new.stat().st_mode & 0o777) == 0o700)
+        _pd_open = _pd_root / "aperta"
+        _pd_open.mkdir()
+        _pd_open.chmod(0o777)
+        audio.ensure_private_dir(_pd_open)
+        check("ensure_private_dir: una directory nostra gia' 0777 viene stretta a 0700",
+              (_pd_open.stat().st_mode & 0o777) == 0o700)
+        _pd_real = _pd_root / "reale"
+        _pd_real.mkdir()
+        _pd_link = _pd_root / "link"
+        _pd_link.symlink_to(_pd_real)
+        try:
+            audio.ensure_private_dir(_pd_link)
+            _pd_link_rejected = False
+        except RuntimeError:
+            _pd_link_rejected = True
+        check("ensure_private_dir: un symlink viene RIFIUTATO (non seguito)", _pd_link_rejected)
+        _pd_file = _pd_root / "file"
+        _pd_file.write_text("x")
+        try:
+            audio.ensure_private_dir(_pd_file)
+            _pd_file_rejected = False
+        except (RuntimeError, FileExistsError, NotADirectoryError):
+            _pd_file_rejected = True
+        check("ensure_private_dir: un file al posto della directory viene rifiutato", _pd_file_rejected)
+        _pd_other = _pd_root / "altrui"
+        _pd_other.mkdir()
+        with mock.patch.object(audio.os, "getuid", return_value=os.getuid() + 1):
+            try:
+                audio.ensure_private_dir(_pd_other)
+                _pd_other_rejected = False
+            except RuntimeError:
+                _pd_other_rejected = True
+        check("ensure_private_dir: una directory di un ALTRO uid viene rifiutata (nome prevedibile in /tmp)",
+              _pd_other_rejected)
+    finally:
+        os.umask(_old_um)
+
     # --- 10. il percorso di default e' quello vero, non un doppione -------
     # (la verifica che il percorso reale non sia stato TOCCATO da nessun test
     # e' in fondo a main(): confronta mtime+size reali, non stringhe di path

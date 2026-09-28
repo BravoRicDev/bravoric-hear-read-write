@@ -6,6 +6,7 @@ import json
 import logging
 import os
 import signal
+import stat
 import subprocess
 import tempfile
 import time
@@ -26,6 +27,26 @@ def _runtime_dir() -> Path:
 
 
 LOCK_PATH = _runtime_dir() / "recording.lock"
+
+
+def ensure_private_dir(path: Path) -> None:
+    """Crea `path` (e i genitori) e garantisce che sia NOSTRA e 0700.
+
+    Serve per la directory di runtime: contiene i lock e, per lo streaming, le
+    WAV con la VOCE dell'utente. Con XDG_RUNTIME_DIR (0700, per-utente) e'
+    gia' protetta; nel fallback `<tmp>/bravoric-stt-clipboard-<uid>` un
+    mkdir con umask la crea 0755 (WAV leggibili da altri utenti locali) e un
+    nome prevedibile in /tmp puo' essere PRE-CREATO da un altro utente: senza
+    controllo si scriverebbero lock e audio in casa sua. Symlink e directory
+    di un altro uid vengono rifiutate, non usate."""
+    path.mkdir(mode=0o700, parents=True, exist_ok=True)
+    info = path.lstat()
+    if stat.S_ISLNK(info.st_mode) or not stat.S_ISDIR(info.st_mode):
+        raise RuntimeError(f"directory di runtime non sicura (symlink o non directory): {path}")
+    if info.st_uid != os.getuid():
+        raise RuntimeError(f"directory di runtime di un altro utente: {path}")
+    if info.st_mode & 0o077:
+        path.chmod(0o700)
 
 
 class ToggleDebouncedError(RuntimeError):
@@ -89,7 +110,7 @@ def is_recording() -> bool:
 
 
 def start_recording(audio_cfg: AudioConfig) -> Path:
-    LOCK_PATH.parent.mkdir(parents=True, exist_ok=True)
+    ensure_private_dir(LOCK_PATH.parent)
 
     # B1: lock atomico con O_CREAT|O_EXCL: se il lock esiste già, l'avvio
     # fallisce immediatamente (il secondo toggle viene scartato).

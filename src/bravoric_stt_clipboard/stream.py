@@ -1348,7 +1348,7 @@ def is_stream_active() -> bool:
 
 def _acquire_lock(pid: int, extra: dict | None = None) -> None:
     """Lock esclusivo (O_CREAT|O_EXCL) con pid del processo detentore."""
-    STREAM_LOCK_PATH.parent.mkdir(parents=True, exist_ok=True)
+    audio.ensure_private_dir(STREAM_LOCK_PATH.parent)
     try:
         fd = os.open(str(STREAM_LOCK_PATH), os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
     except FileExistsError:
@@ -1759,7 +1759,7 @@ class StreamSession:
     def _start_per_chunk(self) -> None:
         session_id = uuid.uuid4().hex
         session_dir = STREAM_LOCK_PATH.parent / f"stream-{session_id}"
-        session_dir.mkdir(parents=True, exist_ok=True)
+        audio.ensure_private_dir(session_dir)
         try:
             log_path = session_dir / "supervisor.log"
             log = open(log_path, "ab")  # noqa: SIM115
@@ -1871,7 +1871,7 @@ class StreamSession:
         stream = self._stream
         audio_cfg = self._audio
         session_dir = STREAM_LOCK_PATH.parent / f"stream-{session_id}"
-        session_dir.mkdir(parents=True, exist_ok=True)
+        audio.ensure_private_dir(session_dir)
 
         # ffmpeg command: output PCM (16-bit little-endian) on stdout
         cmd = [
