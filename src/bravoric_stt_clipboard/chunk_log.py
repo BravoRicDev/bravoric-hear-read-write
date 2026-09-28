@@ -70,10 +70,17 @@ MAX_ERR_CHARS = 500
 # del parametro resta (serve per capire cosa era rotto). Copre sia
 # "api_key=abc" sia "api_key: abc" sia "Authorization: Bearer abc".
 _SECRET_RE = re.compile(
-    r"((?:api[_-]?key|access[_-]?key|key|token|auth(?:orization)?|bearer)"
+    r"((?:api[_-]?key|access[_-]?key|client[_-]?secret|secret|passw(?:or)?d|pwd"
+    r"|key|token|auth(?:orization)?|bearer)"
     r"[\"']?\s*[=:]\s*\"?'?)([^\s\"',&]+)",
     re.IGNORECASE,
 )
+# "Bearer <token>" con SPAZIO (non =/:): senza questa passata il regex sopra,
+# su "Authorization: Bearer sk-abc", prende "Bearer" come valore e lascia il
+# token in chiaro (misurato).
+_BEARER_RE = re.compile(r"(\bbearer\s+)([^\s\"',&]+)", re.IGNORECASE)
+# Credenziali nell'URL: https://utente:password@host
+_URL_USERINFO_RE = re.compile(r"(://[^/\s:@]+:)([^@\s/]+)(@)")
 
 # Cache del numero di righe per percorso: un conteggio a ogni append costerebbe
 # una lettura del file per ogni chunk. La cache vale per il processo: dopo un
@@ -113,14 +120,35 @@ def redact(text: str) -> str:
     completo, e l'endpoint puo' portare la chiave in query string. Il nome del
     parametro resta leggibile, che e' cio' che serve per capire il difetto.
     """
-    return _SECRET_RE.sub(r"\1<redacted>", text or "")
+    text = _BEARER_RE.sub(r"\1<redacted>", text or "")
+    text = _URL_USERINFO_RE.sub(r"\1<redacted>\3", text)
+    return _SECRET_RE.sub(r"\1<redacted>", text)
 
 
-def _short_error(exc: object) -> str:
-    message = redact(str(exc)).strip()
+def _short_error(exc: object, secrets: tuple[str, ...] = ()) -> str:
+    message = str(exc)
+    # Il VALORE esatto delle chiavi configurate, prima dei pattern: un 401
+    # stile OpenAI ripete la chiave nel corpo ("Incorrect API key provided:
+    # sk-...") senza alcun "nome=valore" che un regex possa agganciare, e
+    # api_client mette resp.text nell'ApiError. Sotto 6 caratteri non si
+    # redige: una "chiave" cosi' corta colpirebbe testo qualunque.
+    for secret in secrets:
+        if len(secret) >= 6:
+            message = message.replace(secret, "<redacted>")
+    message = redact(message).strip()
     if len(message) > MAX_ERR_CHARS:
         message = message[:MAX_ERR_CHARS] + "…"
     return message
+
+
+def _level_secrets(level) -> tuple[str, ...]:
+    """Chiavi API note di questo livello (inline o da variabile d'ambiente)."""
+    resolver = getattr(level, "resolved_api_key", None)
+    try:
+        key = resolver() if callable(resolver) else ""
+    except Exception:  # noqa: BLE001 - un livello anomalo non deve rompere il log
+        return ()
+    return (key,) if isinstance(key, str) and key else ()
 
 
 def make_attempt(level, ms: float, ok: bool, err: object = None) -> dict:
@@ -138,7 +166,7 @@ def make_attempt(level, ms: float, ok: bool, err: object = None) -> dict:
         "host": endpoint_host(str(getattr(level, "endpoint", "") or "")),
         "ms": round(max(0.0, float(ms))),
         "ok": bool(ok),
-        "err": _short_error(err) if err else None,
+        "err": _short_error(err, _level_secrets(level)) if err else None,
     }
 
 

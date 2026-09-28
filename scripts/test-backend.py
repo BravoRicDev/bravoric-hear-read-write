@@ -6347,6 +6347,42 @@ max_entries = 20
           _rc_last == 0 and _last_text.count("\n") == 1
           and "seq=1" in _last_text)
 
+    # --- redact: il segreto NON deve restare nel log (mai testata a nome) ----
+    # Misurato prima del fix: "Authorization: Bearer sk-x" lasciava sk-x in
+    # chiaro (il regex prendeva "Bearer" come valore), e password=/secret=/
+    # user:pass@host non erano coperti.
+    _secret_cases = [
+        ("Authorization: Bearer sk-TOPSECRET99", "sk-TOPSECRET99"),
+        ("url: /v1/audio?api_key=TOPSECRET99&x=1", "TOPSECRET99"),
+        ("url: /v1?token=TOPSECRET99", "TOPSECRET99"),
+        ("https://utente:TOPSECRET99@host/v1", "TOPSECRET99"),
+        ("password=TOPSECRET99", "TOPSECRET99"),
+        ("client_secret: TOPSECRET99", "TOPSECRET99"),
+    ]
+    for _txt_sc, _sec_sc in _secret_cases:
+        check(f"redact: il segreto non resta in {_txt_sc[:38]!r}",
+              _sec_sc not in cl_mod.redact(_txt_sc))
+    check("redact: un errore normale resta invariato",
+          cl_mod.redact("connection refused (errno 111)") == "connection refused (errno 111)")
+    check("redact: il nome del parametro resta leggibile",
+          "api_key=" in cl_mod.redact("?api_key=TOPSECRET99"))
+    # Valore ESATTO della chiave configurata: un 401 stile OpenAI la ripete nel
+    # corpo senza "nome=valore" agganciabile da un regex.
+    _lv_sec = types.SimpleNamespace(
+        name="a", model="m", endpoint="http://h:1/v1",
+        resolved_api_key=lambda: "sk-abcdef123456")
+    _att_sec = cl_mod.make_attempt(
+        _lv_sec, 5, False, "401 Incorrect API key provided: sk-abcdef123456")
+    check("make_attempt: la chiave configurata (valore esatto) e' redatta anche senza pattern",
+          "sk-abcdef123456" not in (_att_sec["err"] or "") and "<redacted>" in (_att_sec["err"] or ""))
+    _lv_short = types.SimpleNamespace(
+        name="a", model="m", endpoint="http://h:1/v1", resolved_api_key=lambda: "ab")
+    check("make_attempt: una 'chiave' di 2 caratteri NON viene redatta (colpirebbe testo qualunque)",
+          cl_mod.make_attempt(_lv_short, 5, False, "abc abc")["err"] == "abc abc")
+    _lv_broken = types.SimpleNamespace(name="a", model="m", endpoint="http://h:1/v1")
+    check("make_attempt: livello senza resolved_api_key non rompe il log",
+          cl_mod.make_attempt(_lv_broken, 5, False, "boom")["err"] == "boom")
+
     # --- 10. il percorso di default e' quello vero, non un doppione -------
     # (la verifica che il percorso reale non sia stato TOCCATO da nessun test
     # e' in fondo a main(): confronta mtime+size reali, non stringhe di path
