@@ -6407,7 +6407,8 @@ max_entries = 20
     check("CLI: --summary esce 0 e mostra l'intestazione per endpoint",
           _rc_sum == 0 and "endpoint" in _sum_text and "whisper-gpu" in _sum_text)
     check("CLI: --summary mostra la quota di chunk serviti",
-          "quota" in _sum_text and "50.0%" in _sum_text)
+          ("quota" in _sum_text or "share" in _sum_text)  # it | en (lingua di sistema)
+          and "50.0%" in _sum_text)
     check("CLI: --last 1 mostra una sola riga, la piu' recente",
           _rc_last == 0 and _last_text.count("\n") == 1
           and "seq=1" in _last_text)

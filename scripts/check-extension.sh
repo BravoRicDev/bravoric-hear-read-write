@@ -417,6 +417,19 @@ else
     bad "test-backend.py"
 fi
 
+# Stessa suite con la lingua di sistema opposta: i messaggi tradotti (CLI
+# chunk-log, notifiche) non devono far dipendere l'esito dalla locale.
+if [ -n "$PY" ]; then
+    for TEST_LANG in en it; do
+        LANG_SUMMARY="$(LANGUAGE="$TEST_LANG" LC_ALL="$TEST_LANG" PYTHONPATH="$REPO/src" "$PY" "$REPO/scripts/test-backend.py" 2>/dev/null | tail -1)"
+        if printf '%s' "$LANG_SUMMARY" | grep -qE '^[0-9]+ PASS / 0 FAIL$'; then
+            ok "test-backend.py con LANGUAGE=$TEST_LANG"
+        else
+            bad "test-backend.py con LANGUAGE=$TEST_LANG ($LANG_SUMMARY)"
+        fi
+    done
+fi
+
 echo
 if [ "$FAIL" -eq 0 ]; then
     echo "TUTTO OK"
