@@ -54,6 +54,7 @@ class FakeApi(BaseHTTPRequestHandler):
 
     transcript = "ciao mondo prova"
     cleaned = "Ciao mondo, prova."
+    ocr_text = "testo letto dall'immagine"
     hits: list[str] = []
 
     def log_message(self, *args) -> None:  # silenzio / silence
@@ -69,12 +70,18 @@ class FakeApi(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:  # noqa: N802 - nome imposto da http.server | name imposed by http.server
         length = int(self.headers.get("Content-Length", 0))
-        self.rfile.read(length)
+        raw_body = self.rfile.read(length)
         FakeApi.hits.append(self.path)
+        try:
+            wants_json = "response_format" in json.loads(raw_body)
+        except ValueError:
+            wants_json = False
         if self.path.endswith("/audio/transcriptions"):
             self._reply({"text": FakeApi.transcript})
         elif self.path.endswith("/chat/completions"):
-            content = json.dumps({"corrected_text": FakeApi.cleaned})
+            # Pulizia LLM (schema JSON) oppure estrazione OCR (testo semplice).
+            # LLM cleanup (JSON schema) or OCR extraction (plain text).
+            content = json.dumps({"corrected_text": FakeApi.cleaned}) if wants_json else FakeApi.ocr_text
             self._reply({"choices": [{"message": {"content": content}}]})
         else:
             self._reply({"error": "not found"}, 404)
@@ -140,6 +147,41 @@ class Env:
         cfg = self.home / ".config" / "bravoric-stt-clipboard" / "config.toml"
         cfg.write_text(text)
         cfg.chmod(0o600)
+
+    def set_wl_paste_image(self, available: bool) -> None:
+        """wl-paste finto: restituisce un PNG vero oppure fallisce. / Fake wl-paste: real PNG or failure."""
+        png = ROOT / "src" / "bravoric_stt_clipboard" / "icons" / "error-general.png"
+        self._tool("wl-paste", f'cat "{png}"\n' if available else "exit 1\n")
+
+    def set_screenshot(self, mode: str) -> None:
+        """gnome-screenshot finto: ok (scrive il PNG), cancel (Esc) o hang (non risponde).
+        Fake gnome-screenshot: ok (writes the PNG), cancel (Esc) or hang (does not answer)."""
+        png = ROOT / "src" / "bravoric_stt_clipboard" / "icons" / "error-general.png"
+        if mode == "ok":
+            body = f'while [ "$1" != "--file" ]; do shift; done\ncp "{png}" "$2"\n'
+        elif mode == "cancel":
+            body = "exit 1\n"
+        else:
+            body = "exec sleep 30\n"
+        self._tool("gnome-screenshot", body)
+
+    def write_ocr_config(self, url: str, capture_screenshot: bool = False, extra_ocr: str = "") -> None:
+        text = (
+            "[general]\nnotifications = true\nclipboard_tool = \"wl-copy\"\nclipboard_paste_tool = \"wl-paste\"\n"
+            "notify_timeout_seconds = 5\n"
+            "[ocr]\nsystem_prompt = \"extract\"\ncapture_screenshot = "
+            + ("true" if capture_screenshot else "false") + "\n" + extra_ocr
+            + f'[[ocr.fallback]]\nname = "o0"\nendpoint = "{url}"\nmodel = "m"\napi_key = "k"\ntimeout_seconds = 5\n'
+            "[ocr_cleanup]\nenabled = false\nsystem_prompt = \"fix\"\n"
+        )
+        cfg = self.home / ".config" / "bravoric-stt-clipboard" / "config.toml"
+        cfg.write_text(text)
+        cfg.chmod(0o600)
+
+    def ocr(self, language: str = "en") -> subprocess.CompletedProcess:
+        code = "from bravoric_stt_clipboard.cli import ocr_capture_main; raise SystemExit(ocr_capture_main())"
+        return subprocess.run([sys.executable, "-c", code], env=self.env(language), capture_output=True,
+                              text=True, timeout=90, cwd=str(self.root))
 
     def env(self, language: str = "en") -> dict:
         e = dict(os.environ)
@@ -285,6 +327,65 @@ def main() -> int:
         check("wl-copy che si blocca viene interrotto dal timeout configurato (1 s), non atteso",
               elapsed < 9, f"{elapsed:.1f}s")
         check("l'utente e' avvisato dell'errore sugli appunti", any("clipboard error" in n for n in env.notifications()), str(env.notifications()))
+    finally:
+        env.cleanup()
+
+    print("== OCR dagli appunti: immagine -> visione -> appunti / OCR from the clipboard ==")
+    env = Env()
+    try:
+        env.set_wl_paste_image(True)
+        env.write_ocr_config(good)
+        result = env.ocr()
+        check("OCR: exit 0", result.returncode == 0, result.stderr[-300:])
+        check("OCR: il testo letto finisce negli appunti", "testo letto dall'immagine" in env.clipboard_writes(), str(env.clipboard_writes()))
+        check("OCR: stato di nuovo idle", env.status().get("state") == "idle", str(env.status()))
+        check("OCR: notifica 'OCR: raw text ready'", any("OCR: raw text ready" in n for n in env.notifications()), str(env.notifications()))
+    finally:
+        env.cleanup()
+
+    print("== OCR senza immagine negli appunti: errore chiaro / OCR without an image ==")
+    env = Env()
+    try:
+        env.set_wl_paste_image(False)
+        env.write_ocr_config(good)
+        env.ocr()
+        check("OCR senza immagine: appunti intatti e notifica dedicata",
+              env.clipboard_writes() == [] and any("no image in clipboard" in n for n in env.notifications()), str(env.notifications()))
+    finally:
+        env.cleanup()
+
+    print("== OCR con selezione area (gnome-screenshot) / OCR with area selection ==")
+    env = Env()
+    try:
+        env.set_screenshot("ok")
+        env.write_ocr_config(good, capture_screenshot=True)
+        env.ocr()
+        check("screenshot: il PNG catturato viene letto e il testo arriva negli appunti",
+              "testo letto dall'immagine" in env.clipboard_writes(), str(env.clipboard_writes()))
+    finally:
+        env.cleanup()
+    env = Env()
+    try:
+        env.set_screenshot("cancel")
+        env.write_ocr_config(good, capture_screenshot=True)
+        result = env.ocr()
+        check("Esc durante la selezione: nessun errore, appunti intatti, stato idle",
+              result.returncode == 0 and env.clipboard_writes() == []
+              and not any("error" in n.lower() for n in env.notifications()) and env.status().get("state") in ("idle", None),
+              f"{result.returncode} {env.notifications()} {env.status()}")
+    finally:
+        env.cleanup()
+    env = Env()
+    try:
+        env.set_screenshot("hang")
+        env.write_ocr_config(good, capture_screenshot=True, extra_ocr="screenshot_timeout_seconds = 5\n")
+        started = time.time()
+        result = env.ocr()
+        elapsed = time.time() - started
+        check("screenshot che non risponde: la selezione scade dopo screenshot_timeout_seconds (5 s), non prima ne' dopo 30 s",
+              4.5 <= elapsed < 12, f"{elapsed:.1f}s")
+        check("scadenza della selezione: silenziosa (nessun errore, appunti intatti)",
+              env.clipboard_writes() == [] and not any("error" in n.lower() for n in env.notifications()), str(env.notifications()))
     finally:
         env.cleanup()
 
