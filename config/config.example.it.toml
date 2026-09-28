@@ -254,7 +254,7 @@ mode = "per_chunk"              # "at_end" (unica registrazione + incolla finale
 language = "it"                  # Lingua per la trascrizione streaming (codice ISO 639-1; "" = auto)
 # Giro 18 (P3): questo era "" mentre [stt] aveva un testo vero. Ora [stream]
 # ripete il testo di default che il CODICE applica quando la chiave manca o
-# e' vuota (config.DEFAULT_PROMPT): con prompt = "" il ramo del vocabolario
+# è vuota (config.DEFAULT_PROMPT): con prompt = "" il ramo del vocabolario
 # poteva morire e la GUI poteva riscrivere il vuoto. Per disattivare il
 # contesto, togliere la chiave o metterci un testo proprio.
 prompt = "Contesto di dettatura in italiano. Trascrivi fedelmente le parole pronunciate, mantenendo nomi propri, termini tecnici e la lingua originale; usa punteggiatura naturale senza parafrasare. Parole frequenti: dettatura, riconoscimento vocale, appunti, trascrizione."
@@ -274,32 +274,32 @@ paste_delay_ms = 250
 paste_shortcut = "ctrl+v"            # Usa "ctrl+shift+v" per terminali/TUI come opencode
 paste_channel = "clipboard"       # "clipboard" usa gli appunti; "type" invia tasti simulati
 max_concurrent_chunks = 3         # richieste STT concorrenti (1-8); 0 o assente = AUTO
-# max_concurrent_chunks e' il TETTO TOTALE di worker in volo (1-8). 0 o assente
+# max_concurrent_chunks è il TETTO TOTALE di worker in volo (1-8). 0 o assente
 # = AUTO. In AUTO il valore si ricava dagli endpoint paralleli disponibili.
-# E' una capienza DIVERSA da max_concurrency dei singoli livelli, che e' il
+# È una capienza DIVERSA da max_concurrency dei singoli livelli, che è il
 # tetto per endpoint: i due non vanno confusi e nessuno deriva dall'altro.
 # Interruttore GLOBALE parallelo/sequenziale, solo per "per_chunk".
 #   "auto"       = comportamento di sempre: se almeno un livello ha
 #                  parallel = true parte il dispatcher, altrimenti si degrada
-#                  in sequenziale (non e' un errore).
+#                  in sequenziale (non è un errore).
 #   "sequential" = catena sequenziale su TUTTI i livelli, e i flag
 #                  parallel = true dei singoli livelli vengono IGNORATI.
 # Attenzione: i livelli senza parallel = true NON sono un ripiego del pool:
-# se un livello e' parallelo, gli altri diventano irraggiungibili.
-# max_concurrency vale ANCHE in sequenziale: e' il numero di richieste che
-# quell'endpoint puo' servire contemporaneamente, applicato dalla catena su
+# se un livello è parallelo, gli altri diventano irraggiungibili.
+# max_concurrency vale ANCHE in sequenziale: è il numero di richieste che
+# quell'endpoint può servire contemporaneamente, applicato dalla catena su
 # tutta la lista dei livelli. Con "sequential" il tetto globale resta quello
 # di max_concurrent_chunks: il gate per endpoint LIMITA, non autorizza.
-# NON e' a caldo: vale dalla sessione successiva.
+# NON è a caldo: vale dalla sessione successiva.
 dispatch_mode = "auto"             # "auto" | "sequential"
 chunk_timeout_seconds = 30.0      # OBSOLETO, ignorato: decide il timeout_seconds di ogni livello
 # Log JSONL dei chunk: una riga per chunk in
 # ~/.cache/bravoric-stt-clipboard/chunk_log.jsonl, con provenienza e tempi
 # (quale endpoint ha risposto, se ha fatto fallback, in quanto tempo).
-# Ritenzione in RIGHE, non in orari: e' uno strumento di debug, non un archivio.
-# 0 (o chiave assente) = 2000 righe. Il testo del chunk e' incluso di proposito:
+# Ritenzione in RIGHE, non in orari: è uno strumento di debug, non un archivio.
+# 0 (o chiave assente) = 2000 righe. Il testo del chunk è incluso di proposito:
 # l'utente ha chiesto di capire ogni chunk, e la duplicazione con
-# output_history.json e' voluta.
+# output_history.json è voluta.
 # Si legge con: bravoric-chunk-log --summary
 chunk_log_max_lines = 0           # numero massimo di righe tenute (0 = default 2000)
 blacklist = "grazie, thank you, sottotitoli a cura di, sottotitoli a cura di whisper, grazie per la visione"   # scarta la trascrizione intera (chunk streaming o dettatura) uguale a una voce; ignora maiuscole. Tipiche allucinazioni di Whisper sul silenzio.
@@ -318,7 +318,7 @@ hotwords_in_prompt = false
 # raggiungibili solo dalla catena sequenziale.
 parallel = false
 # Slot CONCORRENTI per questo endpoint (1-8, default 3, MAI auto). Vale
-# anche in sequenziale: e' il tetto di richieste contemporanee per endpoint.
+# anche in sequenziale: è il tetto di richieste contemporanee per endpoint.
 max_concurrency = 3
 
 [[stream.fallback]]
