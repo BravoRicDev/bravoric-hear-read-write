@@ -5550,6 +5550,17 @@ def main() -> int:
           _klw("ab cd", 0) == "" and _klw("ab cd", -5) == "")
     check("keep_leading_words: spazi/newline multipli normalizzati a uno",
           _klw("ab \n  cd", 99) == "ab cd")
+    # _filter_chunks: le allucinazioni note restano fuori dal contesto del
+    # prompt successivo (altrimenti si auto-rinforzano).
+    _fc = stream_module._filter_chunks
+    check("filter_chunks: 'Grazie per la visione!' (allucinazione osservata) esclusa dal contesto",
+          _fc(["Ciao", "Grazie per la visione!", "mondo"]) == ["Ciao", "mondo"])
+    check("filter_chunks: variante senza punto esclamativo esclusa",
+          _fc(["Grazie per la visione"]) == [])
+    check("filter_chunks: testo vero simile ('Grazie mille') NON viene scartato",
+          _fc(["Grazie mille"]) == ["Grazie mille"])
+    check("filter_chunks: duplicati consecutivi e vuoti scartati, max 3 tenuti",
+          _fc(["a", "a", "", "  ", "b", "c", "d"]) == ["b", "c", "d"])
     _cfg_shot_absent = config._build_config({})
     check("config: [ocr] assente -> capture_screenshot default False",
           _cfg_shot_absent.ocr_capture_screenshot is False)

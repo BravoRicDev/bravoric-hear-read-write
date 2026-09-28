@@ -102,6 +102,12 @@ MIN_FLOOR_FRAMES = 20      # ~0.6s prima di fidarsi della stima
 KNOWN_HALLUCINATIONS = frozenset({
     "Sottotitoli a cura di",
     "Sottotitoli a cura di Whisper",
+    # Osservata dal vivo (Whisper italiano su ~1 min di rumore ambientale,
+    # nessuna voce): trascrizione "Grazie per la visione! Grazie per la
+    # visione!". Le due forme singole (con/senza punto esclamativo) sono
+    # cio' che arriva per chunk. Match esatto come le voci sopra.
+    "Grazie per la visione!",
+    "Grazie per la visione",
 })
 
 class _Stop:
