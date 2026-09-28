@@ -34,6 +34,11 @@ let commandRows = [];
 // questo smoke test presidia il prodotto e non una sua ricostruzione.
 // debounce resta una copia di test: e' infrastruttura del test, non logica di
 // prodotto, e mantenerla qui evita di iniettare GLib e _debounceFns.
+// The serializer is no longer copied here: saveCommands calls the REAL
+// function extracted from prefs.js further below (serializeCommandRows), so
+// this smoke test guards the product and not a reconstruction of it.
+// debounce stays a test copy: it is test infrastructure, not product logic,
+// and keeping it here avoids injecting GLib and _debounceFns.
 let savedCommands = null;
 let saveCount = 0;
 
@@ -74,6 +79,17 @@ const debouncedSaveCommands = debounce(saveCommands);
 // prefs.js non e' importabile qui (importa la risorsa di GNOME Shell), ma il
 // codice di addCommandRow e' JavaScript puro: si estrae per brace-matching e si
 // valuta in questo modulo, dove tutte le dipendenze sono gia' definite.
+// --- F4 (round 2): here there is NO LONGER a hand-written copy of
+// addCommandRow. Before, this file kept a copy of it (176 lines) that could
+// diverge from the product without any check noticing: the reviewer proved
+// it with a mutation of prefs.js, the suite stayed GREEN. Now the REAL
+// function is extracted from prefs.js at runtime and run: the copy does not
+// exist, so it cannot diverge.
+//
+// prefs.js is not importable here (it imports the GNOME Shell resource), but
+// the code of addCommandRow is pure JavaScript: it is extracted by
+// brace-matching and evaluated in this module, where all the dependencies
+// are already defined.
 const PREFS_PATH = GLib.build_filenamev([
     GLib.get_current_dir(), 'gnome-extension', 'bravoric-indicator@local', 'prefs.js',
 ]);
@@ -100,6 +116,13 @@ function bodyOf(src, signature) {
 // Si usa lo stesso escavalcappe di addCommandRow (IIFE che ritorna il
 // binding): in un modulo, che e' strict mode, una function declaration
 // dentro eval() NON esce dal proprio scope e resterebbe non raggiungibile.
+// REAL serializer extracted from prefs.js: pure function at module level,
+// without Adw/GLib/gettext, so it runs by itself and needs no stubs. It is no
+// longer a copy: saveCommands calls this one, so the smoke test guards the
+// product. Before, the copy could diverge silently. The same trick as
+// addCommandRow is used (an IIFE returning the binding): in a module, which
+// is strict mode, a function declaration inside eval() does NOT leave its own
+// scope and would stay unreachable.
 const serializeCommandRows = (() => {
     const declared = 'function serializeCommandRows(rows) ';
     if (!prefsSrc.includes(declared))
@@ -120,9 +143,19 @@ if (typeof serializeCommandRows !== 'function')
 // gettext neutro: questo smoke test gira fuori dal contesto di una sessione
 // Shell, quindi _() e' l'identita' (le stringhe restano in inglese, come
 // prima della sostituzione della copia).
+// addCommandRow + the helpers it contains (commit/start/stopCapture) are
+// replaced as a single block: taken together they form the code the test
+// really exercises. Gettext is neutral here (no Shell session): _() stays the
+// identity, and the parameter defaults are already materialized in prefs.js.
+// bodyOf returns the block starting from '{': the declaration header must be
+// added back, otherwise the eval receives an orphan block. Neutral gettext:
+// this smoke test runs outside the context of a Shell session, so _() is the
+// identity (the strings stay in English, as before the copy was replaced).
 const _ = text => text;
 // In prefs.js la riga vive dentro un gruppo "Voice commands": questo smoke
 // test usa il proprio 'group', che fa la stessa cosa (appendere la riga).
+// In prefs.js the row lives inside a "Voice commands" group: this smoke test
+// uses its own 'group', which does the same thing (append the row).
 const commandGroup = group;
 const realBlock = `const addCommandRow = command => ${bodyOf(prefsSrc, 'const addCommandRow = ')}`;
 // In prefs.js la funzione costruisce `item` e lo mette in commandRows, ma
@@ -137,6 +170,18 @@ const realBlock = `const addCommandRow = command => ${bodyOf(prefsSrc, 'const ad
 // li espone, e GTK4 non ha un API per rileggerli da un widget. Si intercettano
 // al momento in cui prefs.js li aggancia, quindi sono esattamente gli oggetti
 // veri, usati dal prodotto. Nessuna modifica a prefs.js.
+// In prefs.js the function builds `item` and puts it in commandRows, but
+// `item` does not expose the capture controller. The tests drive it, so here
+// an EQUIVALENT handle is derived from the returned row: the controller is
+// the one really attached (key.get_controllers()), and the capture state is
+// deduced from the widgets the function itself modifies (button icon, cancel
+// visibility, key value). Nothing inside prefs.js: the product is not
+// touched so that the test can observe it.
+// The capture widgets (controller, record button, cancel button) are created
+// inside addCommandRow and stay local: the returned function does not expose
+// them, and GTK4 has no API to read them back from a widget. They are
+// intercepted at the moment prefs.js attaches them, so they are exactly the
+// real objects, used by the product. No change to prefs.js.
 function captureHandleOf(item, seen) {
     return {
         controller: seen.controllers.find(c => c instanceof Gtk.EventControllerKey),
@@ -154,6 +199,8 @@ const addCommandRow = (command) => {
     const before = commandRows.length;
     const seen = { controllers: [], buttons: [] };
     // Intercetta solo per la durata della chiamata: gli oggetti sono creati li'.
+    // It intercepts only for the duration of the call: the objects are created
+    // there.
     const origAddController = Gtk.Widget.prototype.add_controller;
     const origAddSuffix = Adw.EntryRow.prototype.add_suffix;
     Gtk.Widget.prototype.add_controller = function (controller) {
@@ -177,6 +224,7 @@ const addCommandRow = (command) => {
 console.log('addCommandRow REALE estratto da prefs.js e in esecuzione');
 
 // 1. Aggiunta comando vuoto (come click su Add command)
+// 1. Adding an empty command (like a click on Add command)
 addCommandRow(null);
 if (commandRows.length !== 1) {
     throw new Error('Riga non aggiunta!');
@@ -208,6 +256,7 @@ if (cmd.keyword !== 'cancella tutto' || !Array.isArray(cmd.aliases) || cmd.alias
 }
 
 // 3. Cattura tasto: whitelist, alias, feedback, un solo salvataggio.
+// 3. Key capture: whitelist, aliases, feedback, a single save.
 addCommandRow({ keyword: 'a capo', action: 'key', key: 'Return' });
 const cap = commandRows[1];
 if (!cap.key.visible || cap.capture.isCapturing()) {
@@ -222,6 +271,7 @@ if (typeof cap.capture.controller.set_propagation_phase !== 'function') {
 const savedBefore = saveCount;
 
 // 3a. Fuori cattura: il controller propaga (false) e non salva.
+// 3a. Outside capture: the controller propagates (false) and does not save.
 if (cap.capture.controller.emit('key-pressed', Gdk.KEY_Tab, 0, 0) !== false) {
     throw new Error('Fuori cattura il controller deve propagare (false)');
 }
@@ -236,6 +286,7 @@ if (!cap.capture.isCapturing() || !cap.capture.cancelBtn.visible) {
 }
 
 // 3c. Modificatori puri: ignorati, si resta in cattura, nessun toast/salvataggio.
+// 3c. Pure modifiers: ignored, we stay in capture, no toast/save.
 const t0 = toasts.length;
 cap.capture.controller.emit('key-pressed', Gdk.KEY_Shift_L, 0, 0);
 cap.capture.controller.emit('key-pressed', Gdk.KEY_Control_L, 0, 0);
@@ -245,6 +296,7 @@ if (!cap.capture.isCapturing() || toasts.length !== t0 || saveCount !== savedBef
 }
 
 // 3d. Tasto non mappato: feedback, nessun commit, si resta in cattura.
+// 3d. Unmapped key: feedback, no commit, we stay in capture.
 cap.capture.controller.emit('key-pressed', Gdk.KEY_a, 0, 0);
 if (!cap.capture.isCapturing() || cap.key.text !== 'Return') {
     throw new Error('Un tasto non mappato non deve fare commit');
@@ -254,6 +306,7 @@ if (toasts[toasts.length - 1] !== 'Key not supported for voice commands') {
 }
 
 // 3e. Accordo con modificatore reale: rifiutato con feedback, nessun commit.
+// 3e. Chord with a real modifier: rejected with feedback, no commit.
 cap.capture.controller.emit('key-pressed', Gdk.KEY_Return, 0, Gtk.accelerator_get_default_mod_mask());
 if (!cap.capture.isCapturing() || cap.key.text !== 'Return' || saveCount !== savedBefore) {
     throw new Error('Un accordo modificato non deve fare commit');
@@ -263,6 +316,7 @@ if (toasts[toasts.length - 1] !== 'Modifier combinations are not supported; pres
 }
 
 // 3f. Return valido: commit + un solo salvataggio.
+// 3f. Valid Return: commit + a single save.
 cap.capture.controller.emit('key-pressed', Gdk.KEY_Return, 0, 0);
 if (cap.capture.isCapturing() || cap.key.text !== 'Return') {
     throw new Error('Return non catturato');
@@ -275,6 +329,7 @@ if (!savedCommands.find(c => c.keyword === 'a capo' && c.key === 'Return')) {
 }
 
 // 3g. Escape resta catturabile (l'annullamento ha un percorso separato: Cancel).
+// 3g. Escape stays capturable (cancelling has a separate path: Cancel).
 cap.capture.start();
 cap.capture.controller.emit('key-pressed', Gdk.KEY_Escape, 0, 0);
 if (cap.capture.isCapturing() || cap.key.text !== 'Escape') {
@@ -306,6 +361,7 @@ for (const [keyval, expected] of [
 }
 
 // 3i. Cancel esplicito: nessun commit, valore invariato.
+// 3i. Explicit Cancel: no commit, value unchanged.
 cap.key.text = 'Tab';
 cap.capture.start();
 const beforeCancel = saveCount;
@@ -315,6 +371,7 @@ if (cap.capture.isCapturing() || cap.key.text !== 'Tab' || saveCount !== beforeC
 }
 
 // 3j. CapsLock/NumLock non sono "modificatori reali": il tasto resta catturabile.
+// 3j. CapsLock/NumLock are not "real modifiers": the key stays capturable.
 cap.capture.start();
 cap.capture.controller.emit('key-pressed', Gdk.KEY_Return, 0, Gdk.ModifierType.LOCK_MASK);
 if (cap.capture.isCapturing() || cap.key.text !== 'Return') {
@@ -322,6 +379,7 @@ if (cap.capture.isCapturing() || cap.key.text !== 'Return') {
 }
 
 // 3k. Passando ad azione Delete la cattura si chiude.
+// 3k. Switching to the Delete action closes the capture.
 cap.capture.start();
 cap.action.selected = 1; // notify::selected -> updateVisibility -> stopCapture
 if (cap.capture.isCapturing()) {
@@ -337,10 +395,21 @@ console.log('Smoke test GTK4/Adw PASS: riga, segnali, visibilità, cattura tasto
 // non si apre PIU'. Difetto estetico (etichetta vuota) -> schello totale, e il
 // gate restava verde: il test qui sotto esercita la costruzione REALE del gruppo
 // estratta da prefs.js, quindi il crash non puo' tornare senza che il gate cada.
+// --- prefs.js CRASH: GLib.markup_escape_text with a single argument ------
+// Round 2 (F3) had protected the angle brackets of the Shortcuts group
+// description with GLib.markup_escape_text(...) passing it a SINGLE
+// argument. The GJS signature is (text, length_bytes): the call raises
+// TypeError and the Preferences dialog no longer opens AT ALL. Cosmetic
+// defect (empty label) -> total breakage, and the gate stayed green: the test
+// below exercises the REAL construction of the group extracted from
+// prefs.js, so the crash cannot come back without the gate falling.
 (function regressionMarkupEscapeArgs() {
     // La firma va verificata per esecuzione, non per lettura: senza questa
     // asserzione un futuro GJS potrebbe accettare l'argomento facoltativo e il
     // test continuerebbe a pretendere il -1 senza che serva.
+    // The signature must be verified by execution, not by reading: without this
+    // assertion a future GJS could accept the optional argument and the test
+    // would keep requiring the -1 without it being needed.
     let oneArgThrew = null;
     try {
         GLib.markup_escape_text('Format: <Alt><Super>r (x)');
@@ -360,6 +429,10 @@ console.log('Smoke test GTK4/Adw PASS: riga, segnali, visibilità, cattura tasto
     // Serve un brace-matching che salti commenti e stringhe: il blocco contiene
     // un commento in cui '<Alt><Super>r' e' citato, e un matching ingenuo
     // terminerebbe li' e finirebbe per valutare un blocco spezzato.
+    // Extracts and runs the REAL statement that builds the Shortcuts group. A
+    // brace-matching that skips comments and strings is needed: the block
+    // contains a comment in which '<Alt><Super>r' is cited, and a naive matching
+    // would end there and end up evaluating a broken block.
     const fnAt = prefsSrc.indexOf('_buildShortcutsPage(window) {');
     if (fnAt === -1)
         throw new Error('_buildShortcutsPage non trovato in prefs.js');
@@ -390,6 +463,9 @@ console.log('Smoke test GTK4/Adw PASS: riga, segnali, visibilità, cattura tasto
     // Dopo la `}` dell'oggetto la sorgente ha `});`: va presa tutta la coda,
     // altrimenti l'eval riceve `...}) group;` e muore di SyntaxError invece
     // che di esercitare il prodotto.
+    // After the `}` of the object the source has `});`: the whole tail must be
+    // taken, otherwise the eval receives `...}) group;` and dies of SyntaxError
+    // instead of exercising the product.
     const semi = prefsSrc.indexOf(';', objEnd);
     const stmt = prefsSrc.slice(declAt, semi + 1);
     if (!stmt.endsWith('});'))
@@ -397,6 +473,8 @@ console.log('Smoke test GTK4/Adw PASS: riga, segnali, visibilità, cattura tasto
 
     // Contesto minimo: _() e' gia' l'identita' piu' sopra, page.add finto
     // (serve la pagina Shortcuts, non il dialogo intero).
+    // Minimal context: _() is already the identity above, a fake page.add (the
+    // Shortcuts page is needed, not the whole dialog).
     const realGroup = eval(`${stmt} group;`);
     if (!realGroup.description)
         throw new Error('description del gruppo Shortcuts VUOTA: markup non parsato');
@@ -405,6 +483,8 @@ console.log('Smoke test GTK4/Adw PASS: riga, segnali, visibilità, cattura tasto
     }
     // La stringa originale deve restare leggibile: si confronta col testo
     // sorgente, non con una copia qui dentro.
+    // The original string must stay readable: it is compared with the source
+    // text, not with a copy in here.
     const raw = _('Format: <Alt><Super>r (modifier names between angle brackets, then the key)');
     if (realGroup.description !== GLib.markup_escape_text(raw, -1)) {
         throw new Error('description non coincide con markup_escape_text(sorgente, -1)');
@@ -424,6 +504,17 @@ console.log('Smoke test GTK4/Adw PASS: riga, segnali, visibilità, cattura tasto
 // finto: serve osservare le fonti vive e distinguere una rimozione lecita da
 // una su id gia' scaduto, che nel GLib vero stampa un CRITICAL. La guardia
 // e' verificata per ESECUZIONE, non per lettura del sorgente.
+// --- N2: the "Clear history" revert must not touch a destroyed row ----
+// Round S3A. Before, the clear-history one-shot was detached: no saved id,
+// no guard. Closing the window within 1.5 s of the click the callback wrote
+// the title on an already destroyed Adw.ActionRow, and a second click left
+// the previous timeout pending.
+//
+// The REAL BLOCK is extracted from prefs.js and run on REAL widgets (the
+// block builds the row and the button by itself with Adw/Gtk). Only GLib is
+// fake: it serves to observe the live sources and tell a legitimate removal
+// from one on an already expired id, which in the real GLib prints a
+// CRITICAL. The guard is verified by EXECUTION, not by reading the source.
 (function regressionClearHistoryRevert() {
     const startAt = prefsSrc.indexOf("const clearHistoryLabel = _('Clear history');");
     if (startAt === -1)
@@ -435,6 +526,8 @@ console.log('Smoke test GTK4/Adw PASS: riga, segnali, visibilità, cattura tasto
     const block = prefsSrc.slice(startAt, endAt + endMarker.length);
 
     // GLib finto: stesso contratto del vero (id numerici, SOURCE_REMOVE=false).
+    // Fake GLib: same contract as the real one (numeric ids,
+    // SOURCE_REMOVE=false).
     let nextId = 1;
     const live = new Map();
     const staleRemovals = [];
@@ -449,6 +542,8 @@ console.log('Smoke test GTK4/Adw PASS: riga, segnali, visibilità, cattura tasto
         source_remove(id) {
             // Su un id scaduto il GLib vero avvisa "Source ID N was not
             // found": e' il difetto N1 che questa guardia deve evitare.
+            // On an expired id the real GLib warns "Source ID N was not found": it is
+            // the N1 defect that this guard must avoid.
             if (!live.has(id))
                 staleRemovals.push(id);
             live.delete(id);
@@ -457,6 +552,10 @@ console.log('Smoke test GTK4/Adw PASS: riga, segnali, visibilità, cattura tasto
     // Il main loop toglie la fonte PRIMA di chiamarla: una callback che
     // ritorna SOURCE_REMOVE non resta registrata. Simulato cosi', altrimenti
     // il test misurerebbe un registro che il vero GLib non tiene.
+    // The main loop removes the source BEFORE calling it: a callback that
+    // returns SOURCE_REMOVE does not stay registered. Simulated this way,
+    // otherwise the test would measure a registry that the real GLib does not
+    // keep.
     const runPending = () => {
         const callbacks = [...live.values()];
         live.clear();
@@ -474,6 +573,10 @@ console.log('Smoke test GTK4/Adw PASS: riga, segnali, visibilità, cattura tasto
     // corpo di funzione e restituisce i due widget perche' il test li piloti.
     // Adw e Gtk entrano come argomenti perche' new Function ha scope proprio
     // e non vede gli import del modulo.
+    // The block declares its own const/let: new Function encloses them in a
+    // function body and returns the two widgets so the test can drive them. Adw
+    // and Gtk come in as arguments because new Function has its own scope and
+    // does not see the module's imports.
     const build = new Function('Adw', 'Gtk', 'GLib', '_', 'runConfigEditor', 'historyGroup',
         `${block}\nreturn { clearHistoryRow, clearHistoryButton };`);
     const { clearHistoryRow: row, clearHistoryButton: button } = build(
@@ -481,6 +584,8 @@ console.log('Smoke test GTK4/Adw PASS: riga, segnali, visibilità, cattura tasto
 
     // Ogni scrittura del titolo viene contata, e quelle successive alla
     // distruzione sono il difetto: il prodotto non deve poterle fare.
+    // Every write of the title is counted, and those after the destruction are
+    // the defect: the product must not be able to make them.
     let alive = true;
     let writesAfterDestroy = 0;
     let backing = row.title;
@@ -495,6 +600,7 @@ console.log('Smoke test GTK4/Adw PASS: riga, segnali, visibilità, cattura tasto
     });
 
     // 1. Il click chiede la cancellazione e arma UN solo timeout di revert.
+    // 1. The click asks for the deletion and arms ONE revert timeout.
     button.emit('clicked');
     if (configEditorCalls !== 1)
         throw new Error(`il click non ha chiamato il config editor (${configEditorCalls})`);
@@ -505,6 +611,8 @@ console.log('Smoke test GTK4/Adw PASS: riga, segnali, visibilità, cattura tasto
 
     // 2. Secondo click prima dello scadere: la guardia toglie il timeout
     //    precedente invece di lasciarlo pendente (niente revert fantasma).
+    // 2. Second click before the expiry: the guard removes the previous timeout
+    //    instead of leaving it pending (no phantom revert).
     button.emit('clicked');
     if (live.size !== 1)
         throw new Error(`il secondo click ha lasciato ${live.size} timeout: atteso 1`);
@@ -513,6 +621,8 @@ console.log('Smoke test GTK4/Adw PASS: riga, segnali, visibilità, cattura tasto
 
     // 3. Chiusura della finestra col timeout VIVO: la guardia deve cancellarlo,
     //    altrimenti il callback toccherebbe la riga distrutta.
+    // 3. Window closed with the timeout ALIVE: the guard must cancel it,
+    //    otherwise the callback would touch the destroyed row.
     alive = false;
     row.emit('destroy');
     if (live.size !== 0)
@@ -526,6 +636,9 @@ console.log('Smoke test GTK4/Adw PASS: riga, segnali, visibilità, cattura tasto
     // 4. Percorso normale: il timeout SCADE e ripristina l'etichetta. Una
     //    chiusura successiva non deve rimuovere quell'id ormai scaduto: e'
     //    il difetto N1, chiuso sulla stessa identica forma.
+    // 4. Normal path: the timeout EXPIRES and restores the label. A later close
+    //    must not remove that now expired id: it is defect N1, closed on the very
+    //    same shape.
     alive = true;
     button.emit('clicked');
     if (live.size !== 1)
@@ -551,6 +664,14 @@ console.log('Smoke test GTK4/Adw PASS: riga, segnali, visibilità, cattura tasto
 // La funzione REALE viene estratta da prefs.js ed eseguita su un Gtk.Button
 // vero, con un GLib finto che distingue una rimozione lecita da una su id
 // scaduto: la guardia e' verificata per ESECUZIONE, non per lettura.
+// --- N1: flashButtonLabel must not leave an id of an expired source ------
+// Round S3A. Before, the one-shot's id was const and was never reset: at the
+// end of the session the 'destroy' guard called GLib.source_remove on a DEAD
+// id, and the real GLib answers with a CRITICAL in the journal.
+//
+// The REAL function is extracted from prefs.js and run on a real Gtk.Button,
+// with a fake GLib that tells a legitimate removal from one on an expired
+// id: the guard is verified by EXECUTION, not by reading.
 (function regressionFlashButtonLabel() {
     const signature = 'function flashButtonLabel(button, text, revertText, delayMs = 1500) ';
     if (!prefsSrc.includes(signature))
@@ -570,6 +691,8 @@ console.log('Smoke test GTK4/Adw PASS: riga, segnali, visibilità, cattura tasto
         source_remove(id) {
             // Su un id scaduto il GLib vero avvisa "Source ID N was not
             // found": e' il difetto che questa guardia deve evitare.
+            // On an expired id the real GLib warns "Source ID N was not found": it is
+            // the defect this guard must avoid.
             if (!live.has(id))
                 staleRemovals.push(id);
             live.delete(id);
@@ -577,6 +700,8 @@ console.log('Smoke test GTK4/Adw PASS: riga, segnali, visibilità, cattura tasto
     };
     // Il main loop toglie la fonte PRIMA di chiamarla: una callback che
     // ritorna SOURCE_REMOVE non resta registrata.
+    // The main loop removes the source BEFORE calling it: a callback that
+    // returns SOURCE_REMOVE does not stay registered.
     const runPending = () => {
         const callbacks = [...live.values()];
         live.clear();
@@ -584,11 +709,13 @@ console.log('Smoke test GTK4/Adw PASS: riga, segnali, visibilità, cattura tasto
     };
 
     // new Function ha scope proprio: GLib entra come argomento.
+    // new Function has its own scope: GLib comes in as an argument.
     const flashButtonLabel = new Function('GLib',
         `${signature}${bodyOf(prefsSrc, signature)} return flashButtonLabel;`)(fakeGLib);
     const button = new Gtk.Button({ label: 'Save' });
 
     // 1. Il flash mostra subito il nuovo testo e arma un solo timeout.
+    // 1. The flash shows the new text right away and arms a single timeout.
     flashButtonLabel(button, 'Saved', 'Save');
     if (button.label !== 'Saved')
         throw new Error(`il flash non ha impostato l'etichetta: ${button.label}`);
@@ -596,6 +723,7 @@ console.log('Smoke test GTK4/Adw PASS: riga, segnali, visibilità, cattura tasto
         throw new Error(`atteso 1 timeout armato, trovati ${live.size}`);
 
     // 2. Scadenza normale: l'etichetta torna indietro e la fonte sparisce.
+    // 2. Normal expiry: the label goes back and the source disappears.
     runPending();
     if (button.label !== 'Save')
         throw new Error(`il timeout non ha ripristinato l'etichetta: ${button.label}`);
@@ -604,11 +732,14 @@ console.log('Smoke test GTK4/Adw PASS: riga, segnali, visibilità, cattura tasto
 
     // 3. QUI stava il difetto N1: la chiusura DOPO la scadenza rimuoveva un
     //    id gia' morto. Con l'id azzerato alla scadenza la guardia tace.
+    // 3. HERE was defect N1: the close AFTER the expiry removed an already dead
+    //    id. With the id reset at expiry the guard stays silent.
     button.emit('destroy');
     if (staleRemovals.length !== 0)
         throw new Error(`la guardia ha rimosso un id scaduto: ${staleRemovals.join(',')}`);
 
     // 4. Chiusura col timeout ANCORA VIVO: va rimosso, ed una volta sola.
+    // 4. Close with the timeout STILL ALIVE: it must be removed, and only once.
     const pending = new Gtk.Button({ label: 'Save' });
     flashButtonLabel(pending, 'Saved', 'Save');
     if (live.size !== 1)
@@ -621,6 +752,8 @@ console.log('Smoke test GTK4/Adw PASS: riga, segnali, visibilità, cattura tasto
 
     // 5. La riga 2 usa la stessa forma: dopo la scadenza la seconda guardia
     //    non deve nemmeno guardare l'id (nessuna rimozione registrata).
+    // 5. Row 2 uses the same shape: after the expiry the second guard must not
+    //    even look at the id (no removal recorded).
     if (staleRemovals.length !== 0)
         throw new Error(`rimozioni su id scaduti: ${staleRemovals.join(',')}`);
 
@@ -631,6 +764,9 @@ console.log('Smoke test GTK4/Adw PASS: riga, segnali, visibilità, cattura tasto
 // Pagina General: il metodo REALE _buildGeneralPage estratto da prefs.js ed
 // eseguito su widget REALI. Il backend (setGeneralField/runConfigEditor) e'
 // finto per osservare cosa la GUI scrive e per simulare un rifiuto.
+// General page: the REAL method _buildGeneralPage extracted from prefs.js and
+// run on REAL widgets. The backend (setGeneralField/runConfigEditor) is fake
+// to observe what the GUI writes and to simulate a rejection.
 (function generalPageReal() {
     const sig = '    _buildGeneralPage(window) {';
     const startAt = prefsSrc.indexOf(sig);
@@ -688,7 +824,7 @@ console.log('Smoke test GTK4/Adw PASS: riga, segnali, visibilità, cattura tasto
         clipboard_tool: 'wl-copy', clipboard_paste_tool: 'wl-paste',
     };
     let state = { general, stream: { chunk_log_max_lines: 500 } };
-    const debounce = fn => fn;   // il ritardo e' infrastruttura, non logica
+    const debounce = fn => fn;   // il ritardo e' infrastruttura, non logica | the delay is infrastructure, not logic
 
     const make = new Function('Adw', 'Gtk', 'Gio', 'GLib', '_', 'N_', 'debounce',
         'getServicesState', 'runConfigEditor', 'setGeneralField',
@@ -723,6 +859,7 @@ console.log('Smoke test GTK4/Adw PASS: riga, segnali, visibilità, cattura tasto
     };
 
     // Valori iniziali letti dallo stato reale, non da default fissi.
+    // Initial values read from the real state, not from fixed defaults.
     if (byTitle(Adw.SpinRow, 'Attempts').value !== 3)
         throw new Error('Attempts non legge retry_count dallo stato');
     if (byTitle(Adw.SwitchRow, 'Write raw text first').active !== false)
@@ -744,6 +881,7 @@ console.log('Smoke test GTK4/Adw PASS: riga, segnali, visibilità, cattura tasto
         throw new Error('un bind non punta alla proprieta value');
 
     // Toggle e SpinRow scrivono il campo giusto col formato giusto.
+    // Toggles and SpinRows write the right field with the right format.
     byTitle(Adw.SwitchRow, 'Retry on error').active = false;
     byTitle(Adw.SpinRow, 'Attempts').value = 5;
     byTitle(Adw.SpinRow, 'Toggle debounce (seconds)').value = 2.5;
@@ -756,6 +894,7 @@ console.log('Smoke test GTK4/Adw PASS: riga, segnali, visibilità, cattura tasto
         throw new Error(`scritture inattese: ${JSON.stringify(writes)}`);
 
     // Rifiuto del backend: la ComboRow torna al valore dello stato.
+    // Backend rejection: the ComboRow goes back to the state's value.
     writes.length = 0;
     accept = false;
     const combo = byTitle(Adw.ComboRow, 'Sample rate');
@@ -766,6 +905,7 @@ console.log('Smoke test GTK4/Adw PASS: riga, segnali, visibilità, cattura tasto
         throw new Error('rifiuto del backend: la ComboRow non e tornata a 24000');
 
     // EntryRow: valore rifiutato -> testo ripristinato all'ultimo buono.
+    // EntryRow: rejected value -> text restored to the last good one.
     const entryRow = byTitle(Adw.EntryRow, 'Copy command');
     entryRow.text = 'bad cmd';
     entryRow.emit('apply');
@@ -778,6 +918,7 @@ console.log('Smoke test GTK4/Adw PASS: riga, segnali, visibilità, cattura tasto
         throw new Error('comando accettato ripristinato per errore');
 
     // Diagnostica: passa da set-stream, non da set-general.
+    // Diagnostics: it goes through set-stream, not set-general.
     byTitle(Adw.SpinRow, 'Chunk log size (lines)').value = 1000;
     if (JSON.stringify(streamWrites.at(-1)) !== JSON.stringify(['set-stream', 'chunk_log_max_lines', '1000']))
         throw new Error(`chunk_log_max_lines scritto male: ${JSON.stringify(streamWrites)}`);
