@@ -441,6 +441,21 @@ else
     bad "test-extension-lifecycle.js"
 fi
 
+# L'estensione dentro un GNOME Shell VERO (headless, sessione D-Bus e directory
+# isolate). Salta da sola se gnome-shell headless non e' disponibile;
+# BRV_SKIP_SHELL=1 la salta esplicitamente (dura circa 30 s).
+# The extension inside a REAL GNOME Shell (headless, isolated D-Bus session and
+# directories). It skips by itself if headless gnome-shell is unavailable;
+# BRV_SKIP_SHELL=1 skips it explicitly (it takes about 30 s).
+echo "== GNOME Shell vero (headless) =="
+if [ -n "${BRV_SKIP_SHELL:-}" ]; then
+    echo "  SKIP  BRV_SKIP_SHELL impostata / set"
+elif bash "$REPO/scripts/test-shell-real.sh"; then
+    ok "test-shell-real.sh"
+else
+    bad "test-shell-real.sh"
+fi
+
 echo "== bottoni rapidi (unit) =="
 if node "$REPO/scripts/test-quick-buttons.js"; then
     ok "test-quick-buttons.js"

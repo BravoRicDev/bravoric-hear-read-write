@@ -1,0 +1,6 @@
+{
+  "uuid": "shell-probe@local",
+  "name": "Bravoric test probe",
+  "description": "Test-only probe: dumps the top-bar widgets and can click a quick button. Never installed for users.",
+  "shell-version": ["45", "46", "47", "48", "49", "50"]
+}

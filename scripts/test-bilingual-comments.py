@@ -29,6 +29,7 @@ GLOBS = [
     "gnome-extension/bravoric-indicator@local/*.js",
     "gnome-extension/bravoric-indicator@local/*.mjs",
     "scripts/*.py", "scripts/*.js", "scripts/*.sh", "scripts/lib/*.mjs", "scripts/lib/*.cjs",
+    "scripts/lib/*/extension.js",
     "bin/whisper-server.py", "bin/whisper-server.sh",
 ]
 # Questo stesso file cita parole di entrambe le lingue per costruzione.
