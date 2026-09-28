@@ -136,6 +136,21 @@ def stream_toggle_main(argv: list[str] | None = None) -> int:
                 return 1
     except Exception:
         logger.exception("unexpected error in streaming toggle")
+        # Stesso fix di stt_toggle_main (B28/P2), mai applicato qui: senza
+        # questa scrittura lo stato resta 'recording'/'processing' e per lo
+        # stream NON c'e' un timeout che lo corregga da solo (P4 esclude
+        # esplicitamente 'stream' dal limite di recording, apposta perche'
+        # una sessione live puo' durare ore) — un'eccezione qui bloccherebbe
+        # l'indicatore per sempre, non solo per 30/120 minuti come stt/ocr.
+        # service='stream' a occhi chiusi e' corretto per lo stesso motivo
+        # documentato in stt_toggle_main: questo ramo gestisce solo lo
+        # stream, quindi il guard di write_status lo accetta quando lo
+        # stato in corso e' davvero il proprio, e respinge (giustamente)
+        # una sessione stt/ocr che nel frattempo fosse diventata attiva.
+        try:
+            status.write_status(status.STATE_ERROR, service="stream")
+        except Exception:
+            logger.debug("impossibile aggiornare lo status su ERROR", exc_info=True)
         notify.send(_("Unexpected error"), _("Check the system log for details"),
                     icon=notify.ICON_ERROR)
         return 1

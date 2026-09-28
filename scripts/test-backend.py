@@ -755,6 +755,30 @@ def main() -> int:
         check("ocr_capture_main: eccezione inattesa -> notifica utente",
               m_notify_ocr2.send.call_count >= 1)
 
+    # --- cli.stream_toggle_main: eccezione inattesa non scriveva ERROR -----
+    # Difetto reale: a differenza di stt_toggle_main (fix B28/P2, sopra) e
+    # ocr_capture_main, il ramo 'unexpected error' di stream_toggle_main non
+    # scriveva MAI status.STATE_ERROR. Per lo stream e' piu' grave che per
+    # stt/ocr: P4 esclude esplicitamente 'stream' dal timeout di sicurezza
+    # sul recording (una sessione live puo' durare ore), quindi qui non
+    # c'e' NESSUN watchdog che corregga l'indicatore bloccato — a differenza
+    # di stt (30 min) o ocr (120 min). StreamSession e' mockata a livello di
+    # classe (importata localmente dentro la funzione, non un attributo di
+    # modulo di cli.py: mock.patch.object(cli, "stream") non la vedrebbe).
+    with mock.patch.object(cli, "load_config", return_value=mock.Mock()), \
+         mock.patch("bravoric_stt_clipboard.stream.StreamSession") as m_session_cls, \
+         mock.patch.object(cli, "status") as m_status_stream, \
+         mock.patch.object(cli, "notify") as m_notify_stream:
+        m_session_cls.return_value.is_active.return_value = False
+        m_session_cls.return_value.start.side_effect = RuntimeError("boom (simulato)")
+        ret_stream = cli.stream_toggle_main([])
+        check("stream_toggle_main: eccezione inattesa -> ritorna 1, non solleva",
+              ret_stream == 1)
+        check("stream_toggle_main: eccezione inattesa -> stato ERROR scritto",
+              m_status_stream.write_status.call_args_list[-1][0][0] == m_status_stream.STATE_ERROR)
+        check("stream_toggle_main: eccezione inattesa -> notifica utente",
+              m_notify_stream.send.call_count >= 1)
+
     # --- storage.py: _purge_expired con file che scompare -----------------
     print("== storage.py (giro 10) ==")
     from bravoric_stt_clipboard import storage
