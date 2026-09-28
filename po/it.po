@@ -157,13 +157,6 @@ msgstr "STT: errore appunti"
 msgid "STT: cleaned text ready"
 msgstr "STT: testo pulito pronto"
 
-#, javascript-format
-#~ msgid "Paste shortcut"
-#~ msgstr "Scorciatoia di incolla"
-
-#~ msgid "Use Ctrl+Shift+V for terminals/TUIs such as opencode."
-#~ msgstr "Usa Ctrl+Shift+V per terminali/TUI come opencode."
-
 #: src/bravoric_stt_clipboard/config.py:ICON_SLOT_REGISTRY
 msgid "STT — Recording started"
 msgstr "STT — Registrazione avviata"
