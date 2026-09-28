@@ -2,12 +2,14 @@
 from __future__ import annotations
 
 import logging
+import time
 
 from . import clipboard, notify, output_history, screenshot, status, storage
 from .api_client import vision_extract
 from .config import Config
 from .fallback import AllLevelsFailedError, cleanup_with_validation, try_with_fallback
 from .i18n import _
+from .screenshot import SELECTION_TIMEOUT_SECONDS
 
 logger = logging.getLogger(__name__)
 
@@ -23,8 +25,19 @@ def handle_capture(cfg: Config) -> None:
     if cfg.ocr_capture_screenshot:
         current = status.read_status()
         if current.get("state") == status.STATE_PROCESSING and current.get("service") == "ocr":
-            logger.info("cattura OCR gia' in corso, secondo tasto ignorato")
-            return
+            # Solo se lo stato e' FRESCO: due selezioni possono sovrapporsi
+            # unicamente entro SELECTION_TIMEOUT_SECONDS dall'avvio della
+            # prima. Uno 'processing' piu' vecchio e' un residuo (processo
+            # ucciso con kill -9 o crash durante la selezione, nessun
+            # finally che lo corregga): senza questo limite il guard
+            # bloccherebbe in silenzio OGNI cattura successiva fino al
+            # watchdog dell'estensione (120 min per ocr).
+            ts = current.get("timestamp")
+            age = time.time() - ts if isinstance(ts, (int, float)) and not isinstance(ts, bool) else 0.0
+            if age < SELECTION_TIMEOUT_SECONDS:
+                logger.info("cattura OCR gia' in corso, secondo tasto ignorato")
+                return
+            logger.info("stato 'processing' OCR vecchio di %.0fs: residuo, si procede", age)
         # Diverso dall'annullamento (Esc) gestito piu' sotto: qui la feature
         # e' STATA attivata dall'utente ma non puo' funzionare AFFATTO,
         # sempre, ad ogni pressione — merita un avviso esplicito UNA volta,

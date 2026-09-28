@@ -5434,6 +5434,24 @@ def main() -> int:
         check("ocr capture_screenshot=True: seconda pressione durante 'processing' non riscatta uno screenshot",
               _reentr_shot_calls == 0 and _reentr_chain_calls == 0)
 
+        # Residuo STANTIO: 'processing/ocr' vecchio di 10 min (processo ucciso
+        # con kill -9 durante la selezione): NON deve bloccare per sempre le
+        # catture successive (lockout silenzioso fino al watchdog, 120 min).
+        status.STATUS_PATH.write_text(json.dumps(
+            {"state": status.STATE_PROCESSING, "service": "ocr",
+             "timestamp": time.time() - 600}), encoding="utf-8")
+        with mock.patch.object(ocr, "screenshot") as _shot_stale, \
+             mock.patch.object(ocr, "clipboard"), \
+             mock.patch.object(ocr, "try_with_fallback", return_value="ok"), \
+             mock.patch.object(ocr, "notify"), \
+             mock.patch.object(ocr, "storage"), \
+             mock.patch.object(ocr, "output_history"):
+            _shot_stale.capture_area_png.return_value = b"png"
+            ocr.handle_capture(cast(Any, cfg_shot))
+            _stale_calls = _shot_stale.capture_area_png.call_count
+        check("ocr guard: stato 'processing' STANTIO (10 min, residuo di un crash) non blocca la cattura",
+              _stale_calls == 1)
+
         # CONTRO: a idle (nessuna cattura in corso), la guardia non blocca la prima pressione.
         status.write_status(status.STATE_IDLE)
         with mock.patch.object(ocr, "screenshot") as _shot_ok, \
