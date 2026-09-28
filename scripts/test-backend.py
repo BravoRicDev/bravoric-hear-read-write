@@ -6520,6 +6520,26 @@ max_entries = 20
     finally:
         os.umask(_old_um)
 
+    # --- config_editor: caratteri di controllo in una stringa TOML -----------
+    # Misurato: \x0b/\x1b/\x7f/\x00 rendevano il TOML invalido e il salvataggio
+    # dalla GUI falliva ("Write aborted") per un testo che sembrava normale.
+    with tempfile.TemporaryDirectory() as _td_cc:
+        _p_cc = Path(_td_cc) / "config.toml"
+        _p_cc.write_text('[ocr]\nsystem_prompt = "x"\n', encoding="utf-8")
+        _saved_cc = config_editor.CONFIG_PATH
+        try:
+            config_editor.CONFIG_PATH = _p_cc
+            for _val_cc in ("a\x0bb", "a\x7fb", "a\x00b", "a\x1bb", 'q"\\ \n\t ok'):
+                try:
+                    config_editor.set_section_field("ocr", "system_prompt", _val_cc)
+                    _rt_cc = tomllib.loads(_p_cc.read_text(encoding="utf-8"))["ocr"]["system_prompt"]
+                except config_editor.ConfigEditorError:
+                    _rt_cc = None
+                check(f"config_editor: {_val_cc!r} nel prompt si salva e rilegge identico",
+                      _rt_cc == _val_cc)
+        finally:
+            config_editor.CONFIG_PATH = _saved_cc
+
     # --- 10. il percorso di default e' quello vero, non un doppione -------
     # (la verifica che il percorso reale non sia stato TOCCATO da nessun test
     # e' in fondo a main(): confronta mtime+size reali, non stringhe di path

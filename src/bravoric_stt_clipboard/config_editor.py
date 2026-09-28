@@ -139,6 +139,11 @@ def _toml_line_value(key: str, value: str) -> str:
         .replace("\r", "\\r")
         .replace("\t", "\\t")
     )
+    # Ogni altro carattere di controllo (C0 e DEL: \x0b da un PDF incollato,
+    # \x1b, \x7f...) e' ILLEGALE in una stringa TOML: senza questo la
+    # validazione rifiutava il salvataggio ("Write aborted") e la GUI mostrava
+    # solo "Error" per un testo che l'utente vedeva normale.
+    escaped = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]", lambda m: f"\\u{ord(m.group()):04x}", escaped)
     return f'"{escaped}"'
 
 
