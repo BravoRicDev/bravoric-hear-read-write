@@ -234,8 +234,8 @@ stream_session_end = ""
 stream_chunk_delivered = ""
 error_general = ""
 
-# --- Streaming dictation (experimental): incolla diretta nel campo in focus ---
-# Copia questa sezione in config.toml e personalizza.
+# --- Streaming dictation (experimental): pastes straight into the focused field ---
+# Copy this section into config.toml and customize it.
 [stream]
 # Optional exact voice commands (remove/omit all rules to disable).
 # [[stream.command]]
@@ -252,57 +252,57 @@ error_general = ""
 mode = "per_chunk"              # "at_end" (single recording + final paste) |
                                   # "per_chunk" (chunks split on silences)
 language = "it"                  # Streaming transcription language (ISO 639-1 code; "" = auto)
-# Giro 18 (P3): this used to be "" while [stt] carried a real text. [stream]
-# now repeats the default text that the CODE applies when the key is missing
-# or empty (config.DEFAULT_PROMPT). Note this file is the English one: the
-# code default is the Italian text (config.py DEFAULT_PROMPT), so this line
-# documents the same value rather than translating it. To disable the
-# context, drop the key or write your own text.
+# This repeats the default text that the CODE applies when the key is missing
+# or empty (config.DEFAULT_PROMPT). This file is the English one, but the code
+# default is the Italian text, so the line documents the same value rather
+# than translating it. To disable the context, drop the key or write your own
+# text.
 prompt = "Contesto di dettatura in italiano. Trascrivi fedelmente le parole pronunciate, mantenendo nomi propri, termini tecnici e la lingua originale; usa punteggiatura naturale senza parafrasare. Parole frequenti: dettatura, riconoscimento vocale, appunti, trascrizione."
 hotwords = ""                    # Space-separated words/phrases to bias recognition toward
 context_enabled = true            # Append the last 3 transcribed chunks to each new prompt
 
-# --- solo per "per_chunk" ---
-silence_seconds = 0.7            # durata del silenzio che chiude un chunk (0.1 minimo)
-noise_db = -30                   # livello sotto cui conta come silenzio (soglia iniziale:
-                                  # il VAD poi adatta la soglia al rumore di fondo misurato)
-vad_margin_db = 6.0              # margine (dB) sopra il noise floor adattivo stimato dal VAD
-                                  # (0-20; distinto da noise_db, che è solo la soglia iniziale)
-min_utterance_seconds = 0.4      # scarta blip più corti (0.1 minimo)
-max_utterance_seconds = 30       # flush forzato se parli senza pause
+# --- only for "per_chunk" ---
+silence_seconds = 0.7            # silence length that closes a chunk (0.1 minimum)
+noise_db = -30                   # level below which it counts as silence (initial threshold:
+                                  # the VAD then adapts it to the measured background noise)
+vad_margin_db = 6.0              # margin (dB) above the adaptive noise floor estimated by the VAD
+                                  # (0-20; distinct from noise_db, which is only the initial threshold)
+min_utterance_seconds = 0.4      # drops blips shorter than this (0.1 minimum)
+max_utterance_seconds = 30       # forced flush if you speak without pauses
 paste_delay_ms = 250
 paste_shortcut = "ctrl+v"            # Use "ctrl+shift+v" for terminals/TUIs such as opencode
 paste_channel = "clipboard"       # "clipboard" uses the clipboard; "type" sends simulated keystrokes
-max_concurrent_chunks = 3         # richieste STT concorrenti (1-8); 0 o assente = AUTO
-# max_concurrent_chunks e' il TETTO TOTALE di worker in volo (1-8). 0 o assente
-# = AUTO. In AUTO il valore si ricava dagli endpoint paralleli disponibili.
-# E' una capienza DIVERSA da max_concurrency dei singoli livelli, che e' il
-# tetto per endpoint: i due non vanno confusi e nessuno deriva dall'altro.
-# Interruttore GLOBALE parallelo/sequenziale, solo per "per_chunk".
-#   "auto"       = comportamento di sempre: se almeno un livello ha
-#                  parallel = true parte il dispatcher, altrimenti si degrada
-#                  in sequenziale (non e' un errore).
-#   "sequential" = catena sequenziale su TUTTI i livelli, e i flag
-#                  parallel = true dei singoli livelli vengono IGNORATI.
-# Attenzione: i livelli senza parallel = true NON sono un ripiego del pool:
-# se un livello e' parallelo, gli altri diventano irraggiungibili.
-# max_concurrency vale ANCHE in sequenziale: e' il numero di richieste che
-# quell'endpoint puo' servire contemporaneamente, applicato dalla catena su
-# tutta la lista dei livelli. Con "sequential" il tetto globale resta quello
-# di max_concurrent_chunks: il gate per endpoint LIMITA, non autorizza.
-# NON e' a caldo: vale dalla sessione successiva.
+max_concurrent_chunks = 3         # concurrent STT requests (1-8); 0 or missing = AUTO
+# max_concurrent_chunks is the TOTAL CAP of in-flight workers (1-8). 0 or
+# missing = AUTO. In AUTO the value is derived from the available parallel
+# endpoints. It is a DIFFERENT capacity from the per-level max_concurrency,
+# which is the per-endpoint cap: do not confuse them, neither derives from
+# the other.
+# GLOBAL parallel/sequential switch, only for "per_chunk".
+#   "auto"       = the usual behavior: if at least one level has
+#                  parallel = true the dispatcher starts, otherwise it falls
+#                  back to sequential (this is not an error).
+#   "sequential" = sequential chain over ALL levels, and the per-level
+#                  parallel = true flags are IGNORED.
+# Note: levels without parallel = true are NOT a fallback of the pool:
+# if one level is parallel, the others become unreachable.
+# max_concurrency applies in sequential mode TOO: it is the number of
+# requests that endpoint can serve at the same time, enforced by the chain
+# over the whole list of levels. With "sequential" the global cap stays
+# max_concurrent_chunks: the per-endpoint gate LIMITS, it does not authorize.
+# NOT hot-reloaded: it applies from the next session.
 dispatch_mode = "auto"             # "auto" | "sequential"
-chunk_timeout_seconds = 30.0      # timeout per singolo chunk (secondi)
-# Log JSONL dei chunk: una riga per chunk in
-# ~/.cache/bravoric-stt-clipboard/chunk_log.jsonl, con provenienza e tempi
-# (quale endpoint ha risposto, se ha fatto fallback, in quanto tempo).
-# Ritenzione in RIGHE, non in orari: e' uno strumento di debug, non un archivio.
-# 0 (o chiave assente) = 2000 righe. Il testo del chunk e' incluso di proposito.
-# Si legge con: bravoric-chunk-log --summary
-chunk_log_max_lines = 0           # numero massimo di righe tenute (0 = default 2000)
+chunk_timeout_seconds = 30.0      # DEPRECATED, ignored: each level's timeout_seconds decides
+# JSONL chunk log: one line per chunk in
+# ~/.cache/bravoric-stt-clipboard/chunk_log.jsonl, with provenance and timing
+# (which endpoint answered, whether it fell back, how long it took).
+# Retention is in LINES, not in time: it is a debugging tool, not an archive.
+# 0 (or missing key) = 2000 lines. The chunk text is included on purpose.
+# Read it with: bravoric-chunk-log --summary
+chunk_log_max_lines = 0           # maximum number of lines kept (0 = default 2000)
 blacklist = "grazie, thank you, sottotitoli a cura di, sottotitoli a cura di whisper, grazie per la visione"   # whole transcription (streaming chunk or dictation) matching a phrase is discarded; case-insensitive. Typical Whisper hallucinations on silence.
 
-# Endpoint dedicato con 3 livelli di fallback (stessa struttura di [stt]/[ocr]).
+# Dedicated endpoint with 3 fallback levels (same structure as [stt]/[ocr]).
 [[stream.fallback]]
 name = "scrocco-llm"
 endpoint = "http://10.9.0.2:4001/v1"
@@ -312,11 +312,11 @@ api_key = ""
 ca_cert = "~/PiAgent/certs/scrocco-fissone.crt"
 timeout_seconds = 120
 hotwords_in_prompt = false
-# parallel = true mette questo livello nel pool; i livelli senza restano
-# raggiungibili solo dalla catena sequenziale.
+# parallel = true puts this level in the pool; levels without it stay
+# reachable only through the sequential chain.
 parallel = false
-# Slot CONCORRENTI per questo endpoint (1-8, default 3, MAI auto). Vale
-# anche in sequenziale: e' il tetto di richieste contemporanee per endpoint.
+# CONCURRENT slots for this endpoint (1-8, default 3, never auto). Applies
+# in sequential mode too: it is the cap of simultaneous requests per endpoint.
 max_concurrency = 3
 
 [[stream.fallback]]
