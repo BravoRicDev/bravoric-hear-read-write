@@ -405,6 +405,15 @@ fi
 
 # Bottoni rapidi della top bar: modulo puro eseguito con widget finti.
 # Top-bar quick buttons: pure module run with fake widgets.
+# Ciclo di vita REALE: extension.js caricato per intero con stub di GNOME Shell.
+# REAL lifecycle: extension.js loaded whole with GNOME Shell stubs.
+echo "== ciclo di vita dell'estensione =="
+if node "$REPO/scripts/test-extension-lifecycle.js"; then
+    ok "test-extension-lifecycle.js"
+else
+    bad "test-extension-lifecycle.js"
+fi
+
 echo "== bottoni rapidi (unit) =="
 if node "$REPO/scripts/test-quick-buttons.js"; then
     ok "test-quick-buttons.js"
