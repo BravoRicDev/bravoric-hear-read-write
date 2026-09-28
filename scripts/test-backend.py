@@ -6,6 +6,15 @@ pid morto, letture di file corrotti, risposte API di forma inattesa, TOML
 malformato, mancata rimozione dell'audio temporaneo.
 
 Eseguire: PYTHONPATH=src python3 scripts/test-backend.py
+
+Regression tests for the bugs found in the research round (Python
+backend).
+
+Covers: non-atomic writes (status/history/lock), phantom audio lock with a
+dead pid, reads of corrupt files, API responses of unexpected shape,
+malformed TOML, failure to remove the temporary audio.
+
+Run: PYTHONPATH=src python3 scripts/test-backend.py
 """
 from __future__ import annotations
 
@@ -60,6 +69,13 @@ FAIL = 0
 # esecuzione di questa suite. _FifoSequencer ora accetta log_path=: questo
 # e' il percorso che ogni test che NON sta specificamente testando
 # chunk_log/percorso-reale deve passare.
+# Real defect found live: _FifoSequencer._log_chunk called
+# chunk_log.append_record without `path=`, so every _FifoSequencer built by
+# a test (a dozen sites, they test the FIFO/blacklist/context order, not the
+# chunk log) wrote line by line into the user's REAL file
+# (~/.cache/bravoric-stt-clipboard/chunk_log.jsonl) on every run of this
+# suite. _FifoSequencer now accepts log_path=: this is the path that every
+# test that is NOT specifically testing chunk_log/the real path must pass.
 _TEST_CHUNK_LOG_PATH = Path(tempfile.mkdtemp(prefix="bravoric-test-chunklog-")) / "chunk_log.jsonl"
 
 
@@ -92,6 +108,13 @@ def check(name: str, cond: bool) -> None:
 # estratto, cerca con find() e restituisce sempre un verdetto booleano piu'
 # l'elenco di cio' che manca. La si puo' collaudare da sola, cosa che il
 # .index() non permetteva.
+# Defect 2 (round 19): the assertion on the order of the guard in stt._start
+# used .index() on both sides, so a vanished string raised ValueError and
+# the suite ABORTED halfway instead of reporting a FAIL. Here the same
+# check is a PURE function that cannot raise: it receives the already
+# extracted body, searches with find() and always returns a boolean verdict
+# plus the list of what is missing. It can be tested on its own, which
+# .index() did not allow.
 def guard_order_verdict(
     body: str,
     guard: str = "_is_stream_active()",
@@ -101,6 +124,11 @@ def guard_order_verdict(
 
     body vuoto, guardia assente, chiamata assente: sono tutti casi che il
     chiamante deve poter riportare come FAIL pulito, non come eccezione.
+
+    (ok, missing) without ever raising, whatever is missing from the body.
+
+    Empty body, absent guard, absent call: they are all cases the caller must
+    be able to report as a clean FAIL, not as an exception.
     """
     try:
         guard_at = body.find(guard)
@@ -111,7 +139,7 @@ def guard_order_verdict(
         if missing:
             return False, missing
         return guard_at < call_at, []
-    except Exception:  # rete di sicurezza: un assert non deve mai abortire la suite
+    except Exception:  # rete di sicurezza: un assert non deve mai abortire la suite | safety net: an assert must never abort the suite
         return False, ["la verifica stessa ha sollevato"]
 
 
@@ -122,11 +150,25 @@ def guard_order_verdict(
 # della funzione e si pretende la chiamata DENTRO quel corpo. La funzione
 # resta crash-proof come guard_order_verdict: firma assente = corpo vuoto =
 # FAIL pulito, mai IndexError.
+# Defect 1 (round 19): the heart test compared the state write with the
+# WHOLE stream.py. The very same line appears at other start points, so
+# emptying the BODY of heartbeat() failed nothing: the suite stayed green on
+# code that no longer beats the heart. Here the body of the function is read
+# and the call is required INSIDE that body. The function stays crash-proof
+# like guard_order_verdict: absent signature = empty body = clean FAIL,
+# never IndexError.
 def py_func_body(text: str, signature: str) -> str:
     """Corpo di una funzione Python, dalla firma al prossimo `def` di primo livello.
 
     La docstring viene rimossa: dentro descrive il guard invece di chiamarlo,
     e contarla farebbe passare il test sul codice che non scrive piu' niente.
+
+    Body of a Python function, from the signature to the next top-level
+    `def`.
+
+    The docstring is removed: inside, it describes the guard instead of
+    calling it, and counting it would make the test pass on code that no
+    longer writes anything.
     """
     try:
         at = text.find(signature)
@@ -146,6 +188,12 @@ def heartbeat_verdict(text: str) -> tuple[bool, str]:
     Fallisce se la funzione non esiste, se il corpo e' vuoto, o se dentro il
     corpo non c'e' la riscrittura di RECORDING con service="stream": tutte e
     tre le forme in cui il cuore potrebbe sparire restando inerte.
+
+    (ok, reason) on the heart, without ever raising.
+
+    It fails if the function does not exist, if the body is empty, or if
+    inside the body there is no rewrite of RECORDING with service="stream":
+    all three forms in which the heart could disappear while staying inert.
     """
     try:
         body = py_func_body(text, "def heartbeat() -> None:")
@@ -160,7 +208,10 @@ def heartbeat_verdict(text: str) -> tuple[bool, str]:
 
 
 def dead_pid() -> int:
-    """Un pid di un processo realmente terminato (e reaped)."""
+    """Un pid di un processo realmente terminato (e reaped).
+
+    A pid of a really terminated (and reaped) process.
+    """
     proc = subprocess.Popen(["true"])
     proc.wait()
     return proc.pid
@@ -170,7 +221,13 @@ def words_exactly(n: int) -> str:
     """Stringa di ESATTAMENTE n caratteri fatta solo di parole intere separate
     da uno spazio. Serve a costruire un contesto che riempie esattamente il
     budget residuo: e' il caso che rendeva visibile l'off-by-one degli spazi
-    di giunzione (801 caratteri inviati invece di 800)."""
+    di giunzione (801 caratteri inviati invece di 800).
+
+    String of EXACTLY n characters made only of whole words separated by a
+    space. It serves to build a context that fills exactly the remaining
+    budget: it is the case that made the off-by-one of the joining spaces
+    visible (801 characters sent instead of 800).
+    """
     if n <= 0:
         return ""
     words: list[str] = []
@@ -201,11 +258,26 @@ def words_exactly(n: int) -> str:
 # uso con quello ricompilato dalla sorgente: e' l'unico controllo che
 # vede quel difetto, perche' ogni altro guarda la sorgente, e la
 # sorgente e' giusta: conclude che il codice e' corretto.
+# --- defect 3: the bytecode in __pycache__ may not be the source's ------
+# The "lost context" defect (155 characters instead of 791) was NOT in the
+# source of api_client.py: it was in the compiled .pyc that the process
+# really loaded. CPython reuses a .pyc only if the source's mtime and size
+# match, so a length-preserving mutation applied and then undone in the SAME
+# epoch second leaves the header intact and the old .pyc keeps running for
+# every later process. The functions below compare the bytecode really in
+# use with the one recompiled from the source: it is the only check that
+# sees that defect, because every other one looks at the source, and the
+# source is right: it concludes that the code is correct.
 
 def _costanti(code_obj) -> list:
     """Costanti di un code object. I code object annidati diventano una
     tupla (nome, co_code, co_varnames, costanti annidate) invece di
-    un indirizzo, cosi' il confronto fra due compilazioni e' reale."""
+    un indirizzo, cosi' il confronto fra due compilazioni e' reale.
+
+    Constants of a code object. Nested code objects become a tuple (name,
+    co_code, co_varnames, nested constants) instead of an address, so the
+    comparison between two compilations is real.
+    """
     fuori = []
     for costante in code_obj.co_consts:
         if hasattr(costante, "co_code"):
@@ -218,7 +290,11 @@ def _costanti(code_obj) -> list:
 
 def _vista(istruzione) -> tuple:
     """(opname, argval) confrontabile: un code object come argval ha un
-    indirizzo diverso a ogni compilazione, quindi si confronta il nome."""
+    indirizzo diverso a ogni compilazione, quindi si confronta il nome.
+
+    Comparable (opname, argval): a code object as argval has a different
+    address at every compilation, so the name is compared.
+    """
     valore = istruzione.argval
     if isinstance(valore, types.CodeType):
         valore = valore.co_name
@@ -230,7 +306,14 @@ def _divergenze(loaded, fresh, percorso: str = "<modulo>") -> list[str]:
     Scende dentro i code object annidati e restituisce il percorso della
     funzione davvero diversa, non il modulo che la contiene: altrimenti
     l'unica istruzione segnalata sarebbe il LOAD_CONST del code object, che
-    cambia indirizzo a ogni compilazione e non dice nulla."""
+    cambia indirizzo a ogni compilazione e non dice nulla.
+
+    Differences between the bytecode loaded from the .pyc and the one from the
+    source. It descends into nested code objects and returns the path of the
+    function that is really different, not the module that contains it:
+    otherwise the only instruction reported would be the LOAD_CONST of the
+    code object, which changes address at every compilation and says nothing.
+    """
     if (loaded.co_code, loaded.co_names, loaded.co_varnames) == \
             (fresh.co_code, fresh.co_names, fresh.co_varnames) and \
             _costanti(loaded) == _costanti(fresh):
@@ -261,7 +344,11 @@ def _moduli_del_pacchetto() -> list[Path]:
 
 def _verifica_pyc(path: Path) -> tuple[list[str], bool]:
     """(divergenze bytecode, header combacia). Se il .pyc non esiste non
-    c'e' nulla da confrontare: e' il caso sano."""
+    c'e' nulla da confrontare: e' il caso sano.
+
+    (bytecode divergences, header matches). If the .pyc does not exist there is
+    nothing to compare: it is the healthy case.
+    """
     pyc = Path(importlib.util.cache_from_source(str(path)))
     if not pyc.exists():
         return [], True
@@ -283,7 +370,13 @@ def _flip_budget_a_zero(code_obj):
     """Trasforma di proposito, dentro il code object, il `- 1` del budget del
     contesto in `- 0`. Individua la chiamata a `_drop_oldest_words` e cambia
     la costante immediatamente precedente alla sua CALL, cosi' non tocca le
-    altre sottrazioni da 1 presenti nella funzione."""
+    altre sottrazioni da 1 presenti nella funzione.
+
+    Deliberately transforms, inside the code object, the `- 1` of the context
+    budget into `- 0`. It finds the call to `_drop_oldest_words` and changes
+    the constant immediately before its CALL, so it does not touch the other
+    subtractions of 1 present in the function.
+    """
     istruzioni = list(dis.get_instructions(code_obj))
     for posizione, ins in enumerate(istruzioni):
         if ins.opname != "LOAD_GLOBAL" or ins.argval != "_drop_oldest_words":
@@ -304,7 +397,15 @@ def _modulo_con_budget_neutro(sorgente: Path):
     neutralizzato a `limit - _blocks_len(...) - 0`: riproduce esattamente il
     difetto del .pyc avvelenato. NON e' codice di produzione, serve solo da
     controprova, per mostrare che lo stesso caso da 155 con quel `- 0` e da
-    791 con il `- 1` vero, e che `_verifica_pyc` vedrebbe la divergenza."""
+    791 con il `- 1` vero, e che `_verifica_pyc` vedrebbe la divergenza.
+
+    Module loaded from a bytecode in which the context budget has been
+    neutralized to `limit - _blocks_len(...) - 0`: it reproduces exactly the
+    defect of the poisoned .pyc. It is NOT production code, it only serves as
+    a counter-proof, to show that the same case gives 155 with that `- 0` and
+    791 with the real `- 1`, and that `_verifica_pyc` would see the
+    divergence.
+    """
     modulo_compilato = compile(sorgente.read_text(), str(sorgente), "exec")
     costanti = []
     for costante in modulo_compilato.co_consts:
@@ -333,6 +434,16 @@ def main() -> int:
     # costruzione): qui si confronta mtime+size REALI di ogni file noto,
     # prima e dopo l'intera suite, cosi' un terzo sito analogo (presente o
     # futuro) non passerebbe inosservato una terza volta.
+    # Snapshot of ALL the user's real paths BEFORE any test. Reason: two real
+    # defects found live in this very suite (not assumed) — _FifoSequencer wrote
+    # to chunk_log.CHUNK_LOG_PATH with no injectable path=, and the "icon
+    # routing" block (just below) called the REAL stt._start() (only audio
+    # mocked) BEFORE status.STATUS_PATH was redirected a few lines below — both
+    # really wrote into the user's files on every run. The old "defense" for
+    # chunk_log was tautological (it compared two paths for inequality, always
+    # true by construction): here the REAL mtime+size of every known file is
+    # compared, before and after the whole suite, so a third analogous site
+    # (present or future) would not go unnoticed a third time.
     from bravoric_stt_clipboard import chunk_log as _real_cl
     from bravoric_stt_clipboard import endpoint_breaker as _real_eb
     from bravoric_stt_clipboard import stream as _real_sm
@@ -344,6 +455,13 @@ def main() -> int:
     # file temporaneo (spesso gia' sparito, .stat() -> OSError -> None)
     # contro lo snapshot reale iniziale: falso positivo garantito. Lo
     # stesso oggetto Path, salvato una volta, e' l'unico modo corretto.
+    # The Paths MUST be captured here, not re-read from module.ATTR at the end
+    # of the suite: the tests legitimately reassign these attributes to
+    # temporary paths and do not always restore them (no need, each one uses its
+    # own tmp). Re-reading the attribute at the end of the run would compare a
+    # temporary file (often already gone, .stat() -> OSError -> None) against
+    # the initial real snapshot: guaranteed false positive. The same Path
+    # object, saved once, is the only correct way.
     _REAL_PATHS = {
         "status": status.STATUS_PATH,
         "output_history": output_history.HISTORY_PATH,
@@ -361,7 +479,7 @@ def main() -> int:
                 st = p.stat()
                 snap[name] = (st.st_mtime_ns, st.st_size)
             except OSError:
-                snap[name] = None  # assente prima dei test: deve restare assente
+                snap[name] = None  # assente prima dei test: deve restare assente | absent before the tests: it must stay absent
         return snap
 
     _real_paths_before = _snapshot_real_paths()
@@ -380,6 +498,9 @@ def main() -> int:
     # I due slot sotto hanno un asset incluso (stream-session-start.png /
     # error-general.png), quindi non cadono piu' sull'icona a tema: qui si
     # verifica il fallback tematico su slot che restano senza asset.
+    # The two slots below have a bundled asset (stream-session-start.png /
+    # error-general.png), so they no longer fall back on the theme icon: here
+    # the theme fallback is verified on slots that remain without an asset.
     check("resolver missing override uses themed category fallback", notify.resolve_icon("stream_session_end", str(tmp / "missing")) == notify.ICON_READY)
     check("resolver invalid override remains non-fatal", notify.resolve_icon("stt_recording_start", "\\0bad") == notify.ICON_RECORDING)
     check("resolver existing packaged default", notify.resolve_icon("stt_start").endswith("mic-neutral.png"))
@@ -402,6 +523,11 @@ def main() -> int:
     # set_stream_field, set_notification_field, set_icon_field). field non
     # e' mai attaccante-controllato dalla GUI reale, ma finiva letteralmente
     # in f"{field} = {toml_value}" nel file: difesa in profondita' aggiunta.
+    # set_section_field/set_storage_field validated service/section but not
+    # field: the only inconsistency with the 4 twin setters (set_level_field,
+    # set_stream_field, set_notification_field, set_icon_field). field is never
+    # attacker-controlled by the real GUI, but it ended up literally in
+    # f"{field} = {toml_value}" in the file: defense in depth added.
     try:
         config_editor.set_section_field("stt", "campo-inventato", "x")
         invalid_section_field_rejected = False
@@ -431,6 +557,14 @@ def main() -> int:
     # quindi questa singola chiamata precedeva la riassegnazione e finiva
     # nel file VERO dell'utente (~/.cache/bravoric-stt-clipboard/status.json),
     # sovrascrivendolo con uno stato 'recording' falso e un timestamp fresco.
+    # --- notification icon slot routing checks -----------------------
+    # status.STATUS_PATH must be redirected BEFORE this block: stt._start is the
+    # REAL function (only stt.audio is mocked), and it really writes
+    # status.write_status(STATE_RECORDING, service="stt"). Real defect found
+    # live: the redirect was FURTHER DOWN (in the status.py block), so this
+    # single call preceded the reassignment and ended up in the user's REAL file
+    # (~/.cache/bravoric-stt-clipboard/status.json), overwriting it with a false
+    # 'recording' state and a fresh timestamp.
     status.STATUS_PATH = tmp / "status.json"
     with mock.patch("bravoric_stt_clipboard.notify.send") as m_send:
         stt_cfg = mock.Mock()
@@ -488,6 +622,15 @@ def main() -> int:
     # esiste DAVVERO e ha contenuto, quindi la prova verifica l'intento
     # invece di certificare il difetto; il caso vuoto/spARITO e' verificato
     # subito sotto, ed e' il caso che prima passava e non doveva.
+    # Round 18 (P1): the real fixture. Before, this block pointed the lock to
+    # tmp/"c.ogg", a file that did not exist, and demanded that stop return
+    # that path anyway: it was defect P1 (a vanished/0-byte file accepted as a
+    # valid recording, the reviewer's case B). The ORIGINAL intent of this proof
+    # is legitimate and stays: with ffmpeg already dead the lock must be cleaned
+    # up anyway and stop must not raise because of that. Here the file REALLY
+    # exists and has content, so the proof verifies the intent instead of
+    # certifying the defect; the empty/vanished case is verified right below, and
+    # it is the case that used to pass and must not.
     _c_ogg = tmp / "c.ogg"
     _c_ogg.write_bytes(b"audio reale, non vuoto")
     audio.LOCK_PATH.write_text(json.dumps(
@@ -500,6 +643,7 @@ def main() -> int:
     check("stop -> lock rimosso", not audio.LOCK_PATH.exists())
 
     # --- api_client.py: risposta di forma inattesa -> ApiError ------------
+    # --- api_client.py: response of unexpected shape -> ApiError ------------
     print("== api_client.py ==")
     level = mock.Mock(
         name="test", endpoint="http://x/v1", model="m", timeout_seconds=1,
@@ -540,6 +684,8 @@ def main() -> int:
 
     # JSON valido ma con 'corrected_text' di tipo sbagliato: deve diventare
     # ApiError, non AttributeError (che sfuggirebbe alla catena di fallback).
+    # Valid JSON but with a wrong-typed 'corrected_text': it must become
+    # ApiError, not AttributeError (which would escape the fallback chain).
     for payload, what in [
         ({"corrected_text": None}, "null"),
         ({"corrected_text": 42}, "numero"),
@@ -556,6 +702,7 @@ def main() -> int:
                 check(f"chat_cleanup corrected_text {what} -> ApiError ({type(exc).__name__})", False)
 
     # --- output_history.py: JSON valido ma non-lista ---------------------
+    # --- output_history.py: valid JSON but not a list ---------------------
     print("== output_history.py (forma inattesa) ==")
     for shape in ['{"a": 1}', "123", "null", '"x"', "[1, 2]"]:
         output_history.HISTORY_PATH.write_text(shape)
@@ -567,6 +714,7 @@ def main() -> int:
             check(f"append su forma {shape} non solleva ({type(exc).__name__})", False)
 
     # --- config.py: TOML malformato / valore non numerico -> ConfigError --
+    # --- config.py: malformed TOML / non-numeric value -> ConfigError --
     print("== config.py ==")
     bad_toml = tmp / "bad.toml"
     bad_toml.write_text("questo non e' = toml [")
@@ -589,6 +737,7 @@ def main() -> int:
         check(f"valore non numerico -> ConfigError ({type(exc).__name__})", False)
 
     # --- stt.py: il file audio temporaneo viene sempre rimosso ------------
+    # --- stt.py: the temporary audio file is always removed ------------
     print("== stt.py ==")
     rec = tmp / "rec.ogg"
     rec.write_bytes(b"audio")
@@ -610,6 +759,7 @@ def main() -> int:
     # ================================================================
 
     # --- config.py: _build_config con fallback malformato (AttributeError)
+    # --- config.py: _build_config with a malformed fallback (AttributeError)
     print("== config.py (giro 10) ==")
     bad_fallback = tmp / "bad_fallback.toml"
     bad_fallback.write_text('[stt]\nfallback = "dovrebbe essere una lista"\n')
@@ -625,8 +775,13 @@ def main() -> int:
     # interi/bool, e _parse_fallback_list ignora entry non configurate
     # (nessun endpoint/model -> is_configured() False -> skip).
     # Il test segue solo il caso realmente rotto: fallback non-lista.
+    # The "malformed fallback fields" state is not a bug: TOML accepts
+    # integers/bools, and _parse_fallback_list ignores unconfigured entries (no
+    # endpoint/model -> is_configured() False -> skip). The test follows only
+    # the really broken case: a non-list fallback.
 
     # --- stt.py: double_injection=False -> solo clean negli appunti ------
+    # --- stt.py: double_injection=False -> only clean in the clipboard ------
     print("== stt.py (giro 10: double_injection) ==")
     with mock.patch("bravoric_stt_clipboard.stt.clipboard") as m_clip, \
          mock.patch("bravoric_stt_clipboard.stt.notify") as m_notify, \
@@ -682,6 +837,7 @@ def main() -> int:
         )
 
     # --- stt.py: storage failure non blocca il flusso ---------------------
+    # --- stt.py: storage failure does not block the flow ---------------------
     print("== stt.py (giro 10: storage failure) ==")
     with mock.patch("bravoric_stt_clipboard.stt.clipboard") as m_clip, \
          mock.patch("bravoric_stt_clipboard.stt.notify") as m_notify, \
@@ -703,6 +859,8 @@ def main() -> int:
 
         # Imposta STATE_IDLE PRIMA della chiamata: _process_recording usa
         # status.STATE_IDLE, che e' il mock -> deve essere la stringa giusta.
+        # Set STATE_IDLE BEFORE the call: _process_recording uses status.STATE_IDLE,
+        # which is the mock -> it must be the right string.
         m_status.STATE_IDLE = "idle"
 
         with mock.patch("bravoric_stt_clipboard.stt.try_with_fallback", return_value="testo"):
@@ -735,6 +893,11 @@ def main() -> int:
     # entry point, solo per handle_capture direttamente): ConfigError e
     # un'eccezione inattesa da ocr.handle_capture devono entrambe tornare 1
     # senza far esplodere il processo CLI.
+    # --- cli.ocr_capture_main: never called by any test so far ----------
+    # Same scheme as stt_toggle_main above (never tested through its own entry
+    # point, only for handle_capture directly): ConfigError and an unexpected
+    # exception from ocr.handle_capture must both return 1 without blowing up
+    # the CLI process.
     with mock.patch.object(cli, "load_config", side_effect=config.ConfigError("bad config")), \
          mock.patch.object(cli, "notify") as m_notify_ocr:
         ret_ocr = cli.ocr_capture_main()
@@ -765,6 +928,16 @@ def main() -> int:
     # di stt (30 min) o ocr (120 min). StreamSession e' mockata a livello di
     # classe (importata localmente dentro la funzione, non un attributo di
     # modulo di cli.py: mock.patch.object(cli, "stream") non la vedrebbe).
+    # --- cli.stream_toggle_main: unexpected exception did not write ERROR -----
+    # Real defect: unlike stt_toggle_main (fix B28/P2, above) and
+    # ocr_capture_main, the 'unexpected error' branch of stream_toggle_main
+    # NEVER wrote status.STATE_ERROR. For the stream it is more serious than for
+    # stt/ocr: P4 explicitly excludes 'stream' from the safety timeout on
+    # recording (a live session can last hours), so here there is NO watchdog
+    # that fixes the stuck indicator — unlike stt (30 min) or ocr (120 min).
+    # StreamSession is mocked at class level (imported locally inside the
+    # function, not a module attribute of cli.py: mock.patch.object(cli,
+    # "stream") would not see it).
     with mock.patch.object(cli, "load_config", return_value=mock.Mock()), \
          mock.patch("bravoric_stt_clipboard.stream.StreamSession") as m_session_cls, \
          mock.patch.object(cli, "status") as m_status_stream, \
@@ -782,6 +955,9 @@ def main() -> int:
     # CONTRO: notify.send che solleva a sua volta non deve far crashare la
     # funzione (prova diretta del beneficio di _report_unexpected_error()
     # rispetto alla chiamata diretta che c'era prima, senza rete).
+    # CONTRA: a notify.send that itself raises must not make the function crash
+    # (direct proof of the benefit of _report_unexpected_error() over the direct
+    # call that was there before, with no safety net).
     with mock.patch.object(cli, "load_config", return_value=mock.Mock()), \
          mock.patch("bravoric_stt_clipboard.stream.StreamSession") as m_session_cls2, \
          mock.patch.object(cli, "status"), \
@@ -799,6 +975,7 @@ def main() -> int:
               not crashed and ret_stream2 == 1)
 
     # --- storage.py: _purge_expired con file che scompare -----------------
+    # --- storage.py: _purge_expired with a file that disappears -----------------
     print("== storage.py (giro 10) ==")
     from bravoric_stt_clipboard import storage
 
@@ -807,11 +984,13 @@ def main() -> int:
     (purge_dir / "old.txt").write_text("old")
     (purge_dir / "old.txt").touch()
     # Rendiamo il file "vecchio" impostando mtime nel passato
+    # Make the file "old" by setting mtime in the past
     import time
     old_time = time.time() - 72000  # 20 ore fa
     os.utime(purge_dir / "old.txt", (old_time, old_time))
 
     # Simula race condition: file scompare durante iterdir
+    # Simulate a race condition: the file disappears during iterdir
     original_iterdir = purge_dir.iterdir
     call_count = [0]
 
@@ -820,8 +999,10 @@ def main() -> int:
         call_count[0] += 1
         if call_count[0] == 1:
             # Prima chiamata: restituisci i file
+            # First call: return the files
             return iter(files)
         # Seconda chiamata (non dovrebbe accadere, ma testa resilience)
+        # Second call (it should not happen, but it tests resilience)
         return iter(files)
 
     with mock.patch.object(type(purge_dir), "iterdir", side_effect=fake_iterdir):
@@ -841,6 +1022,8 @@ def main() -> int:
 
     # A8: argomento JSON mancante per set-stream-commands -> errore CLI pulito
     # (exit 1, nessun traceback). main(argv) accetta un argv esplicito.
+    # A8: missing JSON argument for set-stream-commands -> clean CLI error
+    # (exit 1, no traceback). main(argv) accepts an explicit argv.
     ret = config_editor.main(["set-stream-commands"])
     check("A8: set-stream-commands senza JSON -> exit 1", ret == 1)
     ret = config_editor.main(["set-stream"])
@@ -849,9 +1032,12 @@ def main() -> int:
     check("A8: comando sconosciuto -> exit 1", ret == 1)
 
     # --- config.py: default codec coerente con gli example ("libopus") ----
+    # --- config.py: default codec consistent with the examples ("libopus") ----
     print("== config.py (giro 10: default codec) ==")
     # L'encoder nativo ffmpeg "opus" e' experimental/disabilitato di default in
     # molte build: il fallback deve restare "libopus", come negli example.
+    # The native ffmpeg encoder "opus" is experimental/disabled by default in
+    # many builds: the fallback must stay "libopus", as in the examples.
     check(
         "codec di default = libopus",
         config._build_config({}).audio.codec == "libopus",
@@ -865,6 +1051,11 @@ def main() -> int:
     # A 0 il debounce non protegge più stop_recording da un lock ancora in
     # fase di startup (placeholder col pid del processo CLI, non ffmpeg):
     # SIGINT finirebbe sul processo sbagliato invece che sul secondo ffmpeg.
+    # --- config.py: minimum clamp of toggle_debounce_seconds (round 15) -------
+    # At 0 the debounce no longer protects stop_recording from a lock still in
+    # the start-up phase (placeholder with the pid of the CLI process, not
+    # ffmpeg): SIGINT would land on the wrong process instead of the second
+    # ffmpeg.
     check(
         "toggle_debounce_seconds=0 -> clampato a 0.1",
         config._build_config({"audio": {"toggle_debounce_seconds": 0}}).audio.toggle_debounce_seconds == 0.1,
@@ -883,6 +1074,11 @@ def main() -> int:
     # esclusione reciproca). Confermato dal vivo: OCR completato mentre STT
     # registra ancora sovrascriveva silenziosamente lo stato a idle,
     # disattivando anche il timeout di sicurezza sul recording.
+    # --- status.py: OCR does not switch off STT's 'recording' (round 17) ------
+    # status.json is shared between STT and OCR (independent shortcuts, with no
+    # mutual exclusion). Confirmed live: OCR completed while STT was still
+    # recording silently overwrote the state to idle, also disabling the safety
+    # timeout on recording.
     print("== status.py (giro 17: OCR non spegne recording STT) ==")
     status.STATUS_PATH = tmp / "status_race.json"
     status.write_status(status.STATE_RECORDING, service="stt")
@@ -892,6 +1088,7 @@ def main() -> int:
         status.read_status()["state"] == status.STATE_RECORDING,
     )
     # Ma OCR resta libero di scrivere IDLE quando STT non sta registrando.
+    # But OCR stays free to write IDLE when STT is not recording.
     status.write_status(status.STATE_IDLE, service="stt")
     status.write_status(status.STATE_IDLE, last_output="testo ocr 2", service="ocr")
     check(
@@ -899,6 +1096,7 @@ def main() -> int:
         status.read_status().get("last_output") == "testo ocr 2",
     )
     # E STT può sempre spegnere il proprio recording.
+    # And STT can always switch off its own recording.
     status.write_status(status.STATE_RECORDING, service="stt")
     status.write_status(status.STATE_IDLE, last_output="testo stt", service="stt")
     check(
@@ -907,6 +1105,7 @@ def main() -> int:
     )
 
     # --- stt.py: fallimento clipboard -> ERROR, non resta "processing" -----
+    # --- stt.py: clipboard failure -> ERROR, it does not stay "processing" -----
     print("== stt.py (giro 10: clipboard failure) ==")
     with mock.patch("bravoric_stt_clipboard.stt.clipboard") as m_clip, \
          mock.patch("bravoric_stt_clipboard.stt.notify"), \
@@ -957,6 +1156,9 @@ def main() -> int:
         # Un Mock() non impostato e' truthy: senza questo, il ramo
         # screenshot (nuovo) scatterebbe al posto di quello clipboard che
         # questo test vuole davvero esercitare.
+        # An unset Mock() is truthy: without this, the (new) screenshot branch
+        # would fire in place of the clipboard one that this test really wants to
+        # exercise.
         cfg_ocr.ocr_capture_screenshot = False
 
         with mock.patch("bravoric_stt_clipboard.ocr.try_with_fallback", return_value="testo"):
@@ -969,6 +1171,10 @@ def main() -> int:
     # -i deve stare PRIMA di --: dopo -- GOption smette di riconoscere le
     # opzioni, quindi "-i" verrebbe letto come argomento posizionale e ogni
     # notifica fallirebbe silenziosamente (regressione reale, riprodotta).
+    # --- notify.py: notify-send argument order (round 12, P1) -------------
+    # -i must come BEFORE --: after -- GOption stops recognizing options, so
+    # "-i" would be read as a positional argument and every notification would
+    # fail silently (real regression, reproduced).
     print("== notify.py (giro 12: ordine argomenti notify-send) ==")
     with mock.patch("bravoric_stt_clipboard.notify.subprocess.run") as m_run:
         notify.send("titolo", "corpo", icon="qualche-icona")
@@ -979,6 +1185,7 @@ def main() -> int:
         )
 
     # notify-send appeso (server di notifiche muto): timeout, mai eccezione.
+    # notify-send hung (mute notification server): timeout, never an exception.
     with mock.patch("bravoric_stt_clipboard.notify.subprocess.run") as m_run:
         notify.send("titolo", "corpo")
         check("notify.send passa un timeout a notify-send",
@@ -996,6 +1203,10 @@ def main() -> int:
     # _atomic_replace usava un path tmp fisso condiviso da tutti i comandi
     # GUI: due scritture concorrenti sullo stesso tmp potevano far perdere
     # una modifica. Verifica che due scritture sequenziali arrivino entrambe.
+    # --- config_editor.py: concurrent writes are not lost (round 12) --
+    # _atomic_replace used a fixed tmp path shared by all the GUI commands: two
+    # concurrent writes on the same tmp could lose a change. Verifies that two
+    # sequential writes both arrive.
     print("== config_editor.py (giro 12: tmp univoco) ==")
     cfg_path = tmp / "config.toml"
     cfg_path.write_text('[general]\nnotifications = true\n')
@@ -1014,6 +1225,10 @@ def main() -> int:
     # Senza lock, N processi concorrenti leggono lo stesso stato iniziale e
     # l'ultimo _write() vince, perdendo le voci degli altri (confermato dal
     # vivo: 11-17/20 sopravvivevano). Con fcntl.flock devono arrivare tutte.
+    # --- output_history.py: race on concurrent append_entry (round 13) -----
+    # Without a lock, N concurrent processes read the same initial state and the
+    # last _write() wins, losing the others' entries (confirmed live: 11-17/20
+    # survived). With fcntl.flock they must all arrive.
     print("== output_history.py (giro 13: race append_entry concorrenti) ==")
     race_history = tmp / "race_history.json"
     procs = [
@@ -1031,6 +1246,7 @@ def main() -> int:
     )
 
     # --- config_editor.py: race su set_storage_field concorrenti (giro 13) -
+    # --- config_editor.py: race on concurrent set_storage_field (round 13) -
     print("== config_editor.py (giro 13: race set_storage_field concorrenti) ==")
     race_config = tmp / "race_config.toml"
     race_config.write_text(
@@ -1058,6 +1274,10 @@ def main() -> int:
     # write_bytes senza chmod e' soggetto a umask di sistema: file con audio/
     # testo dettato/OCR riservato leggibili da altri utenti locali (confermato
     # dal vivo su config.toml/status.json gemelli nei giri 13/14).
+    # --- storage.py: permissions of saved files (round 14) -----------------------
+    # write_bytes without chmod is subject to the system umask: files with
+    # private audio/dictated text/OCR readable by other local users (confirmed
+    # live on the twin config.toml/status.json in rounds 13/14).
     print("== storage.py (giro 14: permessi file salvati) ==")
     from bravoric_stt_clipboard import storage
     storage_base = tmp / "storage_race"
@@ -1076,6 +1296,10 @@ def main() -> int:
     # api_key non deve passare come argv: /proc/PID/cmdline e' leggibile da
     # altri utenti locali per la durata del subprocess (confermato dal vivo).
     # '-' segnala a config_editor.py di leggere il valore da stdin.
+    # --- config_editor.py: api_key via stdin, not argv (round 14) -----------
+    # api_key must not go through argv: /proc/PID/cmdline is readable by other
+    # local users for the duration of the subprocess (confirmed live). '-'
+    # signals config_editor.py to read the value from stdin.
     print("== config_editor.py (giro 14: api_key via stdin) ==")
     stdin_config = tmp / "stdin_config.toml"
     stdin_config.write_text(
@@ -1122,6 +1346,7 @@ def main() -> int:
     check("stt.hotwords = hotword1 hotword2", cfg_stt.stt.hotwords == "hotword1 hotword2")
     check("stt.fallback non vuoto", len(cfg_stt.stt_fallback) == 1)
 
+    # La config legacy (senza sezione [stt]) usa i valori predefiniti
     # Legacy config (no [stt] section) uses defaults
     legacy_toml = tmp / "legacy.toml"
     legacy_toml.write_text(
@@ -1148,6 +1373,13 @@ def main() -> int:
     # della prova (il percorso legacy senza [stt] carica senza errori) e'
     # preservato: qui si asserisce il NUOVO default, non l'assenza di
     # contesto.
+    # Round 18 (P3): this was == "" and certified the defect that the brief asks
+    # to close ("if the user has not set a prompt, the default one is used"): the
+    # default lived ONLY in the config.example files, so for a hand-written
+    # config — i.e. this legacy case — the context did not exist and the
+    # vocabulary branch did not start. The ORIGINAL intent of the proof (the
+    # legacy path without [stt] loads with no errors) is preserved: here the NEW
+    # default is asserted, not the absence of context.
     check("legacy stt.prompt = default di codice (prima era vuoto)", cfg_legacy.stt.prompt == config.DEFAULT_PROMPT)
     check("legacy stt.hotwords = empty (default)", cfg_legacy.stt.hotwords == "")
     check("legacy stt.fallback non vuoto", len(cfg_legacy.stt_fallback) == 1)
@@ -1204,17 +1436,20 @@ def main() -> int:
     # --- config.py: [stream].vad_margin_db (margine VAD adattivo) ----------
     print("== config.py (stream.vad_margin_db) =")
     # Legacy: chiave assente -> default 6.0.
+    # Legacy: missing key -> default 6.0.
     check(
         "vad_margin_db assente -> default 6.0",
         cfg_stream.stream.vad_margin_db == 6.0,
     )
     # Valore esplicito valido -> rispettato.
+    # Valid explicit value -> respected.
     margin_toml = tmp / "stream_margin.toml"
     margin_toml.write_text('[stream]\nmode = "per_chunk"\nvad_margin_db = 12.5\n')
     check(
         "vad_margin_db esplicito -> 12.5",
         config.load_config(margin_toml).stream.vad_margin_db == 12.5,
     )
+    # Clamp sotto/sopra il limite sui valori finiti.
     # Under/over clamp sui valori finiti.
     under_toml = tmp / "stream_margin_under.toml"
     under_toml.write_text('[stream]\nmode = "per_chunk"\nvad_margin_db = -3.0\n')
@@ -1229,6 +1464,7 @@ def main() -> int:
         config.load_config(over_toml).stream.vad_margin_db == 20.0,
     )
     # NaN/infinito -> fallback al default 6.0.
+    # NaN/infinity -> fallback to the default 6.0.
     for raw_val, what in [("nan", "NaN"), ("inf", "+inf"), ("-inf", "-inf")]:
         nan_toml = tmp / f"stream_margin_{what.replace('+', 'p').replace('-', 'm')}.toml"
         nan_toml.write_text(f'[stream]\nmode = "per_chunk"\nvad_margin_db = {raw_val}\n')
@@ -1237,6 +1473,7 @@ def main() -> int:
             config.load_config(nan_toml).stream.vad_margin_db == 6.0,
         )
     # Valore non numerico -> default 6.0.
+    # Non-numeric value -> default 6.0.
     bad_margin_toml = tmp / "stream_margin_bad.toml"
     bad_margin_toml.write_text('[stream]\nmode = "per_chunk"\nvad_margin_db = "alto"\n')
     check(
@@ -1245,6 +1482,8 @@ def main() -> int:
     )
     # Compatibilità posizionale: il campo è appeso in coda, i costruttori
     # posizionali esistenti restano validi e vad_margin_db prende il default.
+    # Positional compatibility: the field is appended at the tail, the existing
+    # positional constructors stay valid and vad_margin_db takes the default.
     check(
         "StreamConfig posizionale: vad_margin_db default 6.0",
         config.StreamConfig("per_chunk", 0.7, -30, 0.4, 30, 250).vad_margin_db == 6.0,
@@ -1275,6 +1514,7 @@ def main() -> int:
     stream_mod.STREAM_STATE_PATH = tmp / "stream_state.json"
 
     # config con fallback minimo
+    # config with a minimal fallback
     cfg_stream_min = config.Config(
         notifications=True,
         notif_stt=config.ServiceNotifications(
@@ -1334,6 +1574,7 @@ def main() -> int:
     check("start() senza fallback = False", not result)
 
     # start() con fallback -> registra (ffmpeg simulato)
+    # start() with a fallback -> records (simulated ffmpeg)
     cfg_with_fallback = config.Config(
         notifications=True,
         notif_stt=config.ServiceNotifications(True, config.NotificationEvent(True, True), config.NotificationEvent(True, True)),
@@ -1360,6 +1601,7 @@ def main() -> int:
          mock.patch.object(stream_mod, "_spawn_recorder", return_value=mock.Mock(pid=os.getpid())), \
          mock.patch.object(stream_mod.notify, "send"):
         # Il recorder è simulato, ma il lock dedicato è reale.
+        # The recorder is simulated, but the dedicated lock is real.
         result = session2.start()
         stream_mod.STREAM_LOCK_PATH.write_text(
             json.dumps({"pid": os.getpid(), "started_at": 0,
@@ -1377,6 +1619,11 @@ def main() -> int:
     # caduta dal dict continuerebbe a passare la suite (i due assert sopra
     # leggono per chiave anche loro, ma non coprono `commands`, che resta
     # una lista di dict e non un valore semplice confrontabile a vista).
+    # The paste config block now comes from a single helper
+    # (stream._paste_state): without this PER-KEY check, a key dropped from the
+    # dict would keep passing the suite (the two asserts above also read per
+    # key, but they do not cover `commands`, which stays a list of dicts and not
+    # a simple value comparable at a glance).
     check("state includes commands (per chiave)", state.get("commands") == [])
     check("state includes paste_delay_ms (per chiave)", state.get("paste_delay_ms") == 250)
     check("state includes blacklist (per chiave)", state.get("blacklist") == "")
@@ -1388,6 +1635,10 @@ def main() -> int:
     # _stop_at_end chiama _terminate_pid e audio_path.unlink()
     # con l'audio_path dal lock. Il lock contiene un path fittizio
     # che esiste come file vuoto (creato sopra).
+    # stop_at_end() (no network; fake empty audio)
+    # _stop_at_end calls _terminate_pid and audio_path.unlink() with the
+    # audio_path from the lock. The lock contains a fake path that exists as an
+    # empty file (created above).
     with mock.patch.object(stream_mod, "_terminate_pid"), \
          mock.patch.object(stream_mod.notify, "send"):
         stop_result = session2.stop()
@@ -1401,9 +1652,11 @@ def main() -> int:
     check("stream.lock esiste", not stream_mod.STREAM_LOCK_PATH.exists())  # rimosso da stop
 
     # paste_next() su stato vuoto -> False
+    # paste_next() on an empty state -> False
     check("paste_next() su stato vuoto = False", not session.paste_next())
 
     # --- stream.py (A6: nessun file temp orfano se _spawn_recorder fallisce) --
+    # --- stream.py (A6: no orphan temp file if _spawn_recorder fails) --
     print("== stream.py (A6: cleanup tempfile su spawn fallito) ==")
     import tempfile as _tempfile
     _orig_mkstemp = _tempfile.mkstemp
@@ -1430,6 +1683,7 @@ def main() -> int:
           bool(created_paths) and not Path(created_paths[0]).exists())
 
     # --- stream.py: StreamSession per_chunk (senza ffmpeg reale) ----
+    # --- stream.py: StreamSession per_chunk (without real ffmpeg) ----
     print("== stream.py (per_chunk) =")
     cfg_per = config.Config(
         notifications=True,
@@ -1452,6 +1706,7 @@ def main() -> int:
     )
     session3 = stream_mod.StreamSession(cfg_per)
     # testa is_active() e get_state() su sessione non avviata
+    # tests is_active() and get_state() on a session not started
     check("per_chunk is_active() = False", not session3.is_active())
 
     # --- config_editor.py: set_stream_field ----------------------------
@@ -1519,6 +1774,11 @@ def main() -> int:
     # aveva nulla su cui scrivere i due campi nuovi (i tre endpoint non erano
     # leggibili). Tutto su una COPIA temporanea: set_level_field su
     # CONFIG_PATH reale toccherebbe il config.toml personale dell'utente.
+    # --- config_editor.py: stream levels expose parallel/max_concurrency --
+    # STEP 1 of wave 4: without the "levels" key under "stream" the GUI had
+    # nothing to write the two new fields on (the three endpoints were not
+    # readable). All on a temporary COPY: set_level_field on the real
+    # CONFIG_PATH would touch the user's personal config.toml.
     print("== config_editor.py (stream levels: parallel/max_concurrency) ==")
     pool_cfg = tmp / "stream_pool_levels.toml"
     pool_cfg.write_text(
@@ -1550,6 +1810,8 @@ def main() -> int:
     )
     # Livello legacy senza i due campi: la GUI li deve comunque leggere come
     # stringa vuota (e non come assenti), altrimenti lo SwitchRow casca.
+    # Legacy level without the two fields: the GUI must still read them as an
+    # empty string (and not as missing), otherwise the SwitchRow falls over.
     check(
         "levels[1] legacy espone i campi nuovi come stringa vuota",
         len(pool_levels) > 1
@@ -1574,6 +1836,9 @@ def main() -> int:
             # sua sorgente unica insieme a levels. Aggiunto qui perche' la
             # lista e' una whitelist ESATTA: senza, la GUI non avrebbe modo di
             # sapere in che modalita' siamo.
+            # dispatch_mode: GLOBAL parallel/sequential switch, its single source
+            # together with levels. Added here because the list is an EXACT whitelist:
+            # without it, the GUI would have no way of knowing which mode we are in.
             "dispatch_mode",
             # max_concurrent_chunks_auto: il flag che dichiara se il tetto dei
             # worker e' AUTO (0 o chiave assente) o esplicito (1..8). Senza
@@ -1582,6 +1847,12 @@ def main() -> int:
             # backend calcolava 3xN (difetto C, giro 1). Aggiunta alla
             # whitelist ESATTA insieme a max_concurrent_chunks: le due vanno
             # lette insieme, una senza l'altra mente.
+            # max_concurrent_chunks_auto: the flag that declares whether the worker cap
+            # is AUTO (0 or missing key) or explicit (1..8). Without this key the GUI
+            # note "the cap is automatic" NEVER appeared and with cap=0 the GUI showed
+            # "up to 1 worker" while the backend computed 3xN (defect C, round 1). Added
+            # to the EXACT whitelist together with max_concurrent_chunks: the two must be
+            # read together, one without the other lies.
             "max_concurrent_chunks_auto",
             # chunk_log_max_lines: ritenzione del log JSONL dei chunk, in
             # RIGHE. Stessa ragione delle precedenti: la lista e' una
@@ -1589,6 +1860,11 @@ def main() -> int:
             # renderebbe questo test rosso anche se il campo fosse corretto.
             # Il backend lo legge da config.py StreamConfig, non da qui: questa
             # whitelist dichiara che get_state() lo ESPONE, non che lo usi.
+            # chunk_log_max_lines: retention of the JSONL chunk log, in LINES. Same
+            # reason as the previous ones: the list is an EXACT whitelist, so a new field
+            # not listed here would make this test red even if the field were correct.
+            # The backend reads it from config.py StreamConfig, not from here: this
+            # whitelist declares that get_state() EXPOSES it, not that it uses it.
             "chunk_log_max_lines",
             # Ex costanti di modulo ora regolabili / former module constants.
             "prompt_max_chars", "vad_floor_window_frames", "vad_min_floor_frames",
@@ -1600,6 +1876,9 @@ def main() -> int:
     # set_level_field su config legacy: deve CREARE la chiave mancante, non
     # sollevare Unknown field, altrimenti la casella della GUI salva uno schermo
     # di errore invece del valore.
+    # set_level_field on a legacy config: it must CREATE the missing key, not
+    # raise Unknown field, otherwise the GUI box saves an error screen instead
+    # of the value.
     legacy_cfg = tmp / "stream_pool_legacy.toml"
     legacy_cfg.write_text('[stream]\nmode = "per_chunk"\n')
     config_editor.CONFIG_PATH = legacy_cfg
@@ -1625,12 +1904,15 @@ def main() -> int:
 
     # I valori passati dalla GUI sono stringhe: il backend le accetta e il
     # clamp 1..8 di _coerce_max_concurrency le ricolloca nei range.
+    # The values passed by the GUI are strings: the backend accepts them and the
+    # 1..8 clamp of _coerce_max_concurrency puts them back in range.
     check(
         "max_concurrency clamp 1..8 sulle stringhe che arrivano dalla GUI",
         [config._coerce_max_concurrency(v, 3, 1, 8) for v in ("0", "6", "99", "")]
         == [1, 6, 8, 3],
     )
 
+    # --- config_editor.py (A3: mode validato contro STREAM_MODES) ----------
     # --- config_editor.py (A3: mode validato contro STREAM_MODES) ----------
     print("== config_editor.py (A3: mode validation) ==")
     mode_guard = tmp / "stream_mode_guard.toml"
@@ -1646,6 +1928,7 @@ def main() -> int:
         check(f"A3: mode invalido -> ConfigEditorError ({type(exc).__name__})", False)
     check("A3: mode invalido lascia il file invariato", mode_guard.read_text() == mode_before)
     # I valori supportati dal parser restano accettati e round-trippano.
+    # The values supported by the parser stay accepted and round-trip.
     for good_mode in config.STREAM_MODES:
         config_editor.set_stream_field("mode", good_mode)
         check(f"A3: mode valido {good_mode!r} -> round-trip",
@@ -1657,16 +1940,19 @@ def main() -> int:
     margin_cfg.write_text('[stream]\nmode = "per_chunk"\n')
     config_editor.CONFIG_PATH = margin_cfg
     # get_state: chiave assente -> default 6.0.
+    # get_state: missing key -> default 6.0.
     check(
         "get_state vad_margin_db assente -> 6.0",
         config_editor.get_state()["stream"]["vad_margin_db"] == 6.0,
     )
     # setter: valore esplicito round-trip.
+    # setter: explicit value round-trip.
     config_editor.set_stream_field("vad_margin_db", "9.5")
     check(
         "set_stream_field vad_margin_db -> 9.5",
         config_editor.get_state()["stream"]["vad_margin_db"] == 9.5,
     )
+    # setter: clamp numerico finito (sopra/sotto).
     # setter: clamp numerico finito (over/under).
     config_editor.set_stream_field("vad_margin_db", "50")
     check(
@@ -1679,6 +1965,7 @@ def main() -> int:
         config_editor.get_state()["stream"]["vad_margin_db"] == 0.0,
     )
     # setter: valore invalido/non finito -> reject esplicito.
+    # setter: invalid/non-finite value -> explicit reject.
     for bad_val in ("nan", "inf", "-inf", "alto"):
         try:
             config_editor.set_stream_field("vad_margin_db", bad_val)
@@ -1688,6 +1975,7 @@ def main() -> int:
         except Exception as exc:  # noqa: BLE001
             check(f"set_stream_field vad_margin_db {bad_val!r} -> ConfigEditorError ({type(exc).__name__})", False)
     # creazione sezione [stream] legacy (solo [[stream.fallback]]).
+    # creation of the legacy [stream] section (only [[stream.fallback]]).
     margin_legacy = tmp / "stream_margin_legacy.toml"
     margin_legacy.write_text(
         '[general]\nnotifications = true\n'
@@ -1712,13 +2000,18 @@ def main() -> int:
          mock.patch.object(cli, "notify") as m_notify:
         # sessione non attiva -> start() fallisce per mancanza fallback
         # (cfg_with_fallback.stream.fallback è [])
+        # session not active -> start() fails for lack of a fallback
+        # (cfg_with_fallback.stream.fallback is [])
         ret = cli.stream_toggle_main(["paste"])
         check("stream_toggle_main paste senza sessione -> 1", ret == 1)
 
     # stream_toggle_main con argv=None usa sys.argv[1:]
     # (testato implicitamente sopra)
+    # stream_toggle_main with argv=None uses sys.argv[1:]
+    # (tested implicitly above)
 
     # --- sequencer FIFO, tombstone e compatibilità config posizionale ---
+    # --- FIFO sequencer, tombstone and positional config compatibility ---
     print("== stream.py (parallel & fifo sequencer) ==")
     import bravoric_stt_clipboard.stream as stream_module
     stream_test_cfg = config.StreamConfig("per_chunk", 0.7, -30, 0.4, 30, 250, fallback=[])
@@ -1729,6 +2022,10 @@ def main() -> int:
     # _rms_db_of_chunk sostituisce un ciclo per-campione con struct.unpack in
     # blocco (perf, giro curriculum): stesso risultato numerico, verificato
     # qui su casi noti invece che solo a occhio sul confronto vecchio/nuovo.
+    # --- stream.py: _rms_to_db / _rms_db_of_chunk (never tested so far) -----
+    # _rms_db_of_chunk replaces a per-sample loop with a block struct.unpack
+    # (perf, curriculum round): same numeric result, verified here on known
+    # cases instead of just by eye on the old/new comparison.
     print("== stream.py (_rms_to_db / _rms_db_of_chunk) ==")
     import struct as _struct
 
@@ -1744,11 +2041,14 @@ def main() -> int:
     check("_rms_db_of_chunk: silenzio digitale -> _MIN_DB",
           _rms_db_of_chunk(silence, 480) == _MIN_DB)
     # Onda a piena scala (±32767 alternati): rms vicino a 1.0 -> ~0 dB.
+    # Onda a piena scala (±32767 alternati): rms vicino a 1.0 -> ~0 dB.
     full_scale = _struct.pack("<480h", *([32767, -32767] * 240))
     check("_rms_db_of_chunk: piena scala -> vicino a 0 dB",
           abs(_rms_db_of_chunk(full_scale, 480) - 0.0) < 0.01)
     # Byte finale dispari: scartato, stesso comportamento del ciclo originale
     # (num_samples = len // 2, il resto non entra nel calcolo).
+    # Odd final byte: discarded, same behavior as the original loop
+    # (num_samples = len // 2, the remainder does not enter the computation).
     odd_trailing = _struct.pack("<3h", 100, 200, 300) + b"\xff"
     check("_rms_db_of_chunk: byte finale dispari ignorato",
           _rms_db_of_chunk(odd_trailing, 3) == _rms_db_of_chunk(odd_trailing[:6], 3))
@@ -1761,11 +2061,13 @@ def main() -> int:
         _adaptive_threshold_db,
     )
     # Formula: floor + margine, dentro il range.
+    # Formula: floor + margin, inside the range.
     check(
         "adaptive threshold = floor + margin",
         _adaptive_threshold_db(-40.0, 6.0) == -34.0,
     )
     # Il margine configurabile sposta la soglia.
+    # The configurable margin moves the threshold.
     check(
         "adaptive threshold rispetta margine configurabile",
         _adaptive_threshold_db(-40.0, 12.0) == -28.0,
@@ -1781,6 +2083,8 @@ def main() -> int:
         _adaptive_threshold_db(-10.0, 20.0) == VAD_THRESHOLD_MAX_DB,
     )
     # Distinta dalla soglia iniziale noise_db: la formula non usa noise_db.
+    # Distinct from the initial threshold noise_db: the formula does not use
+    # noise_db.
     check(
         "adaptive threshold indipendente da noise_db",
         _adaptive_threshold_db(-40.0, 6.0) != -30.0,
@@ -1805,11 +2109,15 @@ def main() -> int:
           a1_threshold == -34.0 and a1_threshold > VAD_THRESHOLD_MIN_DB)
     # Controprova della regressione: senza filtro la sentinella porta il floor
     # a -200 e la soglia al clamp minimo (il bug originale).
+    # Counter-proof of the regression: without the filter the sentinel brings
+    # the floor to -200 and the threshold to the minimum clamp (the original
+    # bug).
     unfiltered_floor = _estimate_floor_db(mixed_frames)
     check("A1: regressione - senza filtro la sentinella avvelena la soglia",
           unfiltered_floor == _MIN_DB
           and _adaptive_threshold_db(unfiltered_floor, 6.0) == VAD_THRESHOLD_MIN_DB)
     # Un frame sopra la soglia provvisoria (parlato) non è un campione di floor.
+    # A frame above the provisional threshold (speech) is not a floor sample.
     check("A1: frame sopra la soglia provvisoria scartato",
           not _is_valid_floor_sample(-10.0, -30.0))
 
@@ -1817,6 +2125,10 @@ def main() -> int:
     # Il budget e' la SOMMA dei level.timeout_seconds, non piu'
     # n_livelli * chunk_timeout: ogni endpoint ha il suo timeout (STEP 1 del
     # BRIEF-TIMEOUT-PERLIVELLO), quindi e' la somma a non troncare i chunk.
+    # --- stream.py (A4: stop drain budget proportional to the per-level timeouts)
+    # The budget is the SUM of the level.timeout_seconds, no longer
+    # n_levels * chunk_timeout: every endpoint has its own timeout (STEP 1 of
+    # BRIEF-TIMEOUT-PERLIVELLO), so it is the sum that does not truncate chunks.
     print("== stream.py (A4: budget drain stop) ==")
     from bravoric_stt_clipboard.stream import _stop_drain_budget
     _Lv = lambda *ts: [type("L", (), {"timeout_seconds": t})() for t in ts]
@@ -1867,6 +2179,29 @@ def main() -> int:
     #   4) il file finto viene rimosso in finally, altrimenti i test dopo
     #      leggerebbero i segmenti di una sessione inventata e il gate
     #      dipenderebbe dall'ordine di esecuzione.
+    # --- get_context_snapshot: HERMETIC contract, in two steps ----------
+    # The defect this block closes (measured, not assumed). The suite built the
+    # test state WITHOUT a session_id and then compared get_context_snapshot()
+    # with last_chunks. But get_context_snapshot calls
+    # read_live_text(self._state.get("session_id")), and read_live_text(None)
+    # does NOT raise: with session_id None it accepts ANY live file, so it reads
+    # ~/.cache/bravoric-stt-clipboard/stream_live_text.json, i.e. the user's
+    # REAL file. Before the reboot that file did not exist and the gate was green
+    # by chance: the reboot broke nothing, it made visible that the test was
+    # green by chance and not on merit.
+    #
+    # The four guards to keep together, otherwise the block stays decorative:
+    #   1) the live text file is removed by the module during the contract, so
+    #      the only STREAM_LIVE_TEXT_PATH that exists is the fake one;
+    #   2) the fallback is proven with read_live_text that RETURNS None (absence,
+    #      corrupt file, another session) and with last_chunks knowing what it
+    #      contains: the fallback is thus verified by construction and not by the
+    #      absence of a file;
+    #   3) the preference for the live text is proven with a FAKE file, on a
+    #      temporary path, and with a matching session_id;
+    #   4) the fake file is removed in finally, otherwise the later tests would
+    #      read the segments of an invented session and the gate would depend on
+    #      the execution order.
     _LIVE_PATH_ATTR = "STREAM_LIVE_TEXT_PATH"
     _LIVE_READER_ATTR = "read_live_text"
     _live_path_original = getattr(stream_module, _LIVE_PATH_ATTR)
@@ -1888,6 +2223,12 @@ def main() -> int:
         # piu' misurato per assenza di file, che dipendeva dalla macchina.
         # get_context_snapshot chiama il nome letto nel modulo stream, quindi
         # e' quello da sostituire (non una copia importata da un altro modulo).
+        # (a) NO live file: the snapshot falls back on last_chunks. read_live_text
+        # is replaced with one that RETURNS None, i.e. the case 'file missing /
+        # corrupt / of another session': the fallback is no longer measured by the
+        # absence of a file, which depended on the machine. get_context_snapshot
+        # calls the name read in the stream module, so that is the one to replace
+        # (not a copy imported from another module).
         setattr(stream_module, _LIVE_READER_ATTR, lambda _session_id: None)
         st_fifo = {"chunks": [], "last_chunks": []}
         seq_fifo = stream_module._FifoSequencer(
@@ -1908,6 +2249,11 @@ def main() -> int:
         # passerebbe anche se la funzione restituisse una lista fissa o vuota,
         # cioe' sarebbe verde senza provare niente. Qui i due lati devono
         # essere distinguibili, altrimenti l'asserzione e' vacua.
+        # Do not weaken: the fallback is also compared with an explicitly DIFFERENT
+        # last_chunks. With last_chunks == snapshot the comparison would pass even if
+        # the function returned a fixed or empty list, i.e. it would be green
+        # proving nothing. Here the two sides must be distinguishable, otherwise the
+        # assertion is vacuous.
         st_solo = {"chunks": [], "last_chunks": ["dal", "backend"]}
         seq_solo = stream_module._FifoSequencer(
             st_solo, stream_test_cfg, lambda text: None, lambda text: None,
@@ -1920,6 +2266,10 @@ def main() -> int:
         # preferisce a last_chunks. read_live_text e' tornato QUELLO VERO,
         # che legge il percorso finto: il file e' scritto davvero e viene
         # passato attraverso il parser vero, con la sessione che combacia.
+        # (b) FAKE LIVE FILE matching the session: the snapshot prefers it to
+        # last_chunks. read_live_text is back to THE REAL ONE, which reads the fake
+        # path: the file is really written and goes through the real parser, with
+        # the matching session.
         setattr(stream_module, _LIVE_READER_ATTR, _live_reader_original)
         st_live = {
             "chunks": [], "last_chunks": ["dal", "backend"],
@@ -1932,6 +2282,8 @@ def main() -> int:
         _live_snapshot = seq_live.get_context_snapshot()
         # Le ultime tre righe del file, non tutto il file: read_live_text
         # tiene solo gli ultimi 3 segmenti utilizzabili.
+        # The last three lines of the file, not the whole file: read_live_text keeps
+        # only the last 3 usable segments.
         check("contesto: a parita' di condizioni il testo vivo e' quello TRUE",
               _live_snapshot == ["vive due", "vive tre", "vive quattro"])
         check("contesto: col testo vivo lo snapshot NON prende last_chunks",
@@ -1942,12 +2294,18 @@ def main() -> int:
         # sostituzione. Nessun file viene scritto: il percorso resta finto e
         # inesistente, e quello vero e' comunque irraggiungibile per la
         # guardia 1.
+        # (c) the same function, with a path that does not exist: the fallback is
+        # the real branch of read_live_text (OSError -> None), no longer a
+        # replacement. No file is written: the path stays fake and non-existent, and
+        # the real one is unreachable anyway thanks to guard 1.
         setattr(stream_module, _LIVE_PATH_ATTR, _live_dir / "assente.json")
         check("contesto: file inesistente -> il ramo vero ricade su last_chunks",
               seq_live.get_context_snapshot() == ["dal", "backend"])
         # E con la sessione sbagliata il file vivo viene RIFIUTATO: la
         # preferenza non e' 'il file esiste', e' 'il file e' di questa
         # sessione'.
+        # And with the wrong session the live file is REJECTED: the preference is
+        # not 'the file exists', it is 'the file belongs to this session'.
         setattr(stream_module, _LIVE_PATH_ATTR, _live_fake)
         st_altra = {
             "chunks": [], "last_chunks": ["dal", "backend"],
@@ -1963,6 +2321,9 @@ def main() -> int:
         # Ripristino OBBLIGATORIO: un patch non ripristinato invalida tutti i
         # test che vengono dopo (e il file finto renderebbe i loro snapshot
         # dipendenti da una sessione inventata).
+        # MANDATORY restore: an unrestored patch invalidates all the tests that come
+        # after (and the fake file would make their snapshots depend on an invented
+        # session).
         setattr(stream_module, _LIVE_PATH_ATTR, _live_path_original)
         setattr(stream_module, _LIVE_READER_ATTR, _live_reader_original)
         with contextlib.suppress(OSError):
@@ -1973,6 +2334,9 @@ def main() -> int:
     # invisibile qui, perche' dalla riga sotto il percorso e' di nuovo quello
     # giusto. Il controllo e' sul dopo, quando l'ambiente e' tornato come
     # prima.
+    # Guard 1 does not hold alone: a forgotten restore would be invisible here,
+    # because from the line below the path is the right one again. The check is
+    # on the aftermath, when the environment is back as before.
     check("contesto: lettore e percorso del testo vivo ripristinati a fine blocco",
           getattr(stream_module, _LIVE_PATH_ATTR) is _live_path_original
           and getattr(stream_module, _LIVE_READER_ATTR) is _live_reader_original)
@@ -1995,6 +2359,7 @@ def main() -> int:
         seq_tomb.ingest(item)
     check("failed chunk advances tombstone without blocking", st_tomb["chunks"] == ["Primo ", "Terzo "] and seq_tomb._next_expected == 3)
     # Ogni chunk committato termina con esattamente uno spazio (separatore).
+    # Every committed chunk ends with exactly one space (separator).
     check("chunk normalizzato: spazio finale unico", stream_module._normalize_chunk_text("ciao") == "ciao ")
     check("chunk normalizzato: spazio già presente non duplicato", stream_module._normalize_chunk_text("ciao  ") == "ciao ")
     check("chunk normalizzato: bordi rimossi", stream_module._normalize_chunk_text("  ciao  mondo  ") == "ciao  mondo ")
@@ -2046,6 +2411,9 @@ def main() -> int:
     # Le allucinazioni NON sono piu' filtrate qui da una lista fissa: sono la
     # blacklist utente, applicata a monte in ingest() (test "blacklist dropped
     # chunk never added to last_chunks"). build_prompt usa cio' che riceve.
+    # The hallucinations are NO longer filtered here by a fixed list: they are
+    # the user blacklist, applied upstream in ingest() (test "blacklist dropped
+    # chunk never added to last_chunks"). build_prompt uses what it receives.
     check("build_prompt: nessun filtro nascosto (il filtro e' la blacklist, a monte)",
           "Sottotitoli" in (build_prompt("P", ["Sottotitoli a cura di", "vero"]) or ""))
     # Empty chunks filtered
@@ -2058,11 +2426,13 @@ def main() -> int:
     check("build_prompt personal intact", (result or "").startswith("A"*700) or "A" in (result or ""))
     check("build_prompt result <= 800 chars", len(result or "") <= 800)
 
+    # Personale troppo lungo -> troncato a 800 da destra
     # Personal too long -> truncated to 800 from right
     long_result = build_prompt("X"*900, ["y"])
     check("build_prompt trunc personal to 800", len(long_result or "") == 800)
     check("build_prompt trunc from right", (long_result or "").endswith("X"))
 
+    # Chunk grande scartato se non ci sta, i più vecchi restano
     # Big chunk dropped if doesn't fit, older kept
     result2 = build_prompt("P", ["short", "X"*900])
     check("build_prompt drops big chunk", result2 == "P short" or result2 == "P")
@@ -2098,6 +2468,7 @@ def main() -> int:
             return {"text": "ciao"}
 
     # Con tutti i parametri valorizzati: devono finire in `data` normalizzati.
+    # With all the parameters set: they must end up in `data` normalized.
     with mock.patch.object(api_client.requests, "post", return_value=OkResp()) as m_post:
         out = api_client.transcribe_audio(
             level2, fake_audio, language="it", prompt="contesto", hotwords="wh1 wh2")
@@ -2127,6 +2498,11 @@ def main() -> int:
     # TESTA del contesto, quindi il pezzo piu' vecchio sparisce e il piu'
     # recente resta intatto. Le due meta' devono stare nel budget da sole ma
     # non insieme, altrimenti non si taglia nulla e il test non prova niente.
+    # Distinct chunks longer than the remaining budget, so the truncation
+    # necessarily fires. It shows the right direction: the cut starts from the
+    # HEAD of the context, so the oldest piece disappears and the most recent
+    # stays intact. The two halves must fit the budget alone but not together,
+    # otherwise nothing is cut and the test proves nothing.
     vecchio = ("parolavecchia " * 60).strip()
     recente = ("parolaricente " * 60).strip()
     huge_ctx = "PERSONALE " + vecchio + " " + recente
@@ -2143,11 +2519,16 @@ def main() -> int:
     # vocabulary]), quindi con personal E vocabulary ci sono DUE spazi di
     # giunzione; il budget ne sottraeva al massimo uno. Con il contesto che
     # riempiva esattamente il budget si mandavano 801 caratteri.
+    # Defect 1 — off-by-one: the final prompt is " ".join([personal, context,
+    # vocabulary]), so with personal AND vocabulary there are TWO joining
+    # spaces; the budget subtracted at most one. With the context filling
+    # exactly the budget, 801 characters were sent.
     print("== budget prompt: spazi di giunzione ==")
     hw_small = "PiAgent, tmux, inventario"
     personal_100 = "P" * 100
     vocab_sentence = f"Le parole {hw_small} sono nomi proprio."
     # Il budget COSI' com'era calcolato dal codice precedente (riga da correggere).
+    # The budget AS computed by the previous code (line to fix).
     old_budget = 800 - len(personal_100) - len(vocab_sentence) - (1 if personal_100 else 0)
     ctx_exact = words_exactly(old_budget)
     check("contesto di prova == budget esatto", len(ctx_exact) == old_budget)
@@ -2168,6 +2549,14 @@ def main() -> int:
     # giunzione, quindi da un contesto vecchio-budget esce SOTTO 800 e il
     # numero giusto e' quello che segue dalla composizione reale: il suffisso
     # di parole intere piu' lungo che entra nel budget contesto corretto (644).
+    # Not just "<= 800": here the expectation of 800 was IMPOSSIBLE, not just
+    # more demanding. `ctx_exact` is built on the OLD budget (645, a single
+    # space reserved) and the check asked for the chain
+    # len(p) == 100+1+645+1+54 == 800, i.e. 801 AND 800 together: no code in the
+    # world can satisfy it. The correct code reserves the TWO joining spaces, so
+    # from an old-budget context it comes out BELOW 800 and the right number is
+    # the one that follows from the real composition: the longest suffix of
+    # whole words that fits the correct context budget (644).
     ctx_budget = 800 - len(personal_100) - len(vocab_sentence) - 2
     suffix = ctx_exact.split()
     while suffix and len(" ".join(suffix)) > ctx_budget:
@@ -2177,6 +2566,9 @@ def main() -> int:
     # Lo stesso codice, con il contesto costruito sul budget CORRETTO, deve
     # invece arrivare esattamente a 800: e' questo il caso che chiude il difetto
     # dei due spazi di giunzione.
+    # The same code, with the context built on the CORRECT budget, must instead
+    # reach exactly 800: this is the case that closes the two-joining-spaces
+    # defect.
     ctx_ok = words_exactly(ctx_budget)
     check("contesto al budget corretto == 644", len(ctx_ok) == 644)
     with mock.patch.object(api_client.requests, "post", return_value=OkResp()) as m_post:
@@ -2187,10 +2579,14 @@ def main() -> int:
           len(p_ok) == len(personal_100) + 1 + len(ctx_ok) + 1 + len(vocab_sentence) == 800)
     # Nessuna parola spezzata a meta': il contesto conservato deve essere un
     # SUFFISSO delle parole originali, non una frammentazione.
+    # No word broken halfway: the preserved context must be a SUFFIX of the
+    # original words, not a fragmentation.
     kept_words = [t for t in p.split() if t.startswith("w")]
     check("contesto esattamente al budget -> parole intere",
           kept_words == ctx_exact.split()[-len(kept_words):])
     # Stesso caso senza prompt personale (un solo blocco fisso oltre il contesto).
+    # Same case without a personal prompt (a single fixed block besides the
+    # context).
     with mock.patch.object(api_client.requests, "post", return_value=OkResp()) as m_post:
         api_client.transcribe_audio(level_vocab, fake_audio, prompt=ctx_exact, hotwords=hw_small)
         p = m_post.call_args.kwargs["data"]["prompt"]
@@ -2200,6 +2596,9 @@ def main() -> int:
     # Via privata del prompt personale, contesto e frase interi: anche qui il
     # risultato e' DERIVATO (nessun blocco deve perdere una parola), altrimenti
     # un troncamento buggardo ma "abbastanza sotto 800" passerebbe.
+    # Private path of the personal prompt, whole context and sentence: here too
+    # the result is DERIVED (no block must lose a word), otherwise a buggy
+    # truncation that is still "well under 800" would pass.
     only_ctx_budget = 800 - len(vocab_sentence) - 1
     check("solo contesto+vocabolario -> prompt == budget esatto",
           len(p) == min(len(ctx_exact), only_ctx_budget) + 1 + len(vocab_sentence) == 700)
@@ -2209,6 +2608,11 @@ def main() -> int:
     # 800, il budget del contesto andava negativo e il prompt usciva fuori dal
     # limite (misurato: 1223 caratteri). Qui il personale non c'e': chi deve
     # tenere la cornice e' il vocabolario, e il contesto cede tutto.
+    # Defect 2, the case that exposed it: EMPTY personal prompt (explicit "",
+    # not None) and huge hotwords. The two fixed blocks alone already exceeded
+    # 800, the context budget went negative and the prompt came out of the limit
+    # (measured: 1223 characters). Here the personal one is not there: whoever
+    # must keep the frame is the vocabulary, and the context yields everything.
     print("== budget prompt: personale vuoto con hotwords enormi ==")
     hw_vuoto = " ".join(f"nome{numero:05d}" for numero in range(101))
     noti_vuoto = set(hw_vuoto.split())
@@ -2222,6 +2626,9 @@ def main() -> int:
     # Il troncamento riguarda SOLO il prompt: il campo hotwords dedicato resta
     # quello scritto dall'utente, altrimenti i termini non arriverebbero mai
     # al provider nemmeno per la via breve.
+    # The truncation concerns ONLY the prompt: the dedicated hotwords field
+    # stays the one written by the user, otherwise the terms would never reach
+    # the provider even by the short way.
     check("personale vuoto: campo hotwords intatto", sent_vuoto.get("hotwords") == hw_vuoto)
     check("personale vuoto: prompt <= 800", len(p) <= 800)
     check("personale vuoto: nessuno spazio aggiuntivo",
@@ -2232,6 +2639,9 @@ def main() -> int:
     # Nessun token troncato a meta': tutto quello che c'e' nel mezzo e' un
     # termine per intero dell'elenco originale, e la coda resta quella
     # documentata invece di un pezzo di parola.
+    # No token truncated halfway: everything in the middle is a whole term of the
+    # original list, and the tail stays the documented one instead of a piece of
+    # a word.
     mezzo_vuoto = p[len("Le parole "):-len(" sono nomi proprio.")]
     check("personale vuoto: nessuna parola spezzata a meta'",
           bool(mezzo_vuoto.split()) and all(tok in noti_vuoto for tok in mezzo_vuoto.split()))
@@ -2245,6 +2655,15 @@ def main() -> int:
     # nessun codice: n termini da 9 caratteri danno 29 + 10n - 1, e per
     # arrivare a 796 servirebbe n = 76.8. Il massimo e' 77 termini = 798
     # (il 78mo porterebbe a 808, oltre 800).
+    # EXPECTED length, derived and not copied: fixed frame (29 characters:
+    # "Le parole" 9 + space + list + space + "sono nomi proprio." 18) plus all
+    # the WHOLE terms of the list that fit in the remainder (771). The
+    # remainder must be CONSUMED progressively: comparing each term with the
+    # whole remainder never truncates and would end up keeping all the 101
+    # terms, giving 1038 instead of 798. 796 is then not reachable by any code:
+    # n terms of 9 characters give 29 + 10n - 1, and to reach 796 n = 76.8 would
+    # be needed. The maximum is 77 terms = 798 (the 78th would bring it to 808,
+    # over 800).
     cornice = len("Le parole") + 1 + 1 + len("sono nomi proprio.")
     tenuti: list[str] = []
     usato = 0
@@ -2259,8 +2678,10 @@ def main() -> int:
 
     # Difetto 1 — caso personale + vocabolario + contesto lungo: il contesto
     # cede per primo (il pezzo piu' vecchio), personal e frase restano interi.
+    # Defect 1 — personal + vocabulary + long context case: the context yields
+    # first (the oldest piece), personal and sentence stay whole.
     print("== budget prompt: contesto lungo con personale e vocabolario ==")
-    personal_real = "Sei il mio segretario, registrate diagnosi e fix in note."  # ~290 come la config reale
+    personal_real = "Sei il mio segretario, registrate diagnosi e fix in note."  # ~290 come la config reale | ~290 like the real config
     ctx_chunks = " ".join(f"chunk{numero}-{'z' * 60}" for numero in range(12))
     with mock.patch.object(api_client.requests, "post", return_value=OkResp()) as m_post:
         api_client.transcribe_audio(level_vocab, fake_audio, prompt=personal_real + " " + ctx_chunks,
@@ -2277,6 +2698,9 @@ def main() -> int:
     # Difetto 2 — blocchi fissi da soli oltre 800: il budget del contesto
     # diventava negativo, il contesto veniva svuotato, ma i blocchi fissi
     # restavano e il prompt usciva ben oltre 800 (misurato: 922 e 1223).
+    # Defect 2 — fixed blocks alone over 800: the context budget became
+    # negative, the context was emptied, but the fixed blocks stayed and the
+    # prompt came out well over 800 (measured: 922 and 1223).
     print("== budget prompt: blocchi fissi oltre 800 ==")
     for size in (600, 900, 3000):
         huge_hw = " ".join(f"term{numero:05d}" for numero in range(size // 9))
@@ -2298,6 +2722,8 @@ def main() -> int:
               head.strip() == "P" * 150)
 
     # Estremo opposto: solo il prompt personale e' oltre 800, vocabolario minimo.
+    # Opposite extreme: only the personal prompt is over 800, minimal
+    # vocabulary.
     personal_big = " ".join(["PERSONALE"] * 400)
     with mock.patch.object(api_client.requests, "post", return_value=OkResp()) as m_post:
         api_client.transcribe_audio(level_vocab, fake_audio, prompt=personal_big,
@@ -2316,6 +2742,13 @@ def main() -> int:
     # numeri di composizione e dal confronto del bytecode in uso con quello
     # ricompilato dalla sorgente (sezione "bytecode in __pycache__" piu' in
     # basso). Nessuno dei due da solo basterebbe.
+    # Defect 3 — the context was thrown away WHOLE (155 characters instead of
+    # 791) and the runtime budget turned out to be 645 while the source says
+    # 644. A real defect but NOT in the source: it was in the .pyc in
+    # __pycache__, which CPython kept reusing. Here the case is blocked twice:
+    # by the composition numbers and by the comparison of the bytecode in use
+    # with the one recompiled from the source ("bytecode in __pycache__" section
+    # further below). Neither of the two alone would be enough.
     print("== difetto 155: contesto perso per intero ==")
     with mock.patch.object(api_client.requests, "post", return_value=OkResp()) as m_post, \
             mock.patch.object(api_client.logger, "warning") as m_warn:
@@ -2332,10 +2765,21 @@ def main() -> int:
     # il limite superato, svuoterebbe il contesto mandando solo 155
     # caratteri (i due blocchi fissi) con l'avviso "blocchi fissi oltre 800",
     # che con quei numeri e' fuori luogo: i blocchi fissi sono 155.
+    # The numbers are derived from the composition, not remembered: with
+    # non-empty personal and vocabulary sentence there are TWO joining spaces,
+    # and _blocks_len already counts the one between personal and vocabulary.
+    # The context budget is therefore 800 - 155 - 1 = 644, not 645: the "- 1"
+    # that remains is that of the second joining space. With a budget of 645 the
+    # final composition would be 100+1+645+1+54 = 801 and the code, seeing the
+    # limit exceeded, would empty the context sending only 155 characters (the
+    # two fixed blocks) with the warning "fixed blocks over 800", which with
+    # those numbers is out of place: the fixed blocks are 155.
     budget_contesto = api_client.PROMPT_MAX_CHARS - api_client._blocks_len(personal_100, vocab_sentence) - 1
     check("difetto 155: blocchi fissi 100+1+54", api_client._blocks_len(personal_100, vocab_sentence) == 155)
     check("difetto 155: budget del contesto == 644 (non 645)", budget_contesto == 644)
     # Un budget di 645 produrrebbe davvero 801: il numero che spiega il difetto.
+    # A budget of 645 would really produce 801: the number that explains the
+    # defect.
     check("difetto 155: con 645 la composizione sarebbe 801",
           100 + 1 + 645 + 1 + len(vocab_sentence) == 801)
     check("difetto 155: contesto NON perso interamente", len(p_155) == 791)
@@ -2348,12 +2792,19 @@ def main() -> int:
     # di 65 parole: togliendone una dalla testa si scende a 635, che ci sta;
     # rimetterla porterebbe a 645, ancora oltre il budget. Il suffisso atteso
     # e' derivato qui, non ricordato.
+    # The context sent must be the LONGEST SUFFIX of WHOLE words that fits in
+    # 644. Watch the direction: the code discards from the HEAD, so the piece
+    # that remains is the tail. `ctx_exact` (645) is made of 65 words: removing
+    # one from the head brings it down to 635, which fits; putting it back would
+    # bring it to 645, still over the budget. The expected suffix is derived
+    # here, not remembered.
     parole_attese = ctx_exact.split()
     while parole_attese and len(" ".join(parole_attese)) > budget_contesto:
         parole_attese.pop(0)
     check("difetto 155: suffisso atteso a 635 caratteri in 64 parole",
           len(" ".join(parole_attese)) == 635 and len(parole_attese) == 64)
     # "P"*100 e' UNA parola sola, non 100: si indicizza per numero di parole.
+    # "P"*100 is ONE single word, not 100: it is indexed by number of words.
     check("difetto 155: il contesto conserva tutte le parole tranne le piu' vecchie",
           " ".join(p_155.split()[len(personal_100.split()):-len(vocab_sentence.split())])
           == " ".join(parole_attese))
@@ -2361,6 +2812,10 @@ def main() -> int:
     # esattamente il bytecode che girava) deve riprodurre i 155 caratteri.
     # Serve a dimostrare che le check qui sopra falliscono davvero quando il
     # difetto c'e', e non solo che passano quando non c'e'.
+    # Counter-proof: the same case with the "- 1" neutralized to "- 0" (i.e.
+    # exactly the bytecode that was running) must reproduce the 155 characters.
+    # It serves to show that the checks above really fail when the defect is
+    # there, and not only that they pass when it is not.
     modulo_neutro = _modulo_con_budget_neutro(
         Path(api_client.__file__))
     with mock.patch.object(modulo_neutro.requests, "post", return_value=OkResp()) as m_post, \
@@ -2375,6 +2830,7 @@ def main() -> int:
           p_neutro == " ".join([personal_100, vocab_sentence]))
 
     # Parametri vuoti/whitespace: NON devono essere aggiunti a `data`.
+    # Empty/whitespace parameters: they must NOT be added to `data`.
     with mock.patch.object(api_client.requests, "post", return_value=OkResp()) as m_post:
         api_client.transcribe_audio(level2, fake_audio, language="  ", prompt="", hotwords="\t ")
         sent = m_post.call_args.kwargs["data"]
@@ -2383,6 +2839,7 @@ def main() -> int:
         check("transcribe_audio omette hotwords vuoto", "hotwords" not in sent)
 
     # Chiamata senza i nuovi parametri (retrocompatibile): nessuna chiave extra.
+    # Call without the new parameters (backward compatible): no extra key.
     with mock.patch.object(api_client.requests, "post", return_value=OkResp()) as m_post:
         api_client.transcribe_audio(level2, fake_audio)
         sent = m_post.call_args.kwargs["data"]
@@ -2392,6 +2849,9 @@ def main() -> int:
     # prompt oltre 800 caratteri: troncato a 800 conservando l'inizio ([:800]),
     # così il prompt personale istruttivo non perde la testa (policy A5,
     # coerente con build_prompt). La coda viene scartata.
+    # prompt over 800 characters: truncated to 800 keeping the start ([:800]),
+    # so the instructive personal prompt does not lose its head (policy A5,
+    # consistent with build_prompt). The tail is discarded.
     long_prompt = "A" * 100 + "B" * 800
     with mock.patch.object(api_client.requests, "post", return_value=OkResp()) as m_post:
         api_client.transcribe_audio(level2, fake_audio, prompt=long_prompt)
@@ -2412,6 +2872,14 @@ def main() -> int:
     # sorgente e' giusta e la suite passa mentre il programma perde il
     # contesto. Il .pyc va rimosso, non aggiornato a mano: il problema qui
     # e' il file, non la cache.
+    # Defect 3 — no module of the package can run with a bytecode different from
+    # that of its source. It is the check that closes the 155-character defect:
+    # the .pyc header matched (identical mtime and size, because the mutation had
+    # been undone in the same epoch second), but the compiled code inside still
+    # had the wrong budget. Without this, every test looks at the source, the
+    # source is right and the suite passes while the program loses the context.
+    # The .pyc must be removed, not updated by hand: the problem here is the
+    # file, not the cache.
     print("== bytecode in __pycache__ coerente con la sorgente ==")
     moduli = _moduli_del_pacchetto()
     check("moduli del pacchetto trovati per il controllo bytecode", len(moduli) >= 10)
@@ -2426,12 +2894,17 @@ def main() -> int:
         if not header:
             # L'header decide se CPython riusa il .pyc: se non combacia il
             # file viene rigenerato al primo import e non c'e' pericolo.
+            # The header decides whether CPython reuses the .pyc: if it does not match
+            # the file is regenerated at the first import and there is no danger.
             print(f"  INFO  {nome}: .pyc da rigenerare, header non combacia")
             continue
         if divergenze:
             # Fallisce davvero, e il messaggio porta la prova: qui si e'
             # visto il difetto dei 155 caratteri, con l'offset e le due
             # istruzioni diverse. Il .pyc va rimosso, non aggiornato a mano.
+            # It really fails, and the message carries the proof: here the 155-character
+            # defect was seen, with the offset and the two different instructions. The
+            # .pyc must be removed, not updated by hand.
             for linea in divergenze:
                 divergenti.append(f"{nome}: {linea} (rimuovere {percorso_cache})")
     for problema in divergenti:
@@ -2444,6 +2917,9 @@ def main() -> int:
         # Nessun .pyc su disco: niente da confrontare, e niente di rotto.
         # Non e' un fallimento (basta `python -B` o PYTHONDONTWRITEBYTECODE),
         # ma il controllo e' vacuo e va detto.
+        # No .pyc on disk: nothing to compare, and nothing broken. It is not a
+        # failure (`python -B` or PYTHONDONTWRITEBYTECODE is enough), but the check
+        # is vacuous and that must be said.
         print("  INFO  nessun .pyc presente: il controllo bytecode non ha nulla da confrontare")
 
     # --- config_editor get_state new fields ---
@@ -2496,6 +2972,7 @@ def main() -> int:
     check("set_stream_field paste_shortcut", config_editor.set_stream_field("paste_shortcut", "CTRL+SHIFT+V") is None)
     check("get_state/set_stream_field paste_shortcut round-trip", config_editor.get_state()["stream"]["paste_shortcut"] == "ctrl+shift+v")
 
+    # Verifica che set_section_field crei la sezione [stt] se manca
     # Test set_section_field creates [stt] section if missing
     cfg_ce2 = tmp / "config_editor_test2.toml"
     cfg_ce2.write_text(
@@ -2547,6 +3024,7 @@ def main() -> int:
         check(f"set_stream_field hotwords -> ok ({type(exc).__name__})", False)
 
     # Regressione P2: set_stream_field deve creare [stream] se assente
+    # Regression P2: set_stream_field must create [stream] if missing
     cfg_ce3 = tmp / "config_editor_test3.toml"
     cfg_ce3.write_text(
         '[general]\n'
@@ -2571,6 +3049,7 @@ def main() -> int:
         check(f"set_stream_field creates [stream] section ({type(exc).__name__})", False)
 
     # Regressione P2: valori TOML non-stringa non devono far crashare il parse
+    # Regression P2: non-string TOML values must not crash the parse
     cfg_ce4 = tmp / "config_types.toml"
     cfg_ce4.write_text(
         '[stt]\n'
@@ -2672,6 +3151,7 @@ def main() -> int:
     except config.ConfigError:
         check("blacklist overlapping with command alias rejected", True)
 
+    # Comportamento del sequencer con tombstone e scarto tramite blacklist
     # Sequencer tombstone and drop behavior with blacklist
     st_bl = {"chunks": [], "last_chunks": []}
     seq_bl = stream_module._FifoSequencer(st_bl, stream_test_cfg, lambda text: None, lambda text: None, blacklist=frozenset({"grazie"}), log_path=_TEST_CHUNK_LOG_PATH)
@@ -2683,6 +3163,7 @@ def main() -> int:
     check("blacklist dropped chunk never committed to history/notify", committed_bl == ["Primo ", "Terzo "])
     check("blacklist dropped chunk never added to last_chunks", st_bl["last_chunks"] == ["Primo", "Terzo"])
 
+    # drain_and_stop con orfano in blacklist
     # drain_and_stop with blacklisted orphan
     st_bl_drain = {"chunks": [], "last_chunks": []}
     seq_bl_drain = stream_module._FifoSequencer(st_bl_drain, stream_test_cfg, lambda text: None, lambda text: None, blacklist=frozenset({"grazie"}), log_path=_TEST_CHUNK_LOG_PATH)
@@ -2691,6 +3172,7 @@ def main() -> int:
     seq_bl_drain.drain_and_stop(2)
     check("drain_and_stop discards blacklisted orphan while advancing", st_bl_drain["chunks"] == ["Fine "])
 
+    # Difese di at_end e paste_next sulla blacklist
     # at_end and paste_next blacklist defenses
     stream_at_end_cfg = config.Config(
         notifications=False,
@@ -2751,6 +3233,7 @@ def main() -> int:
     check("set_stream_field blacklist round-trip", config_editor.get_state()["stream"]["blacklist"] == "grazie, thank you")
 
     # Regressione: paste_delay_ms propagato nello stato
+    # Regression: paste_delay_ms propagated in the state
     state_mock_start = {}
     # La sostituzione precedente era un FURTO PERMANENTE: la lambda restava
     # per tutta la suite e ogni test successivo che chiamava _write_state non
@@ -2759,6 +3242,13 @@ def main() -> int:
     # (state_mock_start non e' mai riletto). Cosi' i test che vengono dopo
     # osservano davvero il file di stato, e i miei test D/L possono misurare
     # il percorso reale invece di una simulazione che passerebbe comunque.
+    # The previous replacement was a PERMANENT THEFT: the lambda stayed for the
+    # whole suite and every later test that called _write_state no longer wrote
+    # to disk (it only read it in the in-memory dict). Removed sub afterwards,
+    # here: below there is no test that depends on the lambda (state_mock_start
+    # is never re-read). So the tests that come after really observe the state
+    # file, and my D/L tests can measure the real path instead of a simulation
+    # that would pass anyway.
     _write_state_saved = stream_mod._write_state
     stream_mod._write_state = lambda s: state_mock_start.update(s)
     sess_mock = stream_mod.StreamSession(config.Config(
@@ -2779,9 +3269,11 @@ def main() -> int:
     ))
     check("StreamSession config paste_delay_ms", sess_mock._stream.paste_delay_ms == 350)
     # Rimette la funzione vera (vedi sopra): niente piu' la sostituisce.
+    # Puts the real function back (see above): nothing replaces it any more.
     stream_mod._write_state = _write_state_saved
 
     # Regressione: supervisor timeout expired termina con kill
+    # Regression: supervisor timeout expired terminates with kill
     class _MockProcessTimeout:
         def __init__(self):
             self.killed = False
@@ -2815,6 +3307,11 @@ def main() -> int:
     # espliciti (last_failure None, age<0 orologio indietro, boundary esatto
     # al cooldown): esercitata solo indirettamente via EndpointBreaker.state()
     # finora, mai con un'asserzione diretta sui suoi limiti.
+    # --- endpoint_breaker.py: compute_state/endpoint_id, never tested directly ---
+    # compute_state is documented as a PURE function with 3 explicit edge cases
+    # (last_failure None, age<0 clock set back, exact boundary at the cooldown):
+    # so far exercised only indirectly via EndpointBreaker.state(), never with a
+    # direct assertion on its limits.
     from bravoric_stt_clipboard.endpoint_breaker import (
         CLOSED,
         HALF_OPEN,
@@ -2832,6 +3329,8 @@ def main() -> int:
           compute_state(2000.0, 1000.0, 3600.0) == CLOSED)
     # endpoint_id: normalizzazione dello slash finale, documentata esplicitamente
     # come idempotente PRIMA di endpoint_key (non due implementazioni diverse).
+    # endpoint_id: normalization of the trailing slash, explicitly documented as
+    # idempotent BEFORE endpoint_key (not two different implementations).
     check("endpoint_id: slash finale non cambia la chiave",
           endpoint_id("http://h:4001/v1/", "m") == endpoint_id("http://h:4001/v1", "m"))
     check("endpoint_id: model diverso -> chiave diversa (stesso endpoint)",
@@ -2849,6 +3348,16 @@ def main() -> int:
     # usa stream_mod._build_breaker() si scrive nel breaker REALE dell'utente
     # (~/.cache/.../endpoint_breaker.json) e un test che fallisce lascia
     # endpoint in cooldown per un'ora, facendo pendere i test successivi.
+    # --- wave 2: dispatcher (stream.py) ------------------------------------
+    # A green test can be BUGGY GREEN: in this project it has already happened
+    # (poisoned bytecode, 648 combinations waiting). Therefore the tests below
+    # are verified for NON-VACUITY with a mutation: if you invert the ordering in
+    # _Dispatcher._candidates, the test must go RED.
+    #
+    # Warning: the breaker must ALWAYS be built on a temporary path. If
+    # stream_mod._build_breaker() is used it writes into the user's REAL breaker
+    # (~/.cache/.../endpoint_breaker.json) and a failing test leaves endpoints
+    # in cooldown for an hour, making the following tests hang.
     from bravoric_stt_clipboard import stream as stream_mod
     from bravoric_stt_clipboard.config import FallbackLevel
     from bravoric_stt_clipboard.endpoint_breaker import EndpointBreaker
@@ -2870,6 +3379,10 @@ def main() -> int:
     # Tre endpoint paralleli tutti LIBERI e a parita' di carico: vince quello
     # libero da piu' tempo, non il primo in config. Con l'ordinamento
     # invertito questo asserisce False -> il test e' sensibile alla mutazione.
+    # --- least-busy with longest-waiting: NOT the first of the list ----------
+    # Three parallel endpoints, all FREE and at equal load: the one free for the
+    # longest wins, not the first in config. With the ordering inverted this
+    # asserts False -> the test is sensitive to the mutation.
     la = _lvl("LA")
     lb = _lvl("LB")
     lc = _lvl("LC")
@@ -2877,6 +3390,8 @@ def main() -> int:
     ka, kb, kc = _key(la), _key(lb), _key(lc)
     # A e B sono liberi da 100s, C da 0: vince A (il piu' affamato), non C
     # (che e' l'ultimo della lista) ne il primo-per-config casuale.
+    # A and B have been free for 100 s, C for 0: A wins (the most starved), not C
+    # (which is the last of the list) nor the random first-by-config.
     disp._free_since[ka] = time.time() - 100
     disp._free_since[kb] = time.time() - 100
     disp._free_since[kc] = time.time()
@@ -2888,6 +3403,8 @@ def main() -> int:
 
     # Least-busy ha la precedenza sul longest-waiting: A ha 1 slot libero (carico
     # 1) e B 2 slot liberi (carico 0) -> vince B anche se B e' "meno affamato".
+    # Least-busy takes precedence over longest-waiting: A has 1 free slot (load
+    # 1) and B 2 free slots (load 0) -> B wins even if B is "less starved".
     disp2 = stream_mod._Dispatcher([la, lb], _tmp_breaker())
     disp2._free_since[ka] = time.time() - 100
     disp2._free_since[kb] = time.time()
@@ -2899,6 +3416,8 @@ def main() -> int:
 
     # La capienza dichiarata e' un vincolo reale: B con 1 slot non regge 2
     # richieste contemporanee, quindi il terzo acquire non puo' passare.
+    # The declared capacity is a real constraint: B with 1 slot cannot hold 2
+    # simultaneous requests, so the third acquire cannot pass.
     small = _lvl("SMALL", slots=1)
     disp3 = stream_mod._Dispatcher([small], _tmp_breaker())
     held_level, held_key = disp3.acquire([small])
@@ -2915,6 +3434,7 @@ def main() -> int:
     check("dispatcher nessuno slot perso dopo il ciclo", disp3._free[_key(small)] == 1)
 
     # Un endpoint in cooldown non e' eleggibile e non ha slot.
+    # An endpoint in cooldown is not eligible and has no slot.
     cooled = _lvl("COOLED")
     disp4 = stream_mod._Dispatcher([cooled, small], _tmp_breaker())
     disp4._breaker.record_failure(_key(cooled))
@@ -2922,6 +3442,7 @@ def main() -> int:
           _key(cooled) not in disp4._candidates(time.time()))
 
     # --- N_parallel == 0: percorso sequenziale identico --------------------
+    # --- N_parallel == 0: identical sequential path --------------------
     seq1 = _lvl("S1", parallel=False)
     seq2 = _lvl("S2", parallel=False)
     disp5 = stream_mod._Dispatcher([seq1, seq2], _tmp_breaker())
@@ -2947,7 +3468,7 @@ def main() -> int:
         )
         q = queue.Queue()
         sem = threading.BoundedSemaphore(3)
-        sem.acquire()  # il supervisor acquisisce prima di submit
+        sem.acquire()  # il supervisor acquisisce prima di submit | the supervisor acquires before submit
         stream_mod._worker(0, _wav(), None, stream=_SeqStream(), sem=sem,
                            result_queue=q)
         res = q.get_nowait()
@@ -2958,9 +3479,14 @@ def main() -> int:
         stream_mod._transcribe = saved_transcribe
 
     # --- retry una volta per livello, senza ping-pong ----------------------
+    # --- retry once per level, without ping-pong ----------------------
     def _run_parallel(levels, behaviour):
         """Esegue _worker sul percorso parallelo e restituisce
-        (risultato, livelli tentati, dispatcher, semaforo bilanciato)."""
+        (risultato, livelli tentati, dispatcher, semaforo bilanciato).
+
+        Runs _worker on the parallel path and returns
+        (result, levels tried, dispatcher, balanced semaphore).
+        """
         st = type("S", (), {"language": "it", "prompt": "", "hotwords": "",
                             "fallback": levels})()
         tried: list[str] = []
@@ -3007,6 +3533,7 @@ def main() -> int:
           all(d._free[_key(lv)] == lv.max_concurrency for lv in (bad, good)))
 
     # Tre endpoint tutti rotti: ogniuno una volta, e si chiude il loop.
+    # Three endpoints all broken: each one once, and the loop ends.
     third = _lvl("THIRD")
     res, tried, d, balanced = _run_parallel(
         [bad, good, third],
@@ -3029,6 +3556,20 @@ def main() -> int:
     # Qui si MISURA il picco di richieste contemporanee per CHIAVE endpoint
     # mentre N worker girano in parallelo sulla catena sequenziale. Il
     # soggetto e' il gate REALE: il tetto dichiarato deve valere.
+    # ==================================================================
+    # TEMA2 ITEM 1: the per-endpoint-key gate in the SEQUENTIAL path.
+    #
+    # The measured defect (TEMA2 V1): the per-endpoint semaphore existed only
+    # inside _Dispatcher, and the dispatcher is built only in
+    # dispatch == "parallel". In sequential `max_concurrency` constrained NO
+    # request: with max_concurrent_chunks = 6 and max_concurrency = 1 declared,
+    # 6 workers sent 6 SIMULTANEOUS requests to the same endpoint. The case did
+    # not require `parallel`: dispatch_mode "sequential", or "auto" with zero
+    # parallel levels, was enough.
+    #
+    # Here the peak of simultaneous requests per endpoint KEY is MEASURED while
+    # N workers run in parallel on the sequential chain. The subject is the REAL
+    # gate: the declared cap must hold.
     print("== gate per endpoint in sequenziale (TEMA2 voce 1) ==")
 
     def _picco_sequenziale(levels, workers):
@@ -3040,6 +3581,15 @@ def main() -> int:
         trattenere, non all'avvio del worker. I worker sono lanciati insieme
         e ogni richiesta dura 50 ms, cosi' l'overlap e' reale: il picco non
         dipende dalla fortuna dello scheduler.
+
+        Launches `workers` workers on the sequential chain and returns the peak of
+        simultaneous requests per endpoint KEY.
+
+        The peak is counted inside _transcribe, which is the point where the HTTP
+        request is really in flight: it is there that the gate must hold back, not
+        at the worker's start. The workers are launched together and every request
+        lasts 50 ms, so the overlap is real: the peak does not depend on the
+        scheduler's luck.
         """
         st = type("S", (), {"language": "it", "prompt": "", "hotwords": "",
                             "fallback": levels})()
@@ -3069,6 +3619,13 @@ def main() -> int:
         # pre-acquisisce una volta sola e se ne rilasciano quattro, il
         # BoundedSemaphore esplode con "released too many times" e il test
         # misurerebbe l'harness invece del gate. Uno slot per thread, quindi.
+        # The SUPERVISOR's semaphore is a BoundedSemaphore(workers) and every worker
+        # ACQUIRES one and releases ONE in the finally, as the supervisor does before
+        # each submit. The balancing must be redone here because the workers start
+        # directly, not from the executor: if one pre-acquires once only and releases
+        # four, the BoundedSemaphore explodes with "released too many times" and the
+        # test would measure the harness instead of the gate. One slot per thread,
+        # therefore.
         sem = threading.BoundedSemaphore(workers)
         try:
             stream_mod._transcribe = _fake
@@ -3097,6 +3654,8 @@ def main() -> int:
 
     # Un solo endpoint con max_concurrency = 1, 4 worker: il picco DEVE
     # essere 1. Senza il gate sarebbe 4, che e' esattamente il difetto.
+    # A single endpoint with max_concurrency = 1, 4 workers: the peak MUST be 1.
+    # Without the gate it would be 4, which is exactly the defect.
     uno = _lvl("SOLO", parallel=False, slots=1)
     peak, finiti = _picco_sequenziale([uno], workers=4)
     check("gate sequenziale: max_concurrency = 1 tiene il picco a 1 richiesta",
@@ -3107,6 +3666,9 @@ def main() -> int:
     # Con 2 slot dichiarati il picco sale a 2 e NON oltre: il gate e' una
     # capienza, non un divieto. Un tetto che bloccasse tutto sarebbe un
     # falso verde di peggior specie.
+    # With 2 declared slots the peak rises to 2 and NOT beyond: the gate is a
+    # capacity, not a ban. A cap that blocked everything would be a false green
+    # of the worst kind.
     due = _lvl("DUE", parallel=False, slots=2)
     peak2, finiti2 = _picco_sequenziale([due], workers=5)
     check("gate sequenziale: max_concurrency = 2 lascia passare 2, non 5",
@@ -3115,6 +3677,9 @@ def main() -> int:
     # Due endpoint DISTINTI: i due limiti sono indipendenti, ciascuno al suo
     # tetto. Serve a prendere la chiave sbagliata (per livello invece che per
     # endpoint): con due livelli diversi la somma sarebbe 4.
+    # Two DISTINCT endpoints: the two limits are independent, each at its own
+    # cap. It serves to catch the wrong key (per level instead of per endpoint):
+    # with two different levels the sum would be 4.
     x1 = _lvl("X1", parallel=False, slots=1)
     x2 = _lvl("X2", parallel=False, slots=1)
     gate2 = stream_mod._EndpointGate([x1, x2])
@@ -3122,6 +3687,8 @@ def main() -> int:
           len(gate2) == 2 and _key(x1) != _key(x2))
     # Stesso endpoint dichiarato in due livelli (endpoint+modello identici):
     # una sola chiave, quindi una sola capienza condivisa.
+    # Same endpoint declared in two levels (identical endpoint+model): a single
+    # key, hence a single shared capacity.
     twin_a = _lvl("TWIN", parallel=False, slots=1)
     twin_b = FallbackLevel("TWIN2", twin_a.endpoint, "m", "", "", "", 60,
                            False, False, 1)
@@ -3132,6 +3699,9 @@ def main() -> int:
     # Il gate COSTRUITO su TUTTI i livelli, non solo sui checked: un livello
     # con parallel = false deve avere comunque la sua capienza, altrimenti
     # il gate non lo limiterebbe proprio dove serve.
+    # The gate BUILT on ALL the levels, not only on the checked ones: a level
+    # with parallel = false must still have its capacity, otherwise the gate
+    # would not limit it exactly where it is needed.
     gate4 = stream_mod._EndpointGate([_lvl("CHK", parallel=True, slots=1),
                                       _lvl("NOCHK", parallel=False, slots=1)])
     check("gate: costruito anche sui livelli non checked",
@@ -3141,6 +3711,10 @@ def main() -> int:
     # perso e' un endpoint saturo per sempre e la catena si blocca sul primo
     # livello: il difetto si vede solo al tentativo successivo, quindi il
     # test lo forza con una seconda chiamata dopo l'eccezione.
+    # ALWAYS release: if the attempt raises, the slot must come back. A lost slot
+    # is an endpoint saturated forever and the chain blocks on the first level:
+    # the defect only shows at the next attempt, so the test forces it with a
+    # second call after the exception.
     gate5 = stream_mod._EndpointGate([_lvl("REL", parallel=False, slots=1)])
     def _solleva():
         gate5.call(uno, lambda: (_ for _ in ()).throw(RuntimeError("boom")))
@@ -3151,6 +3725,9 @@ def main() -> int:
     # Se il rilascio non c'e' stato, questa seconda chiamata si blocca per
     # sempre: il test deve poter fallire per timeout, non per assenza di
     # eccezione. Il tentativo di ripresa prova il percorso reale.
+    # If the release did not happen, this second call blocks forever: the test
+    # must be able to fail by timeout, not by the absence of an exception. The
+    # resume attempt tries the real path.
     try:
         gate5.call(uno, lambda: "ok")
         recuperato = True
@@ -3171,7 +3748,16 @@ def main() -> int:
         _worker e _build_breaker, quindi il test copre davvero il percorso.
         Il dizionario e' annotato `dict[str, Any]`: senza, lo splat deduce
         un'unione eterogenea (str | float | list) e pyright (basic, include
-        "scripts") rifiuta `mode: Literal[...]`."""
+        "scripts") rifiuta `mode: Literal[...]`.
+
+        StreamConfig with dispatch_mode already applied, or MISSING KEY (default
+        "auto") when dispatch_mode is None. `_resolve_dispatch` reads the
+        dataclass, not the TOML: it is the same identity that _worker and
+        _build_breaker see, so the test really covers the path. The dictionary is
+        annotated `dict[str, Any]`: without it, the splat infers a heterogeneous
+        union (str | float | list) and pyright (basic, includes "scripts")
+        rejects `mode: Literal[...]`.
+        """
         base: dict[str, Any] = dict(mode="per_chunk", silence_seconds=0.7,
                                     noise_db=-30.0, min_utterance_seconds=0.4,
                                     max_utterance_seconds=30.0,
@@ -3182,6 +3768,8 @@ def main() -> int:
         if dispatch_mode is None:
             # dispatch_mode assente: si rimuove il campo per esercitare il
             # default reale del dataclass invece di passare "auto" esplicito.
+            # dispatch_mode missing: the field is removed to exercise the dataclass's
+            # real default instead of passing an explicit "auto".
             object.__setattr__(sc, "dispatch_mode", cfg_mod.StreamConfig.dispatch_mode)
         else:
             object.__setattr__(sc, "dispatch_mode", dispatch_mode)
@@ -3205,6 +3793,13 @@ def main() -> int:
     # Qui A SOLLEVAMO: in parallelo gli altri livelli sono IRRAGGUNGIBILI
     # (A1) e si chiude con AllLevelsFailedError; in sequenziale la catena
     # prosegue su B e C. Solo il toggle acceso produce [A, B, C].
+    # --- T2: SEQUENTIAL + A checked + A that RAISES -> full chain ----
+    # THE test that tells the toggle apart. The variant "A that works ->
+    # seen==[A]" is BUGGY-GREEN: it passes EQUALLY with the toggle on and off,
+    # because the sequential branch and the parallel branch both call A first.
+    # Here A RAISES: in parallel the other levels are UNREACHABLE (A1) and it
+    # ends with AllLevelsFailedError; in sequential the chain goes on to B and
+    # C. Only the toggle on produces [A, B, C].
     from bravoric_stt_clipboard.api_client import ApiError as _ApiError
 
     def _run_worker_dispatch(levels, behaviour, dispatcher=None, dispatch_mode=None):
@@ -3234,6 +3829,10 @@ def main() -> int:
     # seen == [A, B] e res.success True. Il punto che distingue il toggle e'
     # che B e C VENGONO CHIAMATI: in parallelo con solo A checked sono
     # irraggiungibili (A1) e `seen` resta ["A"] con success False.
+    # In sequential a broken A makes the chain go on to B, which answers:
+    # seen == [A, B] and res.success True. The point that tells the toggle apart
+    # is that B and C ARE CALLED: in parallel with only A checked they are
+    # unreachable (A1) and `seen` stays ["A"] with success False.
     res, seen, bal = _run_worker_dispatch(
         [a_p, b_s, c_s],
         lambda lv: (_ for _ in ()).throw(_ApiError("A rotto")) if lv.name == "A" else f"da {lv.name}",
@@ -3252,6 +3851,14 @@ def main() -> int:
     # acceso e uno per quello spento, quindi VERDI-BUGGATI, e non
     # presidierebbero piu' niente. Il discriminante che resta dopo il ripiego
     # e' ordine e concorrenza, ed e' verificato in coda al file.
+    # The OTHER arm of T2 (the counter-proof with the "auto" toggle) and all of
+    # T3 are at the BOTTOM of the file, where the toggle is rebuilt: here the
+    # historical comment "in auto it must stop at A" is NO LONGER true, because
+    # with the auto fallback it also reaches B and C. Updating the numbers here
+    # by hand (seen == ["A","B"]) would produce two IDENTICAL tests: one for the
+    # toggle on and one for the toggle off, hence BUGGY-GREEN, and they would no
+    # longer guard anything. The discriminant that remains after the fallback is
+    # order and concurrency, and it is verified at the end of the file.
 
     # --- T4: auto + zero checked -> dispatcher inattivo, sequenziale -------
     st_auto0 = _stream_cfg(levels=no_check)
@@ -3270,6 +3877,10 @@ def main() -> int:
     # Il breaker REALE non deve ne' essere costruito ne' scrivere su disco:
     # tutte le chiamate breaker.state/acquire/release stanno dentro
     # _Dispatcher, quindi in sequenziale non deve accadere nessuna.
+    # --- T5: SEQUENTIAL -> no call to the breaker, _NullBreaker ------
+    # The REAL breaker must neither be built nor write to disk: all the
+    # breaker.state/acquire/release calls are inside _Dispatcher, so in
+    # sequential none must happen.
     calls: list[str] = []
     st_seq = _stream_cfg(dispatch_mode="sequential", levels=[a_p, b_s, c_s])
     brk = stream_mod._build_breaker(st_seq, stream_mod._resolve_dispatch(st_seq))
@@ -3287,11 +3898,14 @@ def main() -> int:
     check("T5 SEQUENZIALE: nessuna chiamata a breaker.acquire/record_failure/release",
           calls == [])
     # e il ramo sequenziale produce comunque testo: A rotta, B va bene.
+    # and the sequential branch produces text anyway: A broken, B works.
     check("T5 SEQUENZIALE: A rotto -> B risponde, catena intatta",
           res.success and res.text == "da B")
 
     # Cooldown 0: breaker disabilitato per scelta, resta _NullBreaker anche
     # in auto con livelli paralleli (nessun file su disco).
+    # Cooldown 0: breaker disabled by choice, _NullBreaker stays even in auto
+    # with parallel levels (no file on disk).
     st_c0 = _stream_cfg(levels=[a_p], endpoint_cooldown_seconds=0.0)
     check("T5 auto + cooldown 0 -> ancora _NullBreaker",
           isinstance(stream_mod._build_breaker(st_c0, "parallel"),
@@ -3301,13 +3915,17 @@ def main() -> int:
     # Per ogni N di livelli misti, con dispatch_mode assente la decisione deve
     # essere esattamente quella di prima: parallelo se e solo se c'e' almeno un
     # checked. E' la rete di sicurezza della retrocompatibilita'.
+    # --- T6: FUZZ — dispatch_mode MISSING = pre-refactor behavior ------
+    # For every N of mixed levels, with dispatch_mode missing the decision must
+    # be exactly the one from before: parallel if and only if there is at least
+    # one checked. It is the safety net of backward compatibility.
     import itertools as _it
     seed = 0
     mismatches = []
     for n in range(1, 5):
         for combo in _it.product([True, False], repeat=n):
             if n >= 4 and sum(combo) not in (0, 1, n):
-                continue  # campiona le combinazioni estreme (0, 1, tutti)
+                continue  # campiona le combinazioni estreme (0, 1, tutti) | samples the extreme combinations (0, 1, all)
             lv = [_lvl(f"FZ{i}") for i in range(n)]
             lv = [cast(Any, type(l)(l.name, l.endpoint, l.model, l.api_key_env,
                                     l.api_key, l.ca_cert, l.timeout_seconds,
@@ -3323,6 +3941,8 @@ def main() -> int:
           not mismatches)
     # E il punto di consumo: _worker con dispatch_mode assente e zero checked
     # resta sul ramo sequenziale identico a oggi.
+    # And the consumption point: _worker with dispatch_mode missing and zero
+    # checked stays on the sequential branch identical to today.
     res, seen, bal = _run_worker_dispatch(no_check, lambda lv: f"da {lv.name}",
                                           dispatch_mode=None)
     check("T6 dispatch_mode assente + zero checked -> sequenziale su [B]",
@@ -3338,6 +3958,9 @@ def main() -> int:
     # ==================================================================
     # BRIEF-TIMEOUT-PERLIVELLO: level.timeout_seconds e' l'UNICO timeout
     # della richiesta HTTP. Tutto sotto mock, mai con rete.
+    # ==================================================================
+    # BRIEF-TIMEOUT-PERLIVELLO: level.timeout_seconds is the ONLY timeout of the
+    # HTTP request. All under mock, never with network.
     print("== timeout per-livello ==")
     import requests as _rq
     from bravoric_stt_clipboard.config import FallbackLevel as _FL
@@ -3374,6 +3997,8 @@ def main() -> int:
 
     # 1. Il timeout per-livello ARRIVA DAVVERO a requests.post. Prima
     #    l'override stream (30s di default) vinceva sempre: 5 era codice morto.
+    # 1. The per-level timeout REALLY ARRIVES at requests.post. Before, the
+    #    stream override (30 s by default) always won: 5 was dead code.
     got, err = _probe(5)
     check("timeout per-livello arriva a requests.post", got == 5.0 and err is None)
     got, err = _probe(120)
@@ -3382,6 +4007,9 @@ def main() -> int:
     # 2. Con timeout per-livello 5s, una richiesta che "impiega" 8s deve
     #    sollevare il timeout. Il fake simula il comportamento di requests:
     #    solleva ReadTimeout se l'attesa supera il timeout ricevuto.
+    # 2. With a per-level timeout of 5 s, a request that "takes" 8 s must raise
+    #    the timeout. The fake simulates the behavior of requests: it raises
+    #    ReadTimeout if the wait exceeds the timeout received.
     def _slow_8s(url, headers=None, files=None, data=None, timeout=None, verify=None):
         if timeout is None or float(timeout) < 8.0:
             raise _rq.exceptions.ReadTimeout(f"timeout di {timeout}s scaduto, serviva 8s")
@@ -3391,11 +4019,14 @@ def main() -> int:
           isinstance(err, _ac.ApiError) and "8s" in str(err))
     # Con 30s la stessa richiesta va a buon fine: prova che il test morda
     # davvero sul valore e non su un qualunque errore di rete.
+    # With 30 s the same request succeeds: it proves that the test really bites
+    # on the value and not on any network error.
     got, err = _probe(30, side_effect=_slow_8s)
     check("30s + richiesta da 8s -> va a buon fine (il test discrimina)",
           err is None and got == 30.0)
 
     # 3. Non finito o <= 0 ricadono su 30.0 (difesa di transcribe_audio).
+    # 3. Non-finite or <= 0 fall back on 30.0 (transcribe_audio's defense).
     for bad_val, label in ((0, "zero"), (-3, "negativo"), (float("inf"), "inf"),
                            (None, "None"), ("boh", "malformato")):
         got, err = _probe(bad_val)
@@ -3403,6 +4034,7 @@ def main() -> int:
     check("timeout per-livello nan -> 30.0", _probe(float("nan"))[0] == 30.0)
 
     # 4. Vale anche via Session, non solo sul modulo requests.
+    # 4. It also holds via Session, not only on the requests module.
     class _Sess:
         def __init__(self):
             self.got = None
@@ -3415,6 +4047,7 @@ def main() -> int:
     check("timeout per-livello vale anche su Session", s.got == 7.0)
 
     # 5. Non esiste piu' alcun override: la firma non lo offre piu'.
+    # 5. There is no override any more: the signature no longer offers it.
     import inspect as _insp
     check("transcribe_audio non ha piu' timeout_override",
           "timeout_override" not in _insp.signature(_ac.transcribe_audio).parameters)
@@ -3425,6 +4058,8 @@ def main() -> int:
 
     # 6. Il percorso di stream non re-introduce l'override: _transcribe passa
     #    il timeout solo implicito dal livello.
+    # 6. The stream path does not re-introduce the override: _transcribe passes
+    #    the timeout only implicitly from the level.
     cap_s = _Sess()
     st_stream = type("S", (), {"language": "it", "prompt": "", "hotwords": "",
                                "fallback": [], "chunk_timeout_seconds": 30.0,
@@ -3435,6 +4070,7 @@ def main() -> int:
           cap_s.got == 5.0)
 
     # 7. Budget di stop: la SOMMA dei timeout per-livello, non un unico valore.
+    # 7. Stop budget: the SUM of the per-level timeouts, not a single value.
     check("budget stop: 3 livelli da 5s -> >= 30s",
           _stop_drain_budget(_Lv(5, 5, 5)) >= 30.0)
     check("budget stop: 3 livelli da 40s -> >= 135s",
@@ -3446,6 +4082,10 @@ def main() -> int:
     #    esistono, sono 128x128 sRGBA e sono i default dei due slot nuovi.
     #    Le dimensioni/alpha si leggono dall'intestazione PNG con struct: il
     #    progetto non dipende da Pillow ne' da ImageMagick.
+    # 8. The two missing icons (stream_session_start, error_general): the PNGs
+    #    exist, are 128x128 sRGBA and are the defaults of the two new slots. The
+    #    dimensions/alpha are read from the PNG header with struct: the project
+    #    depends neither on Pillow nor on ImageMagick.
     def _png_size_has_alpha(path: Path) -> bool:
         raw = path.read_bytes()
         if raw[:8] != b"\x89PNG\r\n\x1a\n" or raw[12:16] != b"IHDR":
@@ -3474,6 +4114,8 @@ def main() -> int:
 
     # 9. Nessuna regressione sui 6 slot storici: devono continuare a
     #    risolvere ai packaged asset di sempre, non alle icone a tema.
+    # 9. No regression on the 6 historical slots: they must keep resolving to the
+    #    packaged assets as always, not to the theme icons.
     legacy = {
         "stt_start": "mic-neutral.png", "stt_raw": "mic-wood.png",
         "stt_clean": "mic-cyberpunk.png", "ocr_start": "camera-neutral.png",
@@ -3485,6 +4127,8 @@ def main() -> int:
 
     # 10. L'override utente vince ancora sul default appena installato,
     #     anche per i due slot nuovi.
+    # 10. The user override still wins over the just-installed default, also for
+    #     the two new slots.
     with tempfile.TemporaryDirectory() as td:
         tmp = Path(td)
         user_override = tmp / "mia-icona.png"
@@ -3503,9 +4147,18 @@ def main() -> int:
     #     GUI dice "fino a 1 worker" mentre il backend calcola 3xN. La regola e'
     #     quella di StreamConfig.max_concurrent_chunks_auto: 0 o assente = AUTO,
     #     1..8 = esplicito, 9+ clampato a 8 (quindi esplicito, non auto).
+    # 11. Defect C (round 1): get_state() must emit max_concurrent_chunks_auto
+    #     with the SAME rule as config.py, otherwise the GUI note "the cap is
+    #     automatic" never appears and with cap=0 the GUI says "up to 1 worker"
+    #     while the backend computes 3xN. The rule is that of
+    #     StreamConfig.max_concurrent_chunks_auto: 0 or missing = AUTO, 1..8 =
+    #     explicit, 9+ clamped to 8 (hence explicit, not auto).
     print("== difetto C: max_concurrent_chunks_auto emesso da get_state ==")
     # Directory propria: `tmp` piu' sopra e' stato riassociato dentro un
     # `with tempfile.TemporaryDirectory()` gia' uscito, quindi non esiste piu'.
+    # Own directory: the `tmp` above was rebound inside a
+    # `with tempfile.TemporaryDirectory()` that has already exited, so it no
+    # longer exists.
     giro1_tmp = Path(tempfile.mkdtemp(prefix="brv-giro1-"))
     for label, body, want_auto, want_cfg_auto in [
         ("chiave assente = AUTO", "[stream]\nmode = \"per_chunk\"\n", True, True),
@@ -3522,6 +4175,7 @@ def main() -> int:
               "max_concurrent_chunks_auto" in auto_state
               and auto_state["max_concurrent_chunks_auto"] is want_auto)
         # Coerenza con la regola vera: config.py sullo stesso file.
+        # Consistency with the real rule: config.py on the same file.
         backend_cfg = config.load_config(auto_path)
         check(f"il flag coincide con config.py ({label})",
               backend_cfg.stream.max_concurrent_chunks_auto is want_cfg_auto
@@ -3530,6 +4184,9 @@ def main() -> int:
     # 12. Difetto B (giro 1): `inf` e' un float TOML legittimo e int(inf)
     #     solleva OverflowError, che NON e' una ValueError: sfuggiva come
     #     traceback grezzo invece di ConfigError. Misurato su 6 campi.
+    # 12. Defect B (round 1): `inf` is a legitimate TOML float and int(inf)
+    #     raises OverflowError, which is NOT a ValueError: it escaped as a raw
+    #     traceback instead of ConfigError. Measured on 6 fields.
     print("== difetto B: OverflowError non sfugge piu' ==")
     inf_cases = [
         ("stream.max_concurrent_chunks", "[stream]\nmax_concurrent_chunks = inf\n"),
@@ -3550,6 +4207,7 @@ def main() -> int:
         except Exception as exc:  # noqa: BLE001 - la fuga e' il difetto
             check(f"inf non sfugge come {type(exc).__name__} ({label})", False)
     # -inf e nan restano tollerati: non devono diventare errori nuovi.
+    # -inf and nan stay tolerated: they must not become new errors.
     for label, body in [("-inf", "[stream]\nmax_concurrent_chunks = -inf\n"),
                         ("nan", "[stream]\nmax_concurrent_chunks = nan\n")]:
         nan_path = giro1_tmp / f"nan_{abs(hash(label))}.toml"
@@ -3565,8 +4223,12 @@ def main() -> int:
     #     budget faceva cadere il fallback sul taglio dalla TESTA della frase
     #     intera, restituendo solo 'sono nomi proprio.' — cornice mozzata e 782
     #     caratteri sprecati su 800. Ora la cornice si tiene sempre.
+    # 13. Defect O (round 1): a single term without spaces longer than the budget
+    #     made the fallback cut from the HEAD of the whole sentence, returning
+    #     only 'sono nomi proprio.' — chopped frame and 782 characters wasted out
+    #     of 800. Now the frame is always kept.
     print("== difetto O: la cornice del vocabolario regge ==")
-    long_single = "Parola" * 400          # 2400 caratteri, un solo "termine"
+    long_single = "Parola" * 400          # 2400 caratteri, un solo "termine" | 2400 characters, a single "term"
     vocab_long = api_client._build_vocabulary_prompt("", "", long_single, api_client.PROMPT_MAX_CHARS)
     check("termine unico enorme: la cornice resta intera",
           vocab_long.startswith(api_client._VOCAB_HEAD)
@@ -3577,11 +4239,15 @@ def main() -> int:
           len(vocab_long) <= api_client.PROMPT_MAX_CHARS)
     # La banda sotto la cornice non puo' stare intera: nessuna regressione
     # peggiore di prima (prima restituiva un frammento di coda).
+    # The band below the frame cannot fit whole: no regression worse than before
+    # (before it returned a tail fragment).
     below = api_client._vocabulary_sentence("Roma", 18)
     check("budget sotto la cornice: niente stringa vuota",
           isinstance(below, str) and len(below) <= 18)
     # Il riflesso 21b344eb8954 resta: con personale pieno la testa del prompt
     # personale non viene sacrificata per il vocabolario.
+    # The reflex 21b344eb8954 stays: with a full personal prompt the head of the
+    # personal prompt is not sacrificed for the vocabulary.
     personal_keep = api_client._build_vocabulary_prompt("PERSONALE", "", long_single, api_client.PROMPT_MAX_CHARS)
     check("riflesso 21b344eb8954: il prompt personale resta intatto",
           personal_keep.startswith("PERSONALE"))
@@ -3592,12 +4258,22 @@ def main() -> int:
     #     dal supervisore nella finestra veniva sovrascritto. Misurato prima
     #     della correzione: 1 chunk PERSO con un commit a 10ms su finestra di
     #     250ms. Qui la finestra e' riprodotta davvero (thread + sleep).
+    # 14. Defect D (round 1): paste_next() reads the WHOLE state, sleeps
+    #     paste_delay_ms and rewrites the WHOLE state. _write_state() merged only
+    #     next_chunk_index/last_paste_at, NOT chunks: a chunk committed by the
+    #     supervisor in the window was overwritten. Measured before the fix: 1
+    #     chunk LOST with a commit at 10 ms on a 250 ms window. Here the window
+    #     is really reproduced (thread + sleep).
     print("== difetto D: il chunk committato nella finestra non viene perso ==")
     from bravoric_stt_clipboard import stream as stream_module
     # Il furto permanente di _write_state (lambda, senza ripristino) e' stato
     # rimosso alla fonte: senza, questo blocco scriverebbe e rileggerebbe lo
     # stesso dict in memoria e passerebbe VERDE anche senza la correzione D,
     # cioe' non presidierebbe niente. Qui si usa il percorso REALE su disco.
+    # The permanent theft of _write_state (lambda, without restore) was removed
+    # at the source: without that, this block would write and re-read the same
+    # in-memory dict and would pass GREEN even without fix D, i.e. it would guard
+    # nothing. Here the REAL path on disk is used.
     if getattr(stream_module._write_state, "__name__", "").startswith("<lambda>"):
         check("presidio D non vacuo: _write_state non e' piu' la lambda di un altro test", False)
     stream_state_saved = stream_module.STREAM_STATE_PATH
@@ -3624,6 +4300,7 @@ def main() -> int:
         paste_next_fn = stream_module.StreamSession.paste_next.__get__(sess)
 
         # last_paste_at = adesso APRE la finestra di pacing da 250ms.
+        # last_paste_at = now OPENS the 250 ms pacing window.
         stream_module._write_state({
             "session_id": "giro1", "active": True, "mode": "per_chunk",
             "chunks": ["PRIMO"], "next_chunk_index": 0,
@@ -3635,6 +4312,7 @@ def main() -> int:
 
         def _commit_inside_window() -> None:
             # 10ms: dentro la finestra di 250ms di paste_next.
+            # 10 ms: inside paste_next's 250 ms window.
             time.sleep(0.010)
             supervisor_state.setdefault("chunks", []).append("SECONDO-COMMITTATO")
             stream_module._write_state(supervisor_state)
@@ -3655,6 +4333,9 @@ def main() -> int:
         # Difetto L: la clipboard e' l'unica chiamata a processo esterno rimasta
         # fuori dal try. Con wl-copy assente l'eccezione usciva da paste_next
         # e il chunk non veniva mai incollato.
+        # Defect L: the clipboard is the only call to an external process left
+        # outside the try. With wl-copy missing the exception left paste_next and
+        # the chunk was never pasted.
         class _BrokenClipboard:
             def write_text(self, text: str, tool: str, timeout: float = 5.0) -> None:
                 raise FileNotFoundError(2, "No such file or directory: 'wl-copy'")
@@ -3686,6 +4367,12 @@ def main() -> int:
     #     con O_EXCL. Presidiato qui sul comportamento osservabile: piu'
     #     salvataggi nello stesso secondo danno file distinti e nessuna
     #     sovrascrittura, e i file preesistenti non vengono toccati.
+    # 15. Defect N (round 1): the scout's premise was false (storage.py has no
+    #     open()), but a real TOCTOU window remained: exists() and write_bytes()
+    #     are not atomic, so two processes in the same millisecond could choose
+    #     the same name. Now the creation is with O_EXCL. Guarded here on the
+    #     observable behavior: several saves in the same second give distinct
+    #     files and no overwrite, and pre-existing files are not touched.
     print("== difetto N: nomi distinti e nessuna sovrascrittura ==")
     n_dir = giro1_tmp / "storageN"
     n_pol = config.RetentionPolicy(enabled=True, retention_hours=0)
@@ -3708,6 +4395,12 @@ def main() -> int:
     # atomica del file: O_EXCL fa fallire os.open se il nome e' gia' preso,
     # mentre exists()+write_bytes() e' una finestra non atomica. Qui si
     # verifica il meccanismo, non l'intento.
+    # The proof above does NOT tell the two implementations apart (it also
+    # passes with the old while path.exists() + write_bytes: that is precisely
+    # the scout's false premise). The real guard of the TOCTOU is on the atomic
+    # creation of the file: O_EXCL makes os.open fail if the name is already
+    # taken, while exists()+write_bytes() is a non-atomic window. Here the
+    # mechanism is verified, not the intent.
     import inspect as _inspect
     storage_src = _inspect.getsource(storage.save_if_enabled)
     check("storage crea il file in modo atomico (O_EXCL, niente finestra exists->write)",
@@ -3719,6 +4412,10 @@ def main() -> int:
     # prosegue con il successivo invece di sollevare. Con il vecchio
     # while path.exists() il risultato e' lo stesso, qui: e' il controllo
     # statico sopra a presidiare il meccanismo atomico.
+    # Direct-proof behavior: if the name is already taken, the function goes on
+    # to the next one instead of raising. With the old while path.exists() the
+    # result is the same, here: it is the static check above that guards the
+    # atomic mechanism.
     n_dir2 = giro1_tmp / "storageN2"
     ts_n = time.strftime("%Y-%m-%dT%H-%M-%S")
     (n_dir2 / "sub").mkdir(parents=True, exist_ok=True)
@@ -3740,12 +4437,28 @@ def main() -> int:
     # Il confronto con il comportamento pre-correzione e' reale: senza (b)
     # questa funzione scriveva i 10 byte e lasciava il file (misurato dal
     # reviewer con lo stesso trucco, e verificato qui con l'assert su 0 file).
+    # --- B3 (round 4): archive file TRUNCATED under the final name ---------
+    # With O_EXCL the fd serves to reserve the name, but the content still went
+    # to the final file: an ENOSPC halfway wrote leaving on disk a PARTIAL file
+    # under the final timestamped name, which the user believed complete and
+    # which with retention_hours=0 (immediate return in _purge_expired) would
+    # never have been cleaned up.
+    # The test has TWO faces so as not to be a test of a detail:
+    #   (a) the exception keeps propagating to the caller (unchanged
+    #       semantics);
+    #   (b) NO file remains, neither truncated under the final name nor .tmp.
+    # The comparison with the pre-fix behavior is real: without (b) this
+    # function wrote the 10 bytes and left the file (measured by the reviewer
+    # with the same trick, and verified here with the assert on 0 files).
     print("== B3: scrittura fallita non lascia file col nome definitivo ==")
     b3_dir = giro1_tmp / "storageB3"
     b3_real_fdopen = os.fdopen
 
     class _PartialWrite:
-        """Scrive i primi 10 byte e poi simula il disco pieno."""
+        """Scrive i primi 10 byte e poi simula il disco pieno.
+
+        Writes the first 10 bytes and then simulates a full disk.
+        """
 
         def __init__(self, fh):
             self._fh = fh
@@ -3790,6 +4503,7 @@ def main() -> int:
           (lambda p: p is not None and p.read_bytes() == b"X" * 500)(
               storage.save_if_enabled(str(b3_dir), "sub", n_pol, b"X" * 500, "txt")))
     # Non-vacuita': il meccanismo di scrittura atomica e' quello dichiarato.
+    # Non-vacuity: the atomic write mechanism is the declared one.
     b3_src = _inspect.getsource(storage.save_if_enabled)
     check("B3: il contenuto passa da un temporaneo con os.replace (nome definitivo mai parziale)",
           "os.replace(tmp_path, path)" in b3_src and "fh.write(content)" in b3_src)
@@ -3804,6 +4518,14 @@ def main() -> int:
     # comportamento pre-correzione e' fatto davvero (cfr. `_vecchio_worker`), e
     # i casi 2/3/4 falliscono con il codice di prima. Un test che passa anche
     # prima della correzione non presidia niente.
+    # ==================================================================
+    # BRIEF-FALLBACK-TUTTI: if the parallel pool has no usable endpoint the
+    # WHOLE list is used in a sequential chain, and the chunk is not lost.
+    #
+    # Every test below is verified for NON-VACUITY: the comparison with the
+    # pre-fix behavior is really done (cf. `_vecchio_worker`), and cases 2/3/4
+    # fail with the earlier code. A test that also passes before the fix guards
+    # nothing.
     print("== fallback: pool senza endpoint utilizzabili -> catena su TUTTI ==")
     from bravoric_stt_clipboard import stream as _sm
     from bravoric_stt_clipboard.api_client import ApiError as _ApiErr2
@@ -3822,7 +4544,18 @@ def main() -> int:
 
         `behaviour` ha la firma di un livello (un argomento), come tutti i
         doppioni di questo blocco: la catena e' il solo posto che chiama
-        `behaviour(lv)`."""
+        `behaviour(lv)`.
+
+        Replaces _sequential_chain with a faithful double of try_with_fallback: it
+        records the levels tried, IGNORES single failures and moves on to the
+        next, and only if all fail raises AllLevelsFailedError. Without this
+        behavior the double would be stricter than the real chain and the tests
+        would measure the double.
+
+        `behaviour` has the signature of a level (one argument), like all the
+        doubles of this block: the chain is the only place that calls
+        `behaviour(lv)`.
+        """
         def _inner(levels, wav_path, stream, prompt):
             errs = []
             for lv in levels:
@@ -3837,7 +4570,11 @@ def main() -> int:
     def _run(levels, behaviour, *, parallel_levels=None, breaker=None,
              stop_timeout=30.0, stop_check=None, timeout_tweak=None):
         """Esegue _worker sul percorso parallelo col fallback. Restituisce
-        (risultato, traccia dei livelli, dispatcher, semaforo bilanciato)."""
+        (risultato, traccia dei livelli, dispatcher, semaforo bilanciato).
+
+        Runs _worker on the parallel path with the fallback. Returns (result,
+        trace of the levels, dispatcher, balanced semaphore).
+        """
         st = _stream_cfg(levels=levels)
         seen: list[tuple[str, str]] = []
         disp = _sm._Dispatcher(
@@ -3882,6 +4619,11 @@ def main() -> int:
     # erano IRRAGGUNGIBILI (il dispatcher costruiva il pool solo sui checked e
     # il worker chiudeva con AllLevelsFailedError): res.success False e B/C
     # mai chiamati. Ora il testo del non-checked ARRIVA.
+    # --- case 1: checked that raises + NON-checked that works ------------
+    # THE central test of the brief. Before the fix the non-checked levels were
+    # UNREACHABLE (the dispatcher built the pool only on the checked ones and
+    # the worker ended with AllLevelsFailedError): res.success False and B/C
+    # never called. Now the text of the non-checked ARRIVES.
     res, trace, disp, bal = _run([a_p, b_s, c_s], _boom_on("A"))
     check("F1 checked rotto + non-checked buono: il testo del non-checked ARRIVA",
           res.success and res.text == "da B")
@@ -3895,6 +4637,16 @@ def main() -> int:
     # diventa piu' forte: adesso presidia ANCHE che la catena non rifaccia
     # il giro del pool. La prova di non-vacuità del difetto e' la stessa
     # della sezione sotto: togliendo `_levels_untried` questa riga va rossa.
+    # NOTE (the only assertion of the F series touched, and it is a choice to
+    # declare): this was `[("chain","A"), ("chain","B")]`, i.e. it LITERALLY
+    # PINNED the defect that BRIEF-GATE-FIX-5FAIL ordered to fix (the chain
+    # retrying the levels already tried by the pool). With the fix the pool
+    # tries A, the chain restarts from B and does NOT touch A again, so the real
+    # trace is [("pool","A"), ("chain","B")]. The meaning of the test ("the
+    # fallback is the CHAIN, not the pool") stays identical and becomes
+    # stronger: now it ALSO guards that the chain does not redo the pool's round.
+    # The non-vacuity proof of the defect is the same as in the section below:
+    # removing `_levels_untried` turns this line red.
     check("F1 il percorso di ripiego e' la CATENA, non il pool",
           [n for kind, n in trace if kind == "pool"] == ["A"]
           and [n for kind, n in trace if kind == "chain"] == ["B"])
@@ -3905,9 +4657,16 @@ def main() -> int:
     # Contro-prova di NON-VACUITA': lo stesso scenario col codice di prima
     # (ramo parallelo chiuso in AllLevelsFailedError, senza catena) DEVE
     # fallire. Se anche questa asserzione passasse, il test non presiderebbe.
+    # NON-VACUITY counter-proof: the same scenario with the earlier code
+    # (parallel branch closed in AllLevelsFailedError, without a chain) MUST
+    # fail. If this assertion passed too, the test would guard nothing.
     def _vecchio_worker(levels, behaviour):
         """Il comportamento pre-correzione: pool sui soli checked, se tutti
-        falliscono AllLevelsFailedError, la catena NON viene mai tentata."""
+        falliscono AllLevelsFailedError, la catena NON viene mai tentata.
+
+        The pre-fix behavior: pool on the checked ones only, if all fail
+        AllLevelsFailedError, the chain is NEVER tried.
+        """
         seen2: list[tuple[str, str]] = []
         disp2 = stream_mod._Dispatcher(levels, _tmp_breaker())
         saved = stream_mod._transcribe
@@ -3961,8 +4720,11 @@ def main() -> int:
     # NON-VACUITA': con il codice pre-correzione _candidates ordinava per
     # scadenza e restituiva comunque l'endpoint in cooldown, quindi acquire()
     # falliva e il chunk finiva scartato dal semaforo.
+    # NON-VACUITY: with the pre-fix code _candidates sorted by expiry and
+    # returned the endpoint in cooldown anyway, so acquire() failed and the
+    # chunk ended up discarded by the semaphore.
     disp_old = stream_mod._Dispatcher([p_bad], brk2)
-    cands_old = list(disp_old._order)  # il vecchio comportamento restituiva la chiave
+    cands_old = list(disp_old._order)  # il vecchio comportamento restituiva la chiave | the old behavior returned the key
     check("F2 NON-VACUITA': prima il pool offriva l'endpoint in cooldown",
           bool(cands_old) and _key(p_bad) in cands_old
           and brk2.state(_key(p_bad)) == "OPEN")
@@ -3975,6 +4737,12 @@ def main() -> int:
     # risultato vuoto quando esiste almeno un endpoint non in cooldown, e che
     # il testo del livello non-checked sia davvero committato dal sequenziatore
     # (non solo presente nel risultato).
+    # --- case 3: no chunk silently lost --------------------------
+    # Source of the defect: the supervisor deleted the WAV and swallowed an
+    # EMPTY _ChunkResult. Here it is verified that _worker never produces an
+    # empty result when at least one endpoint not in cooldown exists, and that
+    # the text of the non-checked level is really committed by the sequencer
+    # (not just present in the result).
     seq_state: dict[str, Any] = {"session_id": "probe", "chunks": []}
     sq = _sm._FifoSequencer(
         seq_state, _stream_cfg(levels=[a_p, b_s, c_s]),
@@ -4002,6 +4770,10 @@ def main() -> int:
         # quindi un seq_id sparato (7) resterebbe in attesa per sempre e il
         # test misurerebbe l'ordine, non la perdita del chunk. Il caso reale
         # e' seq 0, primo chunk della sessione.
+        # seq 0: the sequencer is FIFO and waits from _next_expected onwards, so a
+        # fired seq_id (7) would wait forever and the test would measure the order,
+        # not the loss of the chunk. The real case is seq 0, the first chunk of the
+        # session.
         _sm._worker(0, _wav2(), None, stream=st_s, sem=sm3,
                     result_queue=qq, dispatcher=d3)
         r3 = qq.get_nowait()
@@ -4019,6 +4791,9 @@ def main() -> int:
     # E il caso peggiore: pool in cooldown E catena esaurita. Non si puo'
     # inventare un testo, ma il chunk non deve sparire in silenzio: l'errore
     # deve essere esplicito e il supervisore non deve accorgersi di niente.
+    # And the worst case: pool in cooldown AND chain exhausted. A text cannot be
+    # invented, but the chunk must not vanish silently: the error must be
+    # explicit and the supervisor must not notice anything.
     res, trace, disp, bal = _run(
         [p_bad, q_good],
         lambda lv: (_ for _ in ()).throw(_ApiErr2("anche questo e' rotto")),
@@ -4031,6 +4806,9 @@ def main() -> int:
     # --- caso 4: caso SANO invariato, la catena NON viene chiamata ---------
     # Con un checked libero si usa il pool e basta: se la catena venisse
     # chiamata anche qui, il "percorso veloce" non esisterebbe piu'.
+    # --- case 4: HEALTHY case unchanged, the chain is NOT called ---------
+    # With a free checked level the pool is used and that is all: if the chain
+    # were called here too, the "fast path" would no longer exist.
     res, trace, disp, bal = _run([a_p, b_s, c_s], lambda lv: f"da {lv.name}")
     check("F4 caso sano: si usa il POOL e la catena NON viene chiamata",
           bool(res.success) and bool(trace)
@@ -4039,6 +4817,8 @@ def main() -> int:
     check("F4 caso sano: nessun livello non-checked viene toccato",
           [n for _, n in trace] == ["A"])
     # Contratto C: i non-checked NON sono membri del pool e non prendono lease.
+    # Contract C: the non-checked levels are NOT members of the pool and take no
+    # lease.
     check("F4 C: il pool contiene solo i checked (i non-checked non sono membri)",
           list(disp._order) == [_key(a_p)] and disp.level_count == 1)
     check("F4 C: la retrovia contiene TUTTI i livelli, in ordine di config",
@@ -4046,6 +4826,7 @@ def main() -> int:
     check("F4 C: i non-checked non hanno slot nel dispatcher",
           _key(b_s) not in disp._capacity and _key(c_s) not in disp._capacity)
     # E con piu' endpoint paralleli sani, la catena resta comunque muta.
+    # And with several healthy parallel endpoints, the chain stays mute anyway.
     d_ok, e_ok = _lvl("OK1"), _lvl("OK2")
     res, trace, disp, bal = _run([d_ok, e_ok, b_s], lambda lv: f"da {lv.name}",
                                 parallel_levels=[d_ok, e_ok])
@@ -4056,6 +4837,9 @@ def main() -> int:
     # --- caso 5: il breaker non registra doppio fallimento ---------------
     # Un endpoint non puo' essere registrato come fallito due volte per lo
     # stesso chunk. Il conteggio e' quello del breaker reale su path temp.
+    # --- case 5: the breaker does not record a double failure ---------------
+    # An endpoint cannot be recorded as failed twice for the same chunk. The
+    # count is that of the real breaker on a temp path.
     brk3 = _tmp_breaker()
     d3b = _sm._Dispatcher([bad], brk3, fallback_chain=[bad])
     st5 = _stream_cfg(levels=[bad])
@@ -4083,6 +4867,7 @@ def main() -> int:
         stream_mod._transcribe = saved_t5
         _sm._sequential_chain = saved_c5
     # Nessun doppio conteggio: il fallimento del pool e' registrato UNA volta.
+    # No double counting: the pool's failure is recorded ONCE.
     rec = brk3._records.get(_key(bad))
     check("F5 un endpoint non viene registrato come fallito due volte per chunk",
           rec is not None and rec.failures == 1)
@@ -4091,6 +4876,9 @@ def main() -> int:
     # E il caso della catena: la catena NON registra fallimenti, quindi un
     # livello servito solo da lei non apre mai un cooldown (contratto F: il
     # conteggio per endpoint e per chunk resta quello del pool).
+    # And the case of the chain: the chain does NOT record failures, so a level
+    # served only by it never opens a cooldown (contract F: the per-endpoint and
+    # per-chunk count stays the pool's).
     brk4 = _tmp_breaker()
     d4 = _sm._Dispatcher([a_p, b_s, c_s], brk4, fallback_chain=[a_p, b_s, c_s])
     res, seen4, disp4, bal4 = _run([a_p, b_s, c_s], _boom_on("A"),
@@ -4105,6 +4893,10 @@ def main() -> int:
     # Con l'unico checked in cooldown, il cap non deve collassare a 1 se esiste
     # un altro endpoint utilizzabile: altrimenti il chunk non entra in coda e
     # finisce a terra.
+    # --- case 6: AUTO (contract E) ---------------------------------------
+    # With the only checked level in cooldown, the cap must not collapse to 1 if
+    # another usable endpoint exists: otherwise the chunk does not enter the
+    # queue and ends up on the floor.
     brk5 = _tmp_breaker()
     brk5.record_failure(_key(a_p))
     cap_cooled = _sm._auto_worker_count([a_p, b_s, c_s], [a_p], brk5)
@@ -4124,6 +4916,7 @@ def main() -> int:
           _sm._auto_worker_count([d_ok, e_ok, b_s, d_ok, e_ok], [d_ok, e_ok, d_ok, e_ok], _tmp_breaker()) == 8)
 
     # --- caso 7: has_pending_capacity, la porta del fallback --------------
+    # --- case 7: has_pending_capacity, the fallback door --------------
     d7 = _sm._Dispatcher([a_p], _tmp_breaker(), fallback_chain=[a_p, b_s])
     check("F7 pool vuoto di usable -> has_pending_capacity False (porta aperta)",
           not _sm._Dispatcher([b_s], _tmp_breaker()).has_pending_capacity())
@@ -4136,12 +4929,16 @@ def main() -> int:
           not d7b.has_pending_capacity())
     # Slot esauriti ma breakeraperto: si ASPETTA (il contratto B parla di
     # "busy oltre la deadline", non di coda momentanea).
+    # Slots exhausted but breaker open: we WAIT (contract B speaks of "busy
+    # beyond the deadline", not of a momentary queue).
     d7c = _sm._Dispatcher([a_p], _tmp_breaker(), fallback_chain=[a_p, b_s])
     d7c._free[_key(a_p)] = 0
     check("F7 slot esauriti con endpoint aperto: si aspetta, non si ripiega",
           not d7c.has_pending_capacity())
     # E in quel caso il ripiego c'e' comunque, se il lease non arriva: qui si
     # simula la deadline scaduta dello stop_check.
+    # And in that case the fallback is there anyway, if the lease does not
+    # arrive: here the expired deadline of stop_check is simulated.
     def _always_stopping():
         return True
     seen8: list[tuple[str, str]] = []
@@ -4201,6 +4998,36 @@ def main() -> int:
     # Il blocco gira la catena VERA (non viene sostituita
     # `_sequential_chain`), altrimenti l'esclusione dei livelli gia' tentati
     # dal pool non sarebbe esercitata e il test sarebbe verde-buggato.
+    # ==================================================================
+    # T2/T3 REBUILT: the sequential/auto toggle, after the fallback.
+    #
+    # WHY THE OLD T2/T3 NO LONGER FITTED. The three assertions ("stays on A",
+    # "seen==[A] and success False", "B not in seen") pinned "in auto the other
+    # levels are UNREACHABLE" (A1): it was the defect this project put in scope,
+    # and the NEW behavior is the opposite. Moving the numbers to ["A","B"] is
+    # the wrong move: in the config [A checked, B, C] the TWO arms would call
+    # exactly the same levels in the same order, and the two copies would pass
+    # equally with the toggle on and off. Identical tests = BUGGY-GREEN.
+    #
+    # REAL QUESTION, which I answered by EXECUTION: which discriminant survives
+    # the fallback? Measured, not reasoned:
+    #   - the levels called, when the checked one is the FIRST in config: no
+    #     ("A that works", or "A broken and B good", give ["A","B"] in both
+    #     arms). Because: in auto the pool starts from the checked one, which is
+    #     also the first of the chain, so the first one tried is the same.
+    #   - the reachability of the non-checked ones in the HEALTHY case: it is not
+    #     a discriminant of the toggle (it is already guarded by the F4 tests:
+    #     when healthy, the pool does not touch the non-checked ones).
+    #   - WHAT REMAINS is the order and the concurrency, and it is what measures
+    #     the semantics: sequential = one level at a time in CONFIG order; auto =
+    #     first the POOL, then the chain on what the pool has not tried. Why it
+    #     shows: by putting the checked one NOT first ([A non-checked, B checked,
+    #     C non-checked], A and B broken, C good) the pool cannot respect the
+    #     config order, which is the property of the sequential branch.
+    #
+    # The block runs the REAL chain (`_sequential_chain` is not replaced),
+    # otherwise the exclusion of the levels already tried by the pool would not
+    # be exercised and the test would be buggy-green.
 
     t2_a, t2_b, t2_c = _lvl("A", parallel=False), _lvl("B"), _lvl("C", parallel=False)
 
@@ -4216,6 +5043,13 @@ def main() -> int:
         chiama `acquire`: il ramo sequenziale non deve mai chiedere un lease,
         il ramo parallelo sì. Il conteggio dei fallimenti resta quello del
         breaker vero, il proxy non registra nulla.
+
+        Proxy on the REAL breaker that notes the leases taken by the pool.
+
+        It serves to measure the concurrency without depending on how the worker
+        calls `acquire`: the sequential branch must never ask for a lease, the
+        parallel branch must. The failure count stays that of the real breaker,
+        the proxy records nothing.
         """
 
         def __init__(self, real):
@@ -4243,7 +5077,12 @@ def main() -> int:
     def _t2_run(mode):
         """Un chunk su [A non-checked, B checked, C non-checked] nella modalita'
         data. A e B sollevano, C risponde. Restituisce
-        (livelli tentati, chiavi in lease, breaker reale, risultato, semaforo ok)."""
+        (livelli tentati, chiavi in lease, breaker reale, risultato, semaforo ok).
+
+        One chunk on [A non-checked, B checked, C non-checked] in the given mode.
+        A and B raise, C answers. Returns (levels tried, keys under lease, real
+        breaker, result, semaphore ok).
+        """
         levels = [t2_a, t2_b, t2_c]
         brk = _T2Breaker(_tmp_breaker())
         disp = stream_mod._Dispatcher(levels, brk)
@@ -4279,6 +5118,10 @@ def main() -> int:
     # "sposta-il-numero" avrebbe. Se i due bracci producessero la stessa
     # traccia il toggle non sarebbe osservabile e l'intero blocco crollerebbe
     # a una sola meta' di test.
+    # THE NON-VACUITY: this is the guard that none of the "move-the-number"
+    # forms would have. If the two arms produced the same trace the toggle would
+    # not be observable and the whole block would collapse to a single half of
+    # tests.
     check("T2 ricostruito: i due bracci NON sono identici (toggle osservabile)",
           t2_seen != t2_seen_a)
     check("T2 ricostruito AUTO: il pool prende un LEASE (concorrenza reale)",
@@ -4290,11 +5133,17 @@ def main() -> int:
     # se tornasse indietro, in auto B sarebbe tentato DUE volte (pool e
     # catena) e questa assertzione andrebbe rossa. Qui e' la prova che la
     # catena parte davvero da dove si e' fermato il pool.
+    # The fix of the defect "the chain retries the levels already failed": if it
+    # went back, in auto B would be tried TWICE (pool and chain) and this
+    # assertion would go red. Here is the proof that the chain really starts
+    # from where the pool stopped.
     check("T2 ricostruito: ogni livello tentato UNA volta sola in entrambi i bracci",
           len(t2_seen) == len(set(t2_seen))
           and len(t2_seen_a) == len(set(t2_seen_a)))
     # E il chunk non si perde in nessuno dei due: il testo che arriva e' lo
     # stesso, quindi il toggle non cambia l'esito per l'utente.
+    # And the chunk is not lost in either: the text that arrives is the same, so
+    # the toggle does not change the outcome for the user.
     check("T2 ricostruito: entrambi i bracci salvano il chunk (testo da C)",
           t2_res_seq.success and t2_res_seq.text == "da C"
           and t2_res_a.success and t2_res_a.text == "da C"
@@ -4306,6 +5155,11 @@ def main() -> int:
     # non-checked C viene davvero tentato, il testo e' quello suo, e il
     # fallimento del pool resta una TRACCIA (breaker OPEN con UN tentativo),
     # non unpezzo di percorso sparito.
+    # --- T3 rebuilt: the fallback is REAL and not silent -------------
+    # The old T3 asked "B is not called": it was A1, i.e. the defect. The new T3
+    # asks for the thing that remains and that matters: in auto the non-checked
+    # level C is really tried, the text is its own, and the pool's failure stays
+    # a TRACE (breaker OPEN with ONE attempt), not a piece of vanished path.
     _t3_rec = t2_brk_a._records.get(_key(t2_b))
     check("T3 ricostruito AUTO: il ripiego arriva davvero al non-checked C",
           "C" in t2_seen_a and t2_res_a.success and t2_res_a.text == "da C"
@@ -4316,6 +5170,9 @@ def main() -> int:
     # Contratto F: i livelli serviti SOLO dalla catena non aprono un cooldown
     # e non registrano fallimenti (altrimenti il ripiego accenderebbe da solo
     # i backup e il cooldown misurerebbe tentativi mai fatti dal pool).
+    # Contract F: the levels served ONLY by the chain do not open a cooldown and
+    # do not record failures (otherwise the fallback would switch on the backups
+    # by itself and the cooldown would measure attempts never made by the pool).
     check("T3 ricostruito AUTO: i livelli serviti solo dalla catena non toccano il breaker",
           t2_brk_a._records.get(_key(t2_a)) is None
           and t2_brk_a._records.get(_key(t2_c)) is None
@@ -4324,6 +5181,10 @@ def main() -> int:
     # i due bracci si scambiassero, questo blocco deve accorgersene. Il check
     # e' sul brano AUTO perche' e' li' che il comportamento storico
     # ("nessun lease, nessun breaker") non puo' piu' essere quello.
+    # And the pivot of the rebuild: if the toggle were ignored, i.e. if the two
+    # arms swapped, this block must notice. The check is on the AUTO passage
+    # because it is there that the historical behavior ("no lease, no breaker")
+    # can no longer be the one.
     check("T3 ricostruito: AUTO non puo' degradare al ramo sequenziale",
           not (t2_leases_a == [] and t2_brk_a._records == {}))
 
@@ -4332,6 +5193,10 @@ def main() -> int:
     # GIRO 2 — test di regressione (append in fondo, come da brief)
     # ================================================================
     # Alcuni test precedenti rimuovono la directory temporanea: la si ricrea.
+    # ================================================================
+    # ROUND 2 — regression tests (appended at the bottom, as per the brief)
+    # ================================================================
+    # Some earlier tests remove the temporary directory: it is recreated.
     tmp.mkdir(parents=True, exist_ok=True)
 
     print("== giro 2 (B1: cleanup del file audio di at_end) ==")
@@ -4361,6 +5226,7 @@ def main() -> int:
               not audio_file.exists())
 
         # lock senza audio_path: la pulizia non deve sollevare
+        # lock without audio_path: the cleanup must not raise
         stream_mod.STREAM_LOCK_PATH.write_text(json.dumps(
             {"pid": gone, "session_id": "def456", "mode": "at_end",
              "started_at": 0}))
@@ -4376,6 +5242,11 @@ def main() -> int:
     # _write_state -> ffmpeg vivo, lock presente, file in /tmp per sempre).
     # Sessione e config REALI (come nel test at_end piu' sopra), non un fake:
     # il finally deve coprire l'intero ramo, notify compresa.
+    # If the notification or the transcription raise, the audio file must still
+    # disappear: it is the branch the reviewer measured (notify that raises
+    # after _write_state -> ffmpeg alive, lock present, file in /tmp forever).
+    # REAL session and config (as in the at_end test above), not a fake: the
+    # finally must cover the whole branch, notify included.
     g2b_cfg = config.Config(
         notifications=False,
         notif_stt=config.ServiceNotifications(False, config.NotificationEvent(False, False), config.NotificationEvent(False, False)),
@@ -4396,6 +5267,7 @@ def main() -> int:
     state_g2 = tmp / "g2_stop_state.json"
     state_g2.write_text(json.dumps({"session_id": "g2stop", "chunks": []}))
     # lock con una sola uscita che solleva: la notifica di "Transcribing...".
+    # lock with a single exit that raises: the "Transcribing..." notification.
     audio_leak = tmp / "giro2_leak.ogg"
     audio_leak.write_bytes(b"AUDIO" * 200)
 
@@ -4418,6 +5290,7 @@ def main() -> int:
         check("B1: il file audio sparisce anche se la notifica solleva",
               not audio_leak.exists())
     # e il caso normale: il file sparisce comunque
+    # and the normal case: the file disappears anyway
     audio_ok = tmp / "giro2_ok.ogg"
     audio_ok.write_bytes(b"AUDIO" * 200)
     with mock.patch.object(stream_mod, "_terminate_pid"), \
@@ -4441,6 +5314,7 @@ def main() -> int:
                   after.get("state") == status.STATE_RECORDING
                   and after.get("service") == "stt")
         # stesso servizio: il completamento genuino deve passare
+        # same service: the genuine completion must pass
         status.write_status(status.STATE_RECORDING, service="stt")
         status.write_status(status.STATE_IDLE, service="stt")
         check("B4: lo stesso servizio può ancora scrivere IDLE",
@@ -4456,6 +5330,17 @@ def main() -> int:
         #      assoluto: da idle si deve poter andare ovunque, e questo e' il
         #      percorso che verifica, fra l'altro, l'auto/sequential: OCR e STT
         #      NON si sovrascrivono a vicenda in nessuna delle due direzioni).
+        # Round 3 (B4): rebuilt scenario. Before, here there was
+        #   write_status(RECORDING, service="stt"); write_status(IDLE, service=None)
+        #   -> IDLE, i.e. the assertion PINNED the defect: the branch without a
+        #   service was not covered by the guard (clause `service is not None`) and
+        #   switched off someone else's recording. The assertion is not weakened: it
+        #   is flipped onto the scenario the guard must really go through.
+        #   1) with no recording in progress, a write without a service keeps
+        #      passing (the guard must not become an absolute padlock: from idle one
+        #      must be able to go anywhere, and this is the path that verifies,
+        #      among other things, auto/sequential: OCR and STT do NOT overwrite each
+        #      other in either direction).
         status.STATUS_PATH.write_text(json.dumps(
             {"state": status.STATE_IDLE, "timestamp": 0.0, "service": "ocr"}))
         status.write_status(status.STATE_ERROR, service=None)
@@ -4466,6 +5351,8 @@ def main() -> int:
               status.read_status().get("last_output") == "dopo")
         #   2) con registrazione STT in corso, la scrittura senza servizio
         #      viene respinta: e' il difetto chiuso in questo giro.
+        #   2) with an STT recording in progress, the write without a service is
+        #      rejected: it is the defect closed in this round.
         status.write_status(status.STATE_RECORDING, service="stt")
         status.write_status(status.STATE_ERROR, service=None)
         check("B4: recording STT non è spento da un ERROR senza service",
@@ -4473,6 +5360,8 @@ def main() -> int:
               and status.read_status().get("service") == "stt")
         #   3) il percorso di default dell'utente resta aperto: STT registra,
         #      smette e completa da solo con il proprio IDLE+service.
+        #   3) the user's default path stays open: STT records, stops and completes
+        #      by itself with its own IDLE+service.
         status.write_status(status.STATE_RECORDING, service="stt")
         status.write_status(status.STATE_PROCESSING, service="stt")
         status.write_status(status.STATE_IDLE, last_output="trascritto", service="stt")
@@ -4480,6 +5369,7 @@ def main() -> int:
               status.read_status().get("state") == status.STATE_IDLE
               and status.read_status().get("last_output") == "trascritto")
         #   4) idem per lo streaming, che usa lo stesso file di stato.
+        #   4) same for streaming, which uses the same state file.
         status.write_status(status.STATE_RECORDING, service="stream")
         status.write_status(status.STATE_ERROR, service=None)
         check("B4: recording stream non è spento da un ERROR senza service",
@@ -4487,6 +5377,9 @@ def main() -> int:
         #   5) e un recording SENZA servizio dichiarato resta sensibile: con
         #      la clausola tolta, None == None, quindi un servizio ignoto
         #      non viene più trattato come "nessuno".
+        #   5) and a recording WITHOUT a declared service stays sensitive: with the
+        #      clause removed, None == None, so an unknown service is no longer
+        #      treated as "none".
         status.STATUS_PATH.write_text(json.dumps(
             {"state": status.STATE_RECORDING, "timestamp": 0.0}))
         status.write_status(status.STATE_IDLE, service=None)
@@ -4501,6 +5394,11 @@ def main() -> int:
     # sostituisca `chunks` con l'elenco RILESTO da disco, scartando i chunk
     # appena committati dal drain. Qui il prodotto scrive lo stato autorevole e
     # questo test presidia quella scelta.
+    # The reviewer proposed preserve_chunks=True in the drain, inspired by
+    # paste_next. MEASURED WRONG: preserve_chunks makes _write_state replace
+    # `chunks` with the list RE-READ from disk, discarding the chunks just
+    # committed by the drain. Here the product writes the authoritative state and
+    # this test guards that choice.
     s3_lock_saved = stream_mod.STREAM_LOCK_PATH
     s3_state_saved = stream_mod.STREAM_STATE_PATH
     try:
@@ -4534,10 +5432,22 @@ def main() -> int:
     # volatile, quindi quei file qui dentro, senza path assoluti e senza
     # puntare a /tmp, altrimenti il difetto tornerebbe senza copertura.
     # =================================================================
+    # =================================================================
+    # ROUND 3 — the three items IMPLEMENTABLE NOW.
+    #
+    # Coverage BROUGHT INTO THE PROJECT. The reviewer had measured everything
+    # with harnesses in /tmp/rev3 (b3.py, b3b.py, b3c.py, b3d.py, b3e2e.py): /tmp
+    # is volatile, so those files are brought in here, without absolute paths and
+    # without pointing at /tmp, otherwise the defect would come back without
+    # coverage.
+    # =================================================================
     print("== giro 3 (B4: il ramo di errore senza service non spegne più la registrazione) ==")
     # Portato da b3e2e.py: end-to-end con ocr.handle_capture REALE e
     # clipboard che solleva (l'utente preme OCR mentre detta). Non un
     # write_status finto: è il percorso di produzione che ha scritto il bug.
+    # Brought from b3e2e.py: end-to-end with the REAL ocr.handle_capture and a
+    # clipboard that raises (the user presses OCR while dictating). Not a fake
+    # write_status: it is the production path that wrote the bug.
     st3_saved = status.STATUS_PATH
     try:
         g3 = tmp / "giro3_b4"
@@ -4550,13 +5460,15 @@ def main() -> int:
         g3_ocr_cfg.ocr_cleanup.fallback = []
         g3_ocr_cfg.storage.ocr_original.enabled = False
         g3_ocr_cfg.storage.ocr_raw.enabled = False
-        g3_ocr_cfg.ocr_capture_screenshot = False  # vedi commento sul giro 10 sopra
+        g3_ocr_cfg.ocr_capture_screenshot = False  # vedi commento sul giro 10 sopra | see the comment on round 10 above
         with mock.patch("bravoric_stt_clipboard.ocr.clipboard") as m_clip_g3, \
              mock.patch("bravoric_stt_clipboard.ocr.notify"), \
              mock.patch("bravoric_stt_clipboard.ocr.storage"), \
              mock.patch("bravoric_stt_clipboard.ocr.output_history"):
             # clipboard vuota: ocr.py:28 chiama write_status(STATE_ERROR)
             # SENZA service, il ramo che il guard non copriva.
+            # empty clipboard: ocr.py:28 calls write_status(STATE_ERROR) WITHOUT
+            # service, the branch the guard did not cover.
             m_clip_g3.read_image_png.side_effect = FileNotFoundError("no image in clipboard")
             status.write_status(status.STATE_RECORDING, service="stt")
             ocr.handle_capture(g3_ocr_cfg)
@@ -4579,6 +5491,17 @@ def main() -> int:
     # l'invariante strutturale, cioè che start_recording non usa più
     # ftruncate/lseek sul lock e pubblica con os.replace. È la forma che
     # resta vera anche se qualcuno ci mette mano fra tre anni.
+    # Brought from b3c.py + b3d.py. The defect: lseek(0)+ftruncate(0)+write()
+    # left the file at zero bytes for the window between the truncation and the
+    # write; at that moment _read_lock() -> None and a concurrent toggle started
+    # a second ffmpeg. Now the lock is published with os.replace, so the
+    # LOCK_PATH path goes from the valid placeholder (round 12, P3) to the full
+    # lock without ever being truncated to zero.
+    #
+    # The test does NOT measure a window of microseconds (unrepeatable): it
+    # verifies the structural invariant, i.e. that start_recording no longer uses
+    # ftruncate/lseek on the lock and publishes with os.replace. It is the form
+    # that stays true even if someone touches it three years from now.
     a3_saved = audio.LOCK_PATH
     a3_dir = tmp / "giro3_b3"
     a3_dir.mkdir(parents=True, exist_ok=True)
@@ -4598,6 +5521,8 @@ def main() -> int:
                   audio.LOCK_PATH.stat().st_size > 0)
             # Invariante anti-regressione sul sorgente: se qualcuno reintroduce
             # la riscrittura in place, l'asserzione qui sotto deve virare.
+            # Anti-regression invariant on the source: if someone reintroduces the
+            # in-place rewrite, the assertion below must turn.
             a3_src = (ROOT / "src" / "bravoric_stt_clipboard" / "audio.py").read_text()
             check("B3: start_recording non tronca più il lock in place",
                   "os.ftruncate" not in a3_src and "os.lseek" not in a3_src)
@@ -4607,6 +5532,7 @@ def main() -> int:
             audio.LOCK_PATH.unlink(missing_ok=True)
             a3_out.unlink(missing_ok=True)
         # Nessun .tmp residuo accanto al lock (il pattern atomico pulisce).
+        # No leftover .tmp next to the lock (the atomic pattern cleans up).
         check("B3: nessun .tmp residuo accanto al lock",
               not any(a3_dir.glob("recording.lock*.tmp")))
 
@@ -4618,6 +5544,14 @@ def main() -> int:
         # possibili vie di scrittura: os.write (la riscrittura in place di prima)
         # e os.fsync (la scrittura atomica di adesso). Qualunque delle due il
         # codice scelga, la sonda deve comunque trovare un lock VALIDO, mai None.
+        # Real concurrent probe (brought from b3d.py). The original defect cannot be
+        # caught cold: the real window ftruncate(0)->write lasts ~0.01 ms, and the
+        # reviewer measured it 8 times without ever hitting it at the desk. To make
+        # the test DISCRIMINANT (green on the right code, red on the old one) both
+        # possible writing paths are artificially widened: os.write (the in-place
+        # rewrite from before) and os.fsync (the atomic write of now). Whichever of
+        # the two the code chooses, the probe must still find a VALID lock, never
+        # None.
         a3_stop = threading.Event()
         a3_seen = {"samples": 0, "unreadable": 0, "not_recording": 0, "ever_valid": False}
         real_write_g3, real_fsync_g3 = os.write, os.fsync
@@ -4627,7 +5561,7 @@ def main() -> int:
 
         def slow_write(fd, data, *a, **kw):
             if isinstance(data, bytes) and _is_real_lock(data):
-                time.sleep(0.30)  # finestra allargata: il probe deve reggere
+                time.sleep(0.30)  # finestra allargata: il probe deve reggere | widened window: the probe must hold up
             return real_write_g3(fd, data, *a, **kw)
 
         def slow_fsync(fd):
@@ -4643,6 +5577,13 @@ def main() -> int:
             # Il difetto B3 ha una firma precisa e verificabile: un lock che
             # ERA valido smette di esserlo (diventa illeggibile) mentre si
             # riscrive al suo posto. È questo che qui deve restare impossibile.
+            # We count ONLY from when the lock has been READABLE once. Before that the
+            # file has just been created by O_CREAT|O_EXCL and does not yet contain the
+            # placeholder (round 12, P3): that emptiness is a DIFFERENT window,
+            # pre-existing and out of scope, and counting it would make the test
+            # unstable without guarding B3. The B3 defect has a precise and verifiable
+            # signature: a lock that WAS valid stops being so (becomes unreadable) while
+            # it is rewritten in its place. This is what must remain impossible here.
             while not a3_stop.is_set():
                 if not audio.LOCK_PATH.exists():
                     continue
@@ -4695,11 +5636,26 @@ def main() -> int:
     # Il test aggancia la seconda pressione DENTRO Popen: e' l'unico modo di
     # essere davvero nella finestra, perche' il lock e' gia' il placeholder e
     # non lo sara' piu' dopo che start_recording ritorna.
+    # ==================================================================
+    # ROUND 5 — Item 1 (B5): stop_recording in the start-up window.
+    #
+    # The defect: start_recording publishes a placeholder with the pid only
+    # (audio_path = "") for the whole Popen -> os.replace window, ~1 s, which is
+    # exactly the duration of the default debounce. A double press of the toggle
+    # falls inside it, and Path("") is not "no file": it is the cwd. The value
+    # went up to stt.py, which read and deleted the DIRECTORY instead of the real
+    # .ogg (IsADirectoryError, recording lost, truncated file left in /tmp under
+    # its final name).
+    #
+    # The test hooks the second press INSIDE Popen: it is the only way to really
+    # be in the window, because the lock is already the placeholder and will not
+    # be after start_recording returns.
     print("== giro 5 (B5: stop nella finestra di avvio non restituisce la cwd) ==")
     g5_lock_saved = audio.LOCK_PATH
     g5_dir = tmp / "giro5_b5"
     g5_dir.mkdir(parents=True, exist_ok=True)
     # .ogg di un caso reale, creato PRIMA: e' il file che il difetto perdeva.
+    # .ogg of a real case, created BEFORE: it is the file the defect was losing.
     g5_ogg = Path(tempfile.mkstemp(suffix=".ogg", prefix="bravoric-stt-")[1])
     g5_ogg.write_bytes(b"")
     g5_cwd_saved = os.getcwd()
@@ -4708,16 +5664,26 @@ def main() -> int:
     # Foto dei .ogg in /tmp PRIMA di start_recording: il confronto e' la base
     # dell'asserzione sui file lasciati indietro, quindi va preso qui e non
     # dopo (dopo sarebbe gia' troppo tardi per vedere quello che perde).
+    # Snapshot of the .ogg files in /tmp BEFORE start_recording: the comparison
+    # is the basis of the assertion on the files left behind, so it must be
+    # taken here and not after (after would already be too late to see what it
+    # loses).
     g5_tmp_before = set(Path("/tmp").glob("bravoric-stt-*.ogg"))
 
     def _g5_second_press(*a, **kw):
-        """Secondo toggle, agganciato dentro Popen: siamo nella finestra."""
+        """Secondo toggle, agganciato dentro Popen: siamo nella finestra.
+
+        Second toggle, hooked inside Popen: we are in the window.
+        """
         data = json.loads(audio.LOCK_PATH.read_text())
         g5_seen["lock_audio_path"] = data.get("audio_path")
         g5_seen["lock_pid"] = data.get("pid")
         # pid MORTO: il vero caso e' il processo che STA avviando (quindi
         # vivo), ma per osservare il lock non serve che sia vivo, e con un
         # pid vivo stop_recording manderebbe SIGINT a questo processo di test.
+        # DEAD pid: the real case is the process that IS starting (hence alive), but
+        # to observe the lock it does not need to be alive, and with a live pid
+        # stop_recording would send SIGINT to this test process.
         audio.LOCK_PATH.write_text(json.dumps(
             {"pid": gone, "audio_path": data.get("audio_path", ""),
              "started_at": data["started_at"]}))
@@ -4742,12 +5708,16 @@ def main() -> int:
 
     # La guardia che conta: nella finestra il lock dice davvero "" (quindi il
     # test sta davvero provando il caso, non un caso diverso piu' facile).
+    # The guard that matters: in the window the lock really says "" (so the test
+    # is really proving the case, not a different easier case).
     check("B5: la seconda pressione cade davvero nella finestra (audio_path vuoto)",
           g5_seen["lock_audio_path"] == "")
     check("B5: il lock della finestra porta il pid del processo che avvia",
           g5_seen["lock_pid"] == os.getpid())
     # Il DIFETTO: tornava la cwd, e su quella il chiamante fa read_bytes +
     # unlink, cioe' quello che in stt.py falliva con IsADirectoryError.
+    # The DEFECT: the cwd came back, and on it the caller does read_bytes +
+    # unlink, i.e. what in stt.py failed with IsADirectoryError.
     check("B5: stop nella finestra non solleva IsADirectoryError",
           not isinstance(g5_seen.get("raised"), IsADirectoryError))
     check("B5: stop nella finestra non restituisce la directory di lavoro",
@@ -4761,6 +5731,11 @@ def main() -> int:
     # stt.py col valore restituito: lo LEGGE e lo CANCELLA. Sono le due
     # operazioni che in produzione sollevano IsADirectoryError, quindi
     # l'eccezione viene osservata qui e non dedotta.
+    # If the caller had received a path, the transcription chain would have run
+    # on a directory. Here exactly what stt.py does with the returned value is
+    # done: it READS it and DELETES it. These are the two operations that in
+    # production raise IsADirectoryError, so the exception is observed here and
+    # not deduced.
     g5_chain: dict[str, object] = {}
     if "returned" in g5_seen:
         try:
@@ -4779,6 +5754,7 @@ def main() -> int:
           g5_chain["read"] == "ok" or "nessun path" in str(g5_chain["read"]),
           )
     # Il .ogg vero non è stato toccato dalla finestra.
+    # The real .ogg was not touched by the window.
     check("B5: il .ogg vero non è stato cancellato dalla finestra",
           g5_ogg.exists() and g5_ogg.stat().st_size == 0)
     g5_ogg.unlink(missing_ok=True)
@@ -4787,6 +5763,12 @@ def main() -> int:
     # cancella, come fa stt.py. Il confronto e' fatto DOPO la pulizia, perche'
     # prima ci sarebbe ancora il file che il test sta ancora usando: misurare
     # li' guarderebbe uno stato intermedio e non direbbe niente su /tmp.
+    # start_recording creates the file with tempfile.mkstemp, so in /tmp and NOT
+    # in the lock's directory: here the caller receives the real path and
+    # deletes it, as stt.py does. The comparison is done AFTER the cleanup,
+    # because before there would still be the file that the test is still using:
+    # measuring there would look at an intermediate state and would say nothing
+    # about /tmp.
     with contextlib.suppress(OSError):
         g5_out.unlink(missing_ok=True)
     check("B5: nessun .ogg lasciato in /tmp dalla finestra di avvio",
@@ -4795,6 +5777,9 @@ def main() -> int:
     # Il ramo gemello: is_recording su lock morto con audio_path vuoto non deve
     # tentare di cancellare la cwd (prima lo faceva, innocuo ma falso: non
     # cancellava il .ogg residuo, contro la promessa del commento).
+    # The twin branch: is_recording on a dead lock with an empty audio_path must
+    # not try to delete the cwd (before it did, harmless but false: it did not
+    # delete the leftover .ogg, against the promise of the comment).
     g5_is: dict[str, object] = {}
     try:
         audio.LOCK_PATH = g5_dir / "recording2.lock"
@@ -4822,6 +5807,15 @@ def main() -> int:
     # risultava "gia' tentato": il chunk moriva con "pool: <vuoto> |
     # catena: nessun livello da tentare", un messaggio che certifica da
     # solo che nessuno e' stato interrogato.
+    # ==================================================================
+    # ROUND 5 — Item 2 (B3): `tried` is not added before the lease.
+    #
+    # The defect: the key was marked as tried BEFORE knowing whether the lease
+    # would arrive. If it does not arrive (saturated pool, expired deadline, or
+    # half-open probe already in flight) no HTTP request had touched that
+    # endpoint, but the fallback chain excluded it because it appeared "already
+    # tried": the chunk died with "pool: <empty> | chain: no level to try", a
+    # message that certifies by itself that nobody was queried.
     print("== giro 5 (B3: un endpoint senza lease resta tentabile dalla catena) ==")
     from bravoric_stt_clipboard import stream as _sm5
     from bravoric_stt_clipboard.config import FallbackLevel as _FL5
@@ -4830,13 +5824,17 @@ def main() -> int:
     # misurato dal reviewer. has_pending_capacity e' True (HALF_OPEN e'
     # utilizzabile e ha slot), quindi il worker entra nel ramo parallelo, ma
     # il lease non arriva: nessun endpoint viene interrogato.
+    # A single endpoint, in HALF_OPEN with the probe ALREADY IN FLIGHT: the
+    # worst case measured by the reviewer. has_pending_capacity is True
+    # (HALF_OPEN is usable and has slots), so the worker enters the parallel
+    # branch, but the lease does not arrive: no endpoint is queried.
     g5_only = _FL5("G5", "http://g5:4001/v1", "m", "", "", "", 60, False, True, 2)
     g5_key5 = _sm5._level_key(g5_only)
     g5_brk5 = _tmp_breaker()
     g5_brk5.record_failure(g5_key5)
     g5_brk5._records[g5_key5] = g5_brk5._records[g5_key5].__class__(
         last_failure=time.time() - 7200, failures=1)
-    g5_brk5.acquire(g5_key5)          # la sonda di un altro worker e' in volo
+    g5_brk5.acquire(g5_key5)          # la sonda di un altro worker e' in volo | another worker's probe is in flight
     g5_disp5 = _sm5._Dispatcher([g5_only], g5_brk5, fallback_chain=[g5_only])
     g5_st5 = _stream_cfg(levels=[g5_only])
     g5_seen5: list[tuple[str, str]] = []
@@ -4860,12 +5858,15 @@ def main() -> int:
         _sm5._sequential_chain = g5_saved_c5
 
     # Il messaggio del caso peggiore non deve piu' prodursi.
+    # The message of the worst case must no longer be produced.
     check("B3: niente piu' 'pool: | catena: nessun livello da tentare'",
           not (g5_r5.error or "").endswith("catena: nessun livello da tentare"))
     check("B3: l'errore non si autodichiara con pool_errors vuota",
           "pool:  |" not in (g5_r5.error or ""))
     # E l'endpoint non tentato deve restare DISPONIBILE: la catena lo
     # raggiunge e il chunk non si perde.
+    # And the untried endpoint must stay AVAILABLE: the chain reaches it and the
+    # chunk is not lost.
     check("B3: l'endpoint non tentato resta disponibile per la catena",
           ("chain", "G5") in g5_seen5)
     check("B3: il chunk non si perde (successo con testo)",
@@ -4888,6 +5889,9 @@ def main() -> int:
     # Difetto: i due lock sono file DISTINTI, stt._start non guardava
     # stream.lock, quindi una scorciatoia durante una sessione viva avviava
     # un SECONDO ffmpeg sul microfono gia' aperto.
+    # Defect: the two locks are DISTINCT files, stt._start did not look at
+    # stream.lock, so a shortcut during a live session started a SECOND ffmpeg
+    # on the already open microphone.
     class _FakeProc18:
         pid = os.getpid()
         def poll(self): return 0
@@ -4906,6 +5910,14 @@ def main() -> int:
     # falliva per un motivo estraneo al difetto che stava misurando.
     # Silenziare anche notify/status: il guard da provare e' quello PRIMA
     # di start_recording, non la coda di notifica.
+    # The start_recording stub stays installed for BOTH proofs (defective case
+    # and counter-proof). In the first draft the finally restored it before the
+    # counter-proof: this then called the REAL audio.start_recording, which
+    # launched a real ffmpeg and left recording.lock in /run/user/<uid> — and the
+    # next test (toggle measurement) read that lock, refused to start and failed
+    # for a reason unrelated to the defect it was measuring. Silence notify/
+    # status too: the guard to prove is the one BEFORE start_recording, not the
+    # notification tail.
     try:
         _a18.start_recording = lambda cfg: (stt_start_calls.append(Path("/tmp/falso.ogg")) or Path("/tmp/falso.ogg"))
         with mock.patch.object(_stt18, "notify", mock.Mock()), \
@@ -4922,6 +5934,7 @@ def main() -> int:
                   raised18 is not None and "stream" in raised18.lower())
 
             # Contro-prova (non-vacuita'): nessuna sessione -> STT parte.
+            # Counter-proof (non-vacuity): no session -> STT starts.
             _stt18._is_stream_active = lambda: False
             stt_start_calls.clear()
             _stt18._start(cast(Any, cfg_stream_min))
@@ -4933,12 +5946,20 @@ def main() -> int:
 
     # Il guard deve stare PRIMA di start_recording nel sorgente: un check
     # messo dopo nonImpedirebbe il secondo ffmpeg (il danno e' gia' fatto).
+    # The guard must be BEFORE start_recording in the source: a check placed
+    # after would not prevent the second ffmpeg (the damage is already done).
     _stt_src = (ROOT / "src" / "bravoric_stt_clipboard" / "stt.py").read_text(encoding="utf-8")
     # Difetto 2 (giro 19): anche lo .split("def _start(cfg: Config) -> None:")[1]
     # era un crash in attesa: se la firma spariva dal sorgore, [1] sollevava
     # IndexError e la suite abortiva. Ora si controlla che la firma ci sia e un
     # corpo vuoto si registra come FAIL pulito. Difetto gia' segnalato nel giro
     # 18 (i due .index()): qui si chiude anche il buco rimasto.
+    # Defect 2 (round 19): the .split("def _start(cfg: Config) -> None:")[1] was
+    # also a crash waiting to happen: if the signature vanished from the source,
+    # [1] raised IndexError and the suite aborted. Now it is checked that the
+    # signature is there and an empty body is recorded as a clean FAIL. Defect
+    # already reported in round 18 (the two .index()): here the remaining hole
+    # is closed too.
     _start_sig = "def _start(cfg: Config) -> None:"
     if _start_sig not in _stt_src:
         _start_body = ""
@@ -4946,6 +5967,8 @@ def main() -> int:
         _start_body = _stt_src.split(_start_sig, 1)[1].split("\ndef ", 1)[0]
     # La verifica e' una funzione pura (guard_order_verdict): cerca con find()
     # e restituisce sempre un verdetto, quindi qui non puo' sollevare nulla.
+    # The verification is a pure function (guard_order_verdict): it searches with
+    # find() and always returns a verdict, so nothing can be raised here.
     _ok4, _missing4 = guard_order_verdict(_start_body)
     if _missing4:
         check("P4: il guard sullo stato stream sta PRIMA di audio.start_recording "
@@ -4960,6 +5983,12 @@ def main() -> int:
     # Config con un endpoint E con mode per_chunk: senza, StreamSession.start()
     # rifiuta con "No endpoint configured" e la misura non osserverebbe
     # nulla (scoperta scrivendo il test: cfg_stream_min ha fallback=[]).
+    # This is the premise of the choice: if the toggle were harmless, the fix
+    # could just fire it. It is not. Measured, not assumed. Config with an
+    # endpoint AND with per_chunk mode: without it, StreamSession.start()
+    # refuses with "No endpoint configured" and the measure would observe
+    # nothing (discovered while writing the test: cfg_stream_min has
+    # fallback=[]).
     import dataclasses as _dc18
     cfg_toggle = _dc18.replace(
         cfg_stream_min,
@@ -4985,6 +6014,7 @@ def main() -> int:
                   _sm18.STREAM_LOCK_PATH.exists()
                   and _sm18.read_state().get("active") is True)
         # pulizia del lock creato dalla misura
+        # cleanup of the lock created by the measurement
         _sm18.STREAM_LOCK_PATH.unlink(missing_ok=True)
 
     print("== giro 18: 'stop' e' idempotente e non avvia nulla ==")
@@ -5012,6 +6042,9 @@ def main() -> int:
     # un refactor silenzioso lo toglierebbe e l'estensione continuerebbe a
     # chiamarlo senza accorgersene (fallo SILENZIOSO, il difetto che si vuole
     # chiudere).
+    # Anti-drift: the subcommand must really exist in the source, otherwise a
+    # silent refactor would remove it and the extension would keep calling it
+    # without noticing (a SILENT failure, the defect we want to close).
     _cli_src = (ROOT / "src" / "bravoric_stt_clipboard" / "cli.py").read_text(encoding="utf-8")
     check("P4: il sottocomando 'stop' esiste nel sorgente di cli.py",
           'command[0] == "stop"' in _cli_src
@@ -5024,17 +6057,21 @@ def main() -> int:
           "(era la chiusura che tornava in silenzio)",
           "state.active === true" not in _end_body)
     # Il latch non deve poter bloccare un ritento per sempre.
+    # The latch must not be able to block a retry forever.
     check("P4: il latch di fine sessione viene rilasciato a ogni uscita terminale",
           "return finish();" in _end_body
           and "this._streamEndRequested = null;" in _end_body
           and _end_body.count("return finish();") >= 3)
     # Nessuna chiusura deve fallire in silenzio: i due rami che non sparano il
     # toggle lasciano comunque una traccia (sessione cambiata / coda bloccata).
+    # No close must fail silently: the two branches that do not fire the toggle
+    # still leave a trace (session changed / queue blocked).
     check("P4: la sessione gia' cambiata lascia una traccia nel log",
           "nessuna chiusura necessaria" in _end_body)
     check("P4: la coda bloccata lascia una traccia nel log",
           "stream end abbandonato" in _end_body)
     # E il tetto: senza, una coda che non si svuota tiene acceso il pallino.
+    # And the cap: without it, a queue that does not empty keeps the dot on.
     check("P4: esiste un tetto di attesa che forza la chiusura",
           "STREAM_END_TIMEOUT_MS" in _end_body
           and "chiusura forzata" in _end_body
@@ -5050,6 +6087,11 @@ def main() -> int:
     # quando lo stato corrente e' recording con un altro servizio, quindi la
     # riparazione era INERTE (stato identico prima/dopo, misurato dal
     # reviewer) e il timeout si prendeva la colpa con un motivo falso.
+    # Defect: cli.py wrote STATE_ERROR WITHOUT service. The guard of
+    # status.write_status compares the service and rejected the write when the
+    # current state is recording with another service, so the repair was INERT
+    # (identical state before/after, measured by the reviewer) and the timeout
+    # took the blame with a false reason.
     with tempfile.TemporaryDirectory() as _td_p2:
         _sp2 = Path(_td_p2) / "status.json"
         _saved_sp2 = status.STATUS_PATH
@@ -5074,6 +6116,10 @@ def main() -> int:
             # una prima stesura propagava il service letto da disco e qui
             # finiva {error, service=stream}, cioe' l'indicatore si spegneva
             # mentre la sessione stava ancora registrando.
+            # CONTRA: a LIVE STREAM session must not be switched off by the STT
+            # shortcut's repair. Measured as a regression: a first draft propagated the
+            # service read from disk and here it ended up {error, service=stream}, i.e.
+            # the indicator switched off while the session was still recording.
             _sp2.write_text(json.dumps(
                 {"state": "recording", "timestamp": 1.0, "service": "stream"}))
             with mock.patch.object(_cli18, "load_config", return_value=object()), \
@@ -5092,6 +6138,9 @@ def main() -> int:
     # I due RuntimeError di audio.stop_recording (lock assente, audio_path
     # vuoto nella finestra di avvio) sfuggivano da stt._stop_and_process e
     # risalivano a cli.py, che segnalava all'utente un errore inesistente.
+    # The two RuntimeErrors of audio.stop_recording (missing lock, empty
+    # audio_path in the start-up window) escaped from stt._stop_and_process and
+    # went up to cli.py, which reported a non-existent error to the user.
     for _label, _exc2 in (("lock assente", RuntimeError("No recording in progress")),
                           ("audio_path vuoto (finestra di avvio)",
                            RuntimeError("No recording in progress"))):
@@ -5113,6 +6162,8 @@ def main() -> int:
 
     # Il ToggleDebouncedError continua a essere trattato come prima (non
     # deve diventare un errore: e' una pressione troppo ravvicinata).
+    # ToggleDebouncedError keeps being handled as before (it must not become an
+    # error: it is a press too close to the previous one).
     _deb: dict[str, Any] = {"processed": False}
     with mock.patch.object(_a18, "is_recording", return_value=True), \
          mock.patch.object(_a18, "stop_recording",
@@ -5137,6 +6188,9 @@ def main() -> int:
     # Difetto: il ramo normale (ffmpeg vivo, chiuso con SIGINT) restituiva il
     # path anche con il file a zero byte, e la trascrizione partiva su un file
     # vuoto. Stessa guardia del gemello stream.py:1342, che qui mancava.
+    # Defect: the normal branch (ffmpeg alive, closed with SIGINT) returned the
+    # path even with the file at zero bytes, and the transcription started on an
+    # empty file. Same guard as the twin stream.py:1342, which was missing here.
     with tempfile.TemporaryDirectory() as _td_p1:
         _lk1 = Path(_td_p1) / "recording.lock"
         _saved_lk1 = _a18.LOCK_PATH
@@ -5145,6 +6199,11 @@ def main() -> int:
         # runner ha ricevuto il KeyboardInterrupt e la suite e' morta qui).
         # Il ramo che si vuole provare e' comunque quello normale — il file
         # vuoto resta vuoto sia con ffmpeg vivo sia con ffmpeg gia' morto.
+        # DEAD pid, not os.getpid(): with a live pid stop_recording really sends
+        # SIGINT to the process (first draft of this test: the runner received the
+        # KeyboardInterrupt and the suite died here). The branch we want to prove is
+        # still the normal one — the empty file stays empty both with ffmpeg alive
+        # and with ffmpeg already dead.
         _dead1 = dead_pid()
         try:
             _a18.LOCK_PATH = _lk1
@@ -5167,6 +6226,7 @@ def main() -> int:
             check("P1: il file vuoto non resta a terra", not _empty1.exists())
 
             # 2) file sparito fra is_recording() e stop_recording() (caso B)
+            # 2) file vanished between is_recording() and stop_recording() (case B)
             _lk1.write_text(json.dumps({"pid": _dead1,
                                         "audio_path": str(Path(_td_p1) / "fantasma.ogg"),
                                         "started_at": 0}))
@@ -5180,6 +6240,8 @@ def main() -> int:
 
             # CONTRO (non-vacuita): un file con contenuto passa e viene
             # restituito — la guardia non ha reso lo stop sempre fallito.
+            # CONTRA (non-vacuity): a file with content passes and is returned — the
+            # guard did not make the stop always fail.
             _good1 = Path(_td_p1) / "buono.ogg"
             _good1.write_bytes(b"audio reale")
             _lk1.write_text(json.dumps({"pid": _dead1,
@@ -5207,6 +6269,7 @@ def main() -> int:
 
     _lvl_d1 = config.FallbackLevel("D1", "http://x/v1", "m", "k", "", "", 5, False, True, 1)
     # 1) a livello api_client: il vuoto solleva invece di tornare
+    # 1) at the api_client level: the empty raises instead of returning
     with tempfile.TemporaryDirectory() as _td_d1:
         _au = Path(_td_d1) / "a.ogg"
         _au.write_bytes(b"audio")
@@ -5224,6 +6287,13 @@ def main() -> int:
     # Il mock di `status` riceve le COSTANTI vere: senza, STATE_ERROR sarebbe
     # un attributo Mock e l'asserzione "trattata come errore" controllerebbe
     # una stringa mai scritta (misurato: falliva con la costante mocked).
+    # 2) at the stt.py level: not even if the chain returns "" is the clipboard
+    #    wiped. Here raw_text = "" is forced to verify the CALLER's guard,
+    #    independently of api_client.
+    # The `status` mock receives the real CONSTANTS: without them, STATE_ERROR
+    # would be a Mock attribute and the "treated as an error" assertion would
+    # check a string never written (measured: it failed with the mocked
+    # constant).
     _st_d1 = mock.Mock()
     _st_d1.STATE_ERROR = status.STATE_ERROR
     _st_d1.STATE_PROCESSING = status.STATE_PROCESSING
@@ -5246,6 +6316,10 @@ def main() -> int:
     # voce -> allucinazione Whisper): stessa uscita dell'empty, appunti
     # intatti, errore notificato. E' la stessa lista [stream].blacklist
     # configurabile da GUI, non una seconda lista.
+    # Phrase in the user's BLACKLIST as the WHOLE transcription (recording with
+    # no voice -> Whisper hallucination): same exit as the empty case, clipboard
+    # intact, error notified. It is the same [stream].blacklist list
+    # configurable from the GUI, not a second list.
     import dataclasses as _dc_bl
     _cfg_bl = _dc_bl.replace(cfg_stream_min, stream=_dc_bl.replace(
         cfg_stream_min.stream, blacklist="grazie per la visione, Sottotitoli a cura di"))
@@ -5268,6 +6342,9 @@ def main() -> int:
 
     # CONTRO: senza la frase in blacklist (default vuoto) la stessa trascrizione
     # passa: e' l'utente a decidere, nessuna lista nascosta nel codice.
+    # CONTRA: without the phrase in the blacklist (empty default) the same
+    # transcription passes: it is the user who decides, no list hidden in the
+    # code.
     with mock.patch.object(stt, "try_with_fallback", return_value="Grazie per la visione!"), \
          mock.patch.object(stt, "clipboard") as _clip_nb, \
          mock.patch.object(stt, "status", _st_d1), \
@@ -5281,6 +6358,8 @@ def main() -> int:
 
     # CONTRO: una frase vera che CONTIENE una voce della blacklist non e' toccata
     # (match sull'intero testo, mai su sottostringa).
+    # CONTRA: a real sentence that CONTAINS a blacklist entry is not touched
+    # (match on the whole text, never on a substring).
     with mock.patch.object(stt, "try_with_fallback", return_value="Grazie per la visione! Ci vediamo domani."), \
          mock.patch.object(stt, "clipboard") as _clip_hs, \
          mock.patch.object(stt, "status", _st_d1), \
@@ -5294,6 +6373,8 @@ def main() -> int:
 
     # CONTRO: con un testo vero la clipboard viene comunque scritta — la
     # guardia non ha spento il percorso buono.
+    # CONTRA: with real text the clipboard is still written — the guard did not
+    # switch off the good path.
     with mock.patch.object(stt, "try_with_fallback", return_value="ciao mondo"), \
          mock.patch.object(stt, "clipboard") as _clip2, \
          mock.patch.object(stt, "status"), \
@@ -5306,6 +6387,7 @@ def main() -> int:
           "ciao mondo" in _clip_ok)
 
     # Anti-drift sul chiamante: il test non deve tornare a `is None`.
+    # Anti-drift on the caller: the test must not go back to `is None`.
     _proc_body = (_stt_src.split("def _process_recording(")[1].split("\ndef ")[0])
     check("D1: stt.py non tratta piu' il vuoto come successo (guarda il contenuto, non `is None`)",
           "raw_text is None:" not in _proc_body
@@ -5318,8 +6400,13 @@ def main() -> int:
     # aveva guardia sul vuoto, e ocr.py non aveva la guardia lato chiamante
     # che stt.py ha da tempo. Un 200 con content vuoto finiva a wl-copy,
     # azzerando gli appunti al posto di segnalare un errore.
+    # Same defect as D1 (STT), never fixed on the OCR side: vision_extract had
+    # no guard on the empty, and ocr.py did not have the caller-side guard that
+    # stt.py has had for a long time. A 200 with empty content ended up in
+    # wl-copy, wiping the clipboard instead of reporting an error.
 
     # 1) a livello api_client: il vuoto solleva invece di tornare.
+    # 1) at the api_client level: the empty raises instead of returning.
     class _RespD1Ocr:
         status_code = 200
         text = ""
@@ -5346,6 +6433,8 @@ def main() -> int:
 
     # 2) a livello ocr.py: nemmeno se la catena restituisce "" gli appunti
     #    vengono azzerati (difesa in profondita', indipendente da api_client).
+    # 2) at the ocr.py level: not even if the chain returns "" is the clipboard
+    #    wiped (defense in depth, independent of api_client).
     with mock.patch.object(ocr, "clipboard") as _clip_o, \
          mock.patch.object(ocr, "try_with_fallback", return_value="   "), \
          mock.patch.object(ocr, "status") as _st_o, \
@@ -5365,6 +6454,7 @@ def main() -> int:
           bool(_seen_st_o) and _seen_st_o[-1] == status.STATE_ERROR)
 
     # CONTRO: con un testo vero la clipboard viene comunque scritta.
+    # CONTRA: with real text the clipboard is still written.
     with mock.patch.object(ocr, "clipboard") as _clip_o2, \
          mock.patch.object(ocr, "try_with_fallback", return_value="testo estratto"), \
          mock.patch.object(ocr, "status"), \
@@ -5382,6 +6472,10 @@ def main() -> int:
     # test: subprocess.run e' sostituito con doppioni che ispezionano l'argv
     # reale (per scrivere il file al path che la funzione ha davvero scelto,
     # non uno concordato in anticipo) e simulano i 4 esiti possibili.
+    # screenshot.capture_area_png never calls a real gnome-screenshot in the
+    # tests: subprocess.run is replaced with doubles that inspect the real argv
+    # (to write the file at the path the function really chose, not one agreed in
+    # advance) and simulate the 4 possible outcomes.
     import dataclasses as _dc
 
     def _fake_run_success(args: list[str], **_kw: Any) -> subprocess.CompletedProcess:
@@ -5390,7 +6484,7 @@ def main() -> int:
         return subprocess.CompletedProcess(args, 0)
 
     def _fake_run_cancel(args: list[str], **_kw: Any) -> subprocess.CompletedProcess:
-        return subprocess.CompletedProcess(args, 1)  # Esc: niente file, exit != 0
+        return subprocess.CompletedProcess(args, 1)  # Esc: niente file, exit != 0 | Esc: no file, exit != 0
 
     def _fake_run_missing(args: list[str], **_kw: Any) -> subprocess.CompletedProcess:
         raise FileNotFoundError("gnome-screenshot non installato")
@@ -5404,6 +6498,11 @@ def main() -> int:
         # ramo `except OSError` in screenshot.py, questo risalirebbe fino a
         # cli.ocr_capture_main() come "Unexpected error", non come
         # annullamento silenzioso.
+        # Not FileNotFoundError: a generic OSError (permissions, exhausted
+        # resources, ...) that starting the process can raise. Without the
+        # `except OSError` branch in screenshot.py, this would go up to
+        # cli.ocr_capture_main() as "Unexpected error", not as a silent
+        # cancellation.
         raise PermissionError("simulato: permesso negato")
 
     _orig_ss_run = screenshot.subprocess.run
@@ -5450,6 +6549,8 @@ def main() -> int:
           "testo da screenshot" in _shot_final)
 
     # CONTRO: annullamento (None) non scrive nulla in clipboard e non chiama la catena OCR.
+    # CONTRA: a cancellation (None) writes nothing to the clipboard and does not
+    # call the OCR chain.
     with mock.patch.object(ocr, "screenshot") as _shot_cancel, \
          mock.patch.object(ocr, "clipboard") as _clip_cancel, \
          mock.patch.object(ocr, "try_with_fallback") as _chain_cancel, \
@@ -5488,6 +6589,8 @@ def main() -> int:
     print("== ocr.py: guardia rientranza capture_screenshot (doppia pressione) ==")
     # Senza questa guardia, una seconda pressione mentre la prima selezione
     # e' ancora aperta lancerebbe un secondo gnome-screenshot sovrapposto.
+    # Without this guard, a second press while the first selection is still open
+    # would launch a second overlapping gnome-screenshot.
     _st_saved_reentr = status.STATUS_PATH
     try:
         _tmp_status_dir = Path(tempfile.mkdtemp(prefix="bravoric-status-reentr-"))
@@ -5508,6 +6611,9 @@ def main() -> int:
         # Residuo STANTIO: 'processing/ocr' vecchio di 10 min (processo ucciso
         # con kill -9 durante la selezione): NON deve bloccare per sempre le
         # catture successive (lockout silenzioso fino al watchdog, 120 min).
+        # STALE leftover: 'processing/ocr' 10 min old (process killed with kill -9
+        # during the selection): it must NOT block the later captures forever
+        # (silent lockout until the watchdog, 120 min).
         status.STATUS_PATH.write_text(json.dumps(
             {"state": status.STATE_PROCESSING, "service": "ocr",
              "timestamp": time.time() - 600}), encoding="utf-8")
@@ -5524,6 +6630,8 @@ def main() -> int:
               _stale_calls == 1)
 
         # CONTRO: a idle (nessuna cattura in corso), la guardia non blocca la prima pressione.
+        # CONTRA: at idle (no capture in progress), the guard does not block the
+        # first press.
         status.write_status(status.STATE_IDLE)
         with mock.patch.object(ocr, "screenshot") as _shot_ok, \
              mock.patch.object(ocr, "clipboard"), \
@@ -5544,6 +6652,10 @@ def main() -> int:
     # funzionare MAI, ad ogni pressione — deve avvisare, non tacere come un
     # cambio idea. Senza screenshot.is_available(), questo caso era
     # indistinguibile per l'utente da un Esc silenzioso.
+    # Different from the cancellation: here the feature is enabled but can NEVER
+    # work, on every press — it must warn, not stay silent like a change of
+    # mind. Without screenshot.is_available(), this case was indistinguishable
+    # for the user from a silent Esc.
     with mock.patch.object(ocr, "screenshot") as _shot_missing, \
          mock.patch.object(ocr, "clipboard") as _clip_missing, \
          mock.patch.object(ocr, "try_with_fallback") as _chain_missing, \
@@ -5581,6 +6693,9 @@ def main() -> int:
     # La stringa "false" e' truthy in Python: senza _coerce_bool attivava lo
     # screenshot per un refuso (o per un config scritto dal vecchio bug che
     # serializzava questo campo come stringa TOML invece che bool).
+    # The string "false" is truthy in Python: without _coerce_bool it enabled the
+    # screenshot for a typo (or for a config written by the old bug that
+    # serialized this field as a TOML string instead of a bool).
     check("config: capture_screenshot = \"false\" (stringa) resta False, non truthy",
           config._build_config({"ocr": {"capture_screenshot": "false"}}).ocr_capture_screenshot is False)
     check("config: capture_screenshot = \"true\" (stringa) e' True",
@@ -5590,6 +6705,9 @@ def main() -> int:
     # Stessa coercizione lato GUI: get_state alimenta lo switch di prefs.js;
     # con "false" grezzo (truthy) lo switch mostrerebbe ON mentre il backend
     # (_coerce_bool) dice OFF — GUI che mente sullo stato reale.
+    # Same coercion on the GUI side: get_state feeds the prefs.js switch; with
+    # the raw "false" (truthy) the switch would show ON while the backend
+    # (_coerce_bool) says OFF — a GUI that lies about the real state.
     with tempfile.TemporaryDirectory() as _td_gs:
         _p_gs = Path(_td_gs) / "config.toml"
         _p_gs.write_text('[ocr]\ncapture_screenshot = "false"\n', encoding="utf-8")
@@ -5601,6 +6719,7 @@ def main() -> int:
         finally:
             config_editor.CONFIG_PATH = _saved_cp_gs
     # storage.base_dir vuoto: Path("") e' la cwd -> dati sensibili in $HOME.
+    # empty storage.base_dir: Path("") is the cwd -> sensitive data in $HOME.
     check("config: storage.base_dir = \"\" (vuoto) cade sul default, non sulla cwd",
           config._build_config({"storage": {"base_dir": ""}}).storage.base_dir
           == config.DEFAULT_STORAGE_BASE_DIR)
@@ -5612,6 +6731,9 @@ def main() -> int:
     # api_client: il corpo di una risposta d'errore finisce in ApiError ->
     # notifica desktop + journal + chunk log. Un 401 stile OpenAI ripete la
     # chiave; un corpo HTML puo' essere lunghissimo.
+    # api_client: the body of an error response ends up in ApiError -> desktop
+    # notification + journal + chunk log. An OpenAI-style 401 repeats the key;
+    # an HTML body can be very long.
     class _RespErr:
         status_code = 401
         text = "Incorrect API key provided: sk-abcdef123456. " + ("x" * 5000)
@@ -5656,6 +6778,9 @@ def main() -> int:
 
     # fallback: un errore requests/OSError include l'URL; con un endpoint
     # ...?api_key=XXX la chiave finiva in journal e notifica (misurato).
+    # fallback: a requests/OSError error includes the URL; with an endpoint
+    # ...?api_key=XXX the key ended up in the journal and notification
+    # (measured).
     from bravoric_stt_clipboard import fallback as _fb_mod
     _lv_fb = config.FallbackLevel(
         name="L", endpoint="http://h/v1", model="m", api_key_env="", api_key="",
@@ -5675,6 +6800,7 @@ def main() -> int:
           "L:" in _fb_msg and "Max retries" in _fb_msg and "api_key=" in _fb_msg)
 
     # api_client._keep_leading_words: pura, mai testata direttamente.
+    # api_client._keep_leading_words: pure, never tested directly.
     _klw = api_client._keep_leading_words
     check("keep_leading_words: budget esatto tiene tutte le parole ('ab cd' = 5)",
           _klw("ab cd", 5) == "ab cd")
@@ -5688,6 +6814,9 @@ def main() -> int:
           _klw("ab \n  cd", 99) == "ab cd")
     # _filter_chunks: vuoti e duplicati consecutivi, max 3. Le allucinazioni
     # non sono piu' qui: sono la blacklist utente, applicata prima (ingest).
+    # _filter_chunks: empty and consecutive duplicates, max 3. The
+    # hallucinations are no longer here: they are the user blacklist, applied
+    # before (ingest).
     _fc = stream_module._filter_chunks
     check("filter_chunks: testo vero tenuto",
           _fc(["Grazie mille"]) == ["Grazie mille"])
@@ -5705,6 +6834,10 @@ def main() -> int:
     # "" esplicito, quindi per chi scriveva una config a mano il default NON
     # esisteva: era solo nei file di esempio. E con prompt assente il ramo
     # del vocabolario non partiva mai (soglia `prompt is not None`).
+    # Defect: the dataclasses had prompt = "" and the parsers passed an explicit
+    # "", so for whoever wrote a config by hand the default did NOT exist: it
+    # was only in the example files. And with the prompt absent the vocabulary
+    # branch never started (threshold `prompt is not None`).
     _lvl_p3 = config.FallbackLevel("P3", "http://x/v1", "m", "k", "", "", 5, False, True, 1)
 
     def _cfg_p3(stt_line: str = "", stream_line: str = "") -> Any:
@@ -5751,6 +6884,7 @@ def main() -> int:
           bool(config.DEFAULT_PROMPT.strip()) and "contesto di dettatura" in config.DEFAULT_PROMPT.lower())
 
     # (a) chiave ASSENTE e (b) chiave VUOTA, per [stt] e per [stream].
+    # (a) ABSENT key and (b) EMPTY key, for [stt] and for [stream].
     for _label, _line in (("chiave assente", ""), ("chiave vuota", 'prompt = ""')):
         _c = _cfg_p3(_line, _line)
         check(f"P3 ({_label}): [stt] prende il default di codice",
@@ -5765,6 +6899,9 @@ def main() -> int:
     # (b) del piano: il ramo vocabolario NON dipende dal prompt personale.
     # prompt=None e' il caso reale (primo chunk di sessione, e
     # `cfg.stt.prompt or None` per chi non ha prompt).
+    # (b) of the plan: the vocabulary branch does NOT depend on the personal
+    # prompt. prompt=None is the real case (first chunk of a session, and
+    # `cfg.stt.prompt or None` for whoever has no prompt).
     _p3_none = _send_p3(_cfg_p3(), None)
     check("P3: con prompt=None la frase di vocabolario parte comunque",
           bool(_p3_none) and "nomi proprio" in str(_p3_none))
@@ -5773,6 +6910,8 @@ def main() -> int:
 
     # CONTROLLO: senza hotwords il prompt personale viaggia normalmente
     # (il ramo vocabolario non deve averlo mangiato).
+    # CHECK: without hotwords the personal prompt travels normally (the
+    # vocabulary branch must not have eaten it).
     _c_ctl = _cfg_p3()
     _lv_ctl = _c_ctl.stt_fallback[0]
     _lv_ctl.hotwords_in_prompt = False
@@ -5786,12 +6925,14 @@ def main() -> int:
           bool((_S3.sent or {}).get("prompt")))
 
     # I due config.example non devono contraddire il default.
+    # The two config.example files must not contradict the default.
     for _ex in ("config.example.it.toml", "config.example.toml"):
         _txt_ex = (ROOT / "config" / _ex).read_text(encoding="utf-8")
         _stream_part = _txt_ex.split("[stream]")[1]
         check(f"P3: [stream] in {_ex} non ha prompt = \"\" (contraddirrebbe il default)",
               'prompt = ""' not in _stream_part.split("\n[")[0])
     # E il testo del default deve coincidere con quello degli esempi [stt].
+    # And the default's text must coincide with that of the [stt] examples.
     _ex_it = (ROOT / "config" / "config.example.it.toml").read_text(encoding="utf-8")
     _ex_stt = _ex_it.split("[stt]")[1].split("\n[")[0]
     _m3 = re.search(r'prompt\s*=\s*"([^"]*)"', _ex_stt)
@@ -5803,6 +6944,9 @@ def main() -> int:
     # Difetto: prefs.js scriveva config.toml con _readText + replace +
     # replace_contents, SENZA il lock di config_editor. Due scrittori, uno
     # solo col lock, e la perdita era SILENZIOSA (logError solo su IOException).
+    # Defect: prefs.js wrote config.toml with _readText + replace +
+    # replace_contents, WITHOUT config_editor's lock. Two writers, only one with
+    # the lock, and the loss was SILENT (logError only on IOException).
     _cfg_p5 = """
 [stream]
 mode = "per_chunk"
@@ -5824,6 +6968,8 @@ max_entries = 20
             # Il caso MISURATO dal reviewer: un salvataggio di streaming
             # appena fatto, poi il click sullo switch. Prima la modifica
             # spariva in silenzio.
+            # The case MEASURED by the reviewer: a streaming save just made, then the
+            # click on the switch. Before, the change vanished silently.
             config_editor.set_stream_field("mode", "at_end")
             config_editor.set_notification_field("stt_on_raw_ready", "false")
             _after5 = _p5.read_text(encoding="utf-8")
@@ -5832,12 +6978,14 @@ max_entries = 20
             check("P5: la chiave di notifica e' stata scritta",
                   "stt_on_raw_ready = false" in _after5)
             # E il TOML resta valido (la validazione e' gratis dal lock).
+            # And the TOML stays valid (the validation comes free from the lock).
             check("P5: il TOML resta valido dopo le due scritture",
                   isinstance(tomllib.loads(_after5), dict))
         finally:
             config_editor.CONFIG_PATH = _saved_cp5
 
     # Lo stesso, nell'ordine inverso: lo switch non deve perdere niente.
+    # The same, in the reverse order: the switch must lose nothing.
     with tempfile.TemporaryDirectory() as _td5b:
         _p5b = Path(_td5b) / "config.toml"
         _p5b.write_text(_cfg_p5, encoding="utf-8")
@@ -5855,6 +7003,8 @@ max_entries = 20
 
     # Chiave sconosciuta: respinta. Il valore finisce in un TOML e una chiave
     # iniettata ridefinirebbe un'intera tabella.
+    # Unknown key: rejected. The value ends up in a TOML and an injected key
+    # would redefine a whole table.
     with tempfile.TemporaryDirectory() as _td5c:
         _p5c = Path(_td5c) / "config.toml"
         _p5c.write_text(_cfg_p5, encoding="utf-8")
@@ -5869,6 +7019,13 @@ max_entries = 20
             # la guardia la scrittura passerebbe e il file cambierebbe in
             # silenzio (una tabella in piu', o una chiave spinta sotto
             # [notifications] che nessuno legge).
+            # INJECTABLE but TOML-VALID key. With a malformed key (with a header inside)
+            # _write_validated rejected it anyway, so the test would not have measured
+            # the guard: it would have been green even without it, i.e. VACUOUS. Here
+            # the key is syntactically legitimate and would produce a valid TOML:
+            # without the guard the write would pass and the file would change silently
+            # (one more table, or a key pushed under [notifications] that nobody
+            # reads).
             _inj5 = "storage.stt_raw.enabled"
             _rej5: str | None = None
             try:
@@ -5887,6 +7044,9 @@ max_entries = 20
     # Sotto-difetto: set_storage_field e set_history_max_entries chiamavano
     # _find_block_bounds, che solleva se l'header manca, e non avevano ramo
     # di creazione (set_stream_field ce l'aveva gia').
+    # Sub-defect: set_storage_field and set_history_max_entries called
+    # _find_block_bounds, which raises if the header is missing, and had no
+    # creation branch (set_stream_field already had one).
     with tempfile.TemporaryDirectory() as _td5d:
         _p5d = Path(_td5d) / "config.toml"
         _p5d.write_text('[stream]\nmode = "per_chunk"\n', encoding="utf-8")
@@ -5921,6 +7081,12 @@ max_entries = 20
     # vecchia di quel campo, o modificata a mano). _find_block_bounds non
     # c'entra qui: la tabella c'e', manca solo la riga. Riprodotto dal vivo
     # prima del fix: ConfigEditorError su un salvataggio GUI legittimo.
+    # Real defect (not the same as P5 above): set_storage_field and
+    # set_history_max_entries called _replace_key_in_block, which raises if the
+    # KEY is missing in a block that HOWEVER already exists (config older than
+    # that field, or hand-edited). _find_block_bounds is not the issue here: the
+    # table is there, only the line is missing. Reproduced live before the fix:
+    # ConfigEditorError on a legitimate GUI save.
     with tempfile.TemporaryDirectory() as _td21:
         _p21 = Path(_td21) / "config.toml"
         _p21.write_text('[storage.stt_raw]\nenabled = false\n\n[history]\n', encoding="utf-8")
@@ -5929,8 +7095,11 @@ max_entries = 20
             config_editor.CONFIG_PATH = _p21
             # retention_hours non e' nel blocco [storage.stt_raw]: deve
             # inserirla, non sollevare.
+            # retention_hours is not in the [storage.stt_raw] block: it must insert it,
+            # not raise.
             config_editor.set_storage_field("stt_raw", "retention_hours", "24")
             # max_entries non e' nel blocco [history]: idem.
+            # max_entries is not in the [history] block: same.
             config_editor.set_history_max_entries("50")
             _txt21 = _p21.read_text(encoding="utf-8")
             check("giro 21: set_storage_field inserisce una chiave assente in un blocco esistente",
@@ -5948,6 +7117,11 @@ max_entries = 20
     # (config/config.example*.toml, gia' verificato tomllib-valido altrove),
     # ma scrive su un CONFIG_PATH temporaneo: nessun file reale dell'utente
     # e' toccato.
+    # Destructive operation (overwrites config.toml with the template) with zero
+    # test coverage until now. It reads the REAL template of the repo
+    # (config/config.example*.toml, already verified tomllib-valid elsewhere),
+    # but writes to a temporary CONFIG_PATH: no real file of the user is
+    # touched.
     with tempfile.TemporaryDirectory() as _td_rst:
         _p_rst = Path(_td_rst) / "config.toml"
         _p_rst.write_text('[general]\nnotifications = false\n', encoding="utf-8")
@@ -5969,6 +7143,10 @@ max_entries = 20
     # (config_editor._example_config_path e' quella vera, quindi si
     # monkeypatcha solo tomllib.loads per simulare un template guasto senza
     # toccare i file reali del repo).
+    # CONTRA: a broken TOML template is rejected BEFORE writing
+    # (config_editor._example_config_path is the real one, so only
+    # tomllib.loads is monkeypatched to simulate a broken template without
+    # touching the repo's real files).
     with tempfile.TemporaryDirectory() as _td_rst2:
         _p_rst2 = Path(_td_rst2) / "config.toml"
         _original_content = '[general]\nnotifications = true\n'
@@ -5998,6 +7176,10 @@ max_entries = 20
     # fuori dal lock, e le chiavi che costruisce devono essere tutte note al
     # backend (se una nuova riga usasse una chiave fuori elenco, la scrittura
     # fallirebbe a runtime — questo test lo intercetta prima).
+    # Anti-drift on the extension: no switch must write the file outside the
+    # lock any more, and the keys it builds must all be known to the backend (if
+    # a new row used a key outside the list, the write would fail at runtime —
+    # this test intercepts it beforehand).
     _prefs_src = (ROOT / "gnome-extension" / "bravoric-indicator@local" / "prefs.js").read_text(encoding="utf-8")
     check("P5: prefs.js non chiama piu' writeBool per gli switch (scrittura fuori dal lock)",
           "editor.writeBool(startKey" not in _prefs_src
@@ -6007,12 +7189,15 @@ max_entries = 20
           "setNotificationField" in _prefs_src
           and "['set-notification', key, String(value)]" in _prefs_src)
     # Le chiavi costruite da prefs.js devono esistere in NOTIFICATION_KEYS.
+    # The keys built by prefs.js must exist in NOTIFICATION_KEYS.
     _keys_from_prefs: set[str] = set()
     for _pfx in ("stt", "ocr", "stream"):
         for _suffix in ("_on_processing_start", "_on_raw_ready", "_on_raw_ready_content",
                         "_on_cleanup_ready", "_on_cleanup_ready_content"):
             # stream non ha cleanup: l'esempio in prefs.js non lo genera, ma
             # l'insieme ammesso dal backend non deve essere piu' stretto.
+            # stream has no cleanup: the example in prefs.js does not generate it, but
+            # the set allowed by the backend must not be narrower.
             if _pfx == "stream" and "_on_cleanup_ready" in _suffix:
                 continue
             _keys_from_prefs.add(_pfx + _suffix)
@@ -6020,6 +7205,7 @@ max_entries = 20
           _keys_from_preps_ok := (_keys_from_prefs <= set(config_editor.NOTIFICATION_KEYS)),
           )
     # La sezione [notifications] assente viene creata (config legacy).
+    # A missing [notifications] section is created (legacy config).
     with tempfile.TemporaryDirectory() as _td5e:
         _p5e = Path(_td5e) / "config.toml"
         _p5e.write_text('[stream]\nmode = "per_chunk"\n', encoding="utf-8")
@@ -6041,6 +7227,12 @@ max_entries = 20
     # suite VERDE: era una copertura solo apparente, il test non poteva
     # fallire proprio sul difetto che dichiarava di coprire. Qui il soggetto
     # e' il corpo della funzione, non il file.
+    # Defect 1: the previous check compared the state write with the WHOLE
+    # stream.py. The identical line also appears in the start and close
+    # write_status calls, so emptying the body of heartbeat() left the suite
+    # GREEN: it was only apparent coverage, the test could not fail precisely on
+    # the defect it claimed to cover. Here the subject is the body of the
+    # function, not the file.
     _stream_src19 = (ROOT / "src" / "bravoric_stt_clipboard" / "stream.py").read_text(encoding="utf-8")
     _hb_ok, _hb_why = heartbeat_verdict(_stream_src19)
     check("P4: il CORPO di heartbeat() riscrive RECORDING con service=stream", _hb_ok)
@@ -6048,6 +7240,10 @@ max_entries = 20
     # dichiarare fallimento su tutti i modi in cui il cuore puo' sparire,
     # invece di passarelisciare o di sollevare. Con .index() questi casi
     # avrebbero sollevato e abortito la suite.
+    # Counter-proof on the VERDICT, not on the source: the function must know
+    # how to declare failure in all the ways the heart can vanish, instead of
+    # glossing over it or raising. With .index() these cases would have raised
+    # and aborted the suite.
     for _lbl19, _src19, _want19 in (
         ("funzione assente", "x = 1\n", False),
         ("corpo vuoto", 'def heartbeat() -> None:\n    """doc"""\n    return\n', False),
@@ -6065,6 +7261,9 @@ max_entries = 20
     # E il caso del difetto 1 vero e proprio: la stessa sorgente con la
     # funzione svuotata deve dare FAIL. Non e' una prova sulla copia in /tmp,
     # qui si dimostra che il verdetto e' effettivamente sensibile al corpo.
+    # And the case of defect 1 proper: the same source with the function emptied
+    # must give FAIL. It is not a proof on the copy in /tmp, here it is shown
+    # that the verdict is really sensitive to the body.
     _hb_svuotata = re.sub(r'(def heartbeat\(\) -> None:)(.*?)(?=\ndef )',
                           r'\1\n    """doc"""\n    return\n', _stream_src19, count=1, flags=re.S)
     check("P4 (contro-prova): svuotando il corpo di heartbeat() il verdetto diventa FAIL",
@@ -6073,6 +7272,9 @@ max_entries = 20
     # La stessa logica per LAVORO 2 (guard_order_verdict), che prima non era
     # collaudabile perche' stava inline e poteva sollevare: qui i casi che
     # avrebbero dato ValueError devono dare un FAIL pulito e dichiarato.
+    # The same logic for WORK 2 (guard_order_verdict), which before could not be
+    # tested because it was inline and could raise: here the cases that would
+    # have given ValueError must give a clean and declared FAIL.
     for _lbl19b, _bd19, _ok19, _miss19 in (
         ("corpo vuoto", "", False, 2),
         ("guardia assente",
@@ -6090,6 +7292,10 @@ max_entries = 20
     # Caso "ordine sbagliato": la funzione dichiara che non manca nulla ma il
     # verdetto e' False per l'ordine. E' il caso che il messaggio non nomina,
     # quindi va detto esplicitamente per non confonderlo con una stringa assente.
+    # "Wrong order" case: the function declares that nothing is missing but the
+    # verdict is False because of the order. It is the case the message does not
+    # name, so it must be said explicitly to avoid confusing it with an absent
+    # string.
     _v_inv, _m_inv = guard_order_verdict(
         "    audio.start_recording(cfg)\n    _is_stream_active()\n")
     check("P4 (contro-prova): ordine invertito -> FAIL con zero mancanti "
@@ -6099,6 +7305,8 @@ max_entries = 20
 
     # ==================================================================
     # BRIEF-LOG-CHUNK: log JSONL append-only, una riga per chunk
+    # ==================================================================
+    # BRIEF-LOG-CHUNK: append-only JSONL log, one line per chunk
     print("== chunk_log: log JSONL per chunk (provenance + tempi) ==")
     from bravoric_stt_clipboard import chunk_log as cl_mod
     from bravoric_stt_clipboard import stream as stream_mod
@@ -6108,11 +7316,18 @@ max_entries = 20
     # ~/.cache/bravoric-stt-clipboard/chunk_log.jsonl inquinerebbe la sessione
     # REALE dell'utente. Qui ogni test lavora su un tmp_path e passa il
     # percorso a append_record; nessuno scrive mai sul percorso di default.
+    # The log path MUST be injectable: writing to
+    # ~/.cache/bravoric-stt-clipboard/chunk_log.jsonl would pollute the user's
+    # REAL session. Here every test works on a tmp_path and passes the path to
+    # append_record; nobody ever writes to the default path.
     _cl_dir = Path(tempfile.mkdtemp())
     _cl_log = _cl_dir / "chunk_log.jsonl"
 
     def _cl_read():
-        """Rilegge il log dal disco con il lettore VERO (non una copia)."""
+        """Rilegge il log dal disco con il lettore VERO (non una copia).
+
+        Re-reads the log from disk with the REAL reader (not a copy).
+        """
         return cl_mod.read_records(_cl_log)
 
     def _cl_lvl(name, host, model="whisper-gpu"):
@@ -6124,6 +7339,7 @@ max_entries = 20
         return cl_mod.append_record(record, path=_cl_log, **kw)
 
     # --- 1. chunk SENZA fallback: un tentativo, served_by = quel livello ---
+    # --- 1. chunk WITHOUT fallback: one attempt, served_by = that level ---
     _r1 = cl_mod.make_record(
         session="sess-A", seq=3, audio_s=4.3,
         attempts=[cl_mod.make_attempt(_cl_lvl("whisper-locale", "10.9.0.2"),
@@ -6144,6 +7360,8 @@ max_entries = 20
           _row1["seq"] == 3 and _row1["audio_s"] == 4.3)
     # La chiave NON deve mai finire nel file, nemmeno se il livello la
     # contiene: il modulo costruisce `host` dal livello, non dal testo libero.
+    # The key must NEVER end up in the file, not even if the level contains it:
+    # the module builds `host` from the level, not from free text.
     _raw1 = _cl_log.read_text(encoding="utf-8")
     check("chunk_log: nessuna api_key nel file (nome e valore)",
           "CL_API_KEY_VALUE" not in _raw1 and "CL_ENV_VAR" not in _raw1)
@@ -6174,6 +7392,9 @@ max_entries = 20
     # I due endpoint sono lo STESSO host: e' il caso misurato oggi
     # (whisper-gpu e scrocco-fissone su 10.9.0.2:4001). Il log deve
     # distinguerli per livello/modello, non collapserli per host.
+    # The two endpoints are the SAME host: it is the case measured today
+    # (whisper-gpu and scrocco-fissone on 10.9.0.2:4001). The log must tell them
+    # apart by level/model, not collapse them by host.
     check("chunk_log: stesso host ma modelli diversi restano distinguibili",
           _row2["attempts"][0]["model"] == "whisper-gpu"
           and _row2["attempts"][1]["model"] == "scrocco")
@@ -6198,6 +7419,7 @@ max_entries = 20
           and len(_row3["attempts"]) == 2)
 
     # --- 4. redaction: una chiave in query string non finisce nel log -------
+    # --- 4. redaction: a key in the query string does not end up in the log ----
     _r4 = cl_mod.make_record(
         session="sess-B", seq=1, audio_s=1.0,
         attempts=[cl_mod.make_attempt(
@@ -6212,6 +7434,7 @@ max_entries = 20
           _cl_read()[3]["attempts"][0]["host"] == "10.9.0.2:4001")
 
     # --- 5. rotazione: tiene le ULTIME N righe ------------------------------
+    # --- 5. rotation: keeps the LAST N lines ---------------------------------
     _cl_rot = _cl_dir / "rot.jsonl"
     for i in range(5):
         cl_mod.append_record(
@@ -6233,6 +7456,15 @@ max_entries = 20
     # Percorso TEMPORANEO INIETTATO, mai quello reale: _cl_zero sta sotto il
     # mkdtemp di questo blocco, e nessuna delle righe qui sotto tocca
     # CHUNK_LOG_PATH.
+    # --- 5b. CONSISTENCY: max_lines=0 means "default", NOT "one line" ----
+    # The defect: _coerce_max_lines did max(1, ...) so 0 -> 1. But
+    # StreamConfig.chunk_log_max_lines and the two example TOMLs all three say
+    # that 0 = default (2000). The user's personal config does not have the key,
+    # so it took 0 and the log kept a SINGLE line: summarize had nothing to
+    # aggregate and the per-endpoint --summary stayed empty, i.e. the requested
+    # feature was silently switched off. INJECTED TEMPORARY path, never the real
+    # one: _cl_zero sits under this block's mkdtemp, and none of the lines below
+    # touches CHUNK_LOG_PATH.
     _cl_zero_dir = Path(tempfile.mkdtemp())
     _cl_zero = _cl_zero_dir / "zero.jsonl"
     check("chunk_log: percorso iniettato, NON quello reale dell'utente",
@@ -6241,6 +7473,7 @@ max_entries = 20
 
     _cl_def = cl_mod.DEFAULT_MAX_LINES
     # I quattro casi minimi richiesti dal brief, sulla funzione vera.
+    # The four minimal cases required by the brief, on the real function.
     check("max_lines: 0 -> il DEFAULT (2000), non 1",
           cl_mod._coerce_max_lines(0) == _cl_def == 2000)
     check("max_lines: None (chiave assente) -> il DEFAULT (2000)",
@@ -6257,6 +7490,10 @@ max_entries = 20
     # la stessa cosa: il default di StreamConfig e' 0 e 0 deve valere il
     # DEFAULT del modulo, altrimenti la config di default dell'utente
     # (senza la chiave) farebbe dipendere il log dalla sua assenza.
+    # Consistency with the documentation of the other two places that declare
+    # the same thing: the default of StreamConfig is 0 and 0 must mean the
+    # module's DEFAULT, otherwise the user's default config (without the key)
+    # would make the log depend on its absence.
     _cl_cfg_default = config.StreamConfig(
         "per_chunk", 0.7, -30, 0.4, 30, 250).chunk_log_max_lines
     check("max_lines: il default di StreamConfig (0) produce il DEFAULT del modulo",
@@ -6265,6 +7502,9 @@ max_entries = 20
     # Negativo, bool, float non esatto, NaN/inf, e la stringa numerica che il
     # percorso GUI scrive fra virgoletti ("3"): i primi tornano al default,
     # l'ultima e' rispettata (altrimenti si rompe prefs.js -> config.toml).
+    # Negative, bool, non-exact float, NaN/inf, and the numeric string that the
+    # GUI path writes in quotes ("3"): the first ones go back to the default, the
+    # last one is respected (otherwise prefs.js -> config.toml breaks).
     check("max_lines: negativo/bool/float rotto/NaN -> DEFAULT, stringa numerica ok",
           cl_mod._coerce_max_lines(-5) == _cl_def
           and cl_mod._coerce_max_lines(True) == _cl_def
@@ -6276,6 +7516,9 @@ max_entries = 20
     # puo' dimostrare un limite assente da solo, quindi si verifica il
     # comportamento dichiarato (oltre il tetto -> tetto) e che il tetto sia
     # quello di sempre.
+    # Clamp: the cap is the one ALREADY in the file, not a new one. No test can
+    # prove a limit that is absent on its own, so the declared behavior is
+    # verified (beyond the cap -> cap) and that the cap is the usual one.
     check("max_lines: oltre il tetto viene clampato al tetto esistente (1e6)",
           cl_mod.MAX_MAX_LINES == 1_000_000
           and cl_mod._coerce_max_lines(10**9) == 1_000_000)
@@ -6286,6 +7529,13 @@ max_entries = 20
     # Ogni record porta UN tentativo reale: summarize aggrega sugli `attempts`,
     # quindi con una lista vuota la verifica non discriminerebbe nulla (l'ho
     # scritto una volta cosi e la suite me l'ha detto).
+    # END-TO-END PROOF, the part that FAILS with the earlier code: 5 appends
+    # with max_lines=0 on the injected path. With 0 -> 1 lines 1..4 were rotated
+    # away and on disk a SINGLE line remained, so summarize could aggregate
+    # nothing. With 0 -> 2000 all 5 stay. Every record carries ONE real attempt:
+    # summarize aggregates on the `attempts`, so with an empty list the check
+    # would discriminate nothing (I wrote it like that once and the suite told
+    # me).
     for i in range(5):
         cl_mod.append_record(
             cl_mod.make_record(
@@ -6301,6 +7551,10 @@ max_entries = 20
     # i tentativi. Con 0 -> 1 ne avrebbe visti 1 solo, quindi il conteggio (5)
     # distingue i due comportamenti: non basta ">= 1", che passerebbe anche
     # con la rotazione a 1 riga.
+    # And the point of the whole item: with the default applied, summarize
+    # aggregates ALL the attempts. With 0 -> 1 it would have seen only 1, so the
+    # count (5) tells the two behaviors apart: ">= 1" is not enough, it would
+    # pass even with the rotation at 1 line.
     _zero_sum = cl_mod.summarize(_zero_rows)
     check("max_lines=0 -> summarize vede TUTTI i tentativi (il default e' applicato)",
           len(_zero_sum) == 1 and _zero_sum[0]["attempts"] == 5
@@ -6309,6 +7563,9 @@ max_entries = 20
     # --- 6. un errore di scrittura NON propaga e NON solleva ---------------
     # Percorso non scrivibile: la directory padre e' un FILE, quindi
     # mkdir/parents fallisce. append_record deve tornare False, non alzare.
+    # --- 6. a write error does NOT propagate and does NOT raise ---------------
+    # Unwritable path: the parent directory is a FILE, so mkdir/parents fails.
+    # append_record must return False, not raise.
     _cl_bad = _cl_dir / "not_a_dir" / "chunk_log.jsonl"
     (_cl_dir / "not_a_dir").write_text("sono un file", encoding="utf-8")
     _raised = False
@@ -6321,13 +7578,15 @@ max_entries = 20
           _ok_write is False and _raised is False)
     # E il chiamante (il sequencer) deve proseguire: un log rotto non puo'
     # far perdere una parola. Qui si verifica l'ingest, non solo append_record.
+    # And the caller (the sequencer) must go on: a broken log cannot make a word
+    # be lost. Here the ingest is verified, not only append_record.
     _cl_st = {"session_id": "sess-C", "chunks": [], "last_chunks": []}
     _cl_seq = stream_mod._FifoSequencer(
         _cl_st, types.SimpleNamespace(context_enabled=False, blacklist=""),
         lambda text: None, lambda text: None, log_max_lines=2000)
     _cl_saved_path = cl_mod.CHUNK_LOG_PATH
     try:
-        cl_mod.CHUNK_LOG_PATH = _cl_bad  # il log NON puo' scrivere
+        cl_mod.CHUNK_LOG_PATH = _cl_bad  # il log NON puo' scrivere | the log CANNOT write
         _committed = _cl_seq.ingest(stream_mod._ChunkResult(0, "Parola", True))
     finally:
         cl_mod.CHUNK_LOG_PATH = _cl_saved_path
@@ -6339,6 +7598,9 @@ max_entries = 20
     # --- 7. lettura: --last / --session / --since ---------------------------
     # Il log contiene 4 righe, seq 3, 4, 0, 1: --last 2 prende le due
     # ULTIME (0, 1), non le prime. E' il punto dell'opzione.
+    # --- 7. reading: --last / --session / --since ---------------------------
+    # The log contains 4 lines, seq 3, 4, 0, 1: --last 2 takes the two LAST ones
+    # (0, 1), not the first ones. It is the point of the option.
     _all = _cl_read()
     check("lettura: --last tiene le ultime righe, piu' recente in fondo",
           [r["seq"] for r in cl_mod.filter_records(_all, last=2)] == [0, 1])
@@ -6358,6 +7620,7 @@ max_entries = 20
           [r["seq"] for r in cl_mod.filter_records(_mixed, since_minutes=5)]
           == [99])
     # Una riga SENZA ts non puo' dimostrare di essere dentro la finestra.
+    # A line WITHOUT ts cannot prove it is inside the window.
     _nots = cl_mod.filter_records(
         [{"seq": 97, "text": "senza orario"}], since_minutes=5)
     check("lettura: --since scarta la riga senza ts (niente finestra provata)",
@@ -6367,41 +7630,57 @@ max_entries = 20
     # Il test chiama summarize() (la funzione vera): ricalcolare qui i numeri
     # riprodurrebbe la logica invece di verificarla, che e' esattamente il
     # difetto che questo blocco deve chiudere.
+    # --- 8. --summary: real aggregation, not reimplemented in the test -------
+    # The test calls summarize() (the real function): recomputing the numbers
+    # here would reproduce the logic instead of verifying it, which is exactly
+    # the defect this block must close.
     _sum_rows = cl_mod.summarize(cl_mod.read_records(_cl_log))
     _by_level = {r["level"]: r for r in _sum_rows}
     # whisper-gpu e' stato tentato 3 volte (seq 4, seq 0, seq 1) e ha FALLITO
     # tutte e tre: e' il caso misurato oggi a 4 richieste simultanee.
+    # whisper-gpu was tried 3 times (seq 4, seq 0, seq 1) and FAILED all three:
+    # it is the case measured today at 4 simultaneous requests.
     _gpu = _by_level.get("whisper-gpu")
     check("summary: per endpoint conta tentativi, ok e falliti",
           _gpu is not None and _gpu["attempts"] == 3
           and _gpu["ok"] == 0 and _gpu["failed"] == 3)
     # Nessun tentativo riuscito => latenza INDEFINITA, non 0. Un 0 qui
     # sembrerebbe "l'endpoint ha risposto in 0 ms".
+    # No successful attempt => UNDEFINED latency, not 0. A 0 here would look like
+    # "the endpoint answered in 0 ms".
     check("summary: ms medio/p50/p95 su whisper-gpu restano None (0 successi)",
           _gpu is not None and _gpu["ms_avg"] is None
           and _gpu["p50"] is None and _gpu["p95"] is None)
     # whisper-locale ha risposto una volta: qui i tempi sono reali (4052 ms).
+    # whisper-locale answered once: here the timings are real (4052 ms).
     _locale = _by_level.get("whisper-locale")
     check("summary: ms medio/p50/p95 calcolati sui tentativi RIUSCITI",
           _locale is not None and _locale["ms_avg"] == 4052.0
           and _locale["p50"] == 4052.0 and _locale["p95"] == 4052.0)
     # Dei 3 chunk, 2 hanno avuto una risposta (seq 3 e seq 4): scrocco ne ha
     # servito 1 => 50%. E' la quota, non il conteggio assoluto.
+    # Of the 3 chunks, 2 had an answer (seq 3 and seq 4): scrocco served 1 =>
+    # 50%. It is the share, not the absolute count.
     _scrocco = _by_level.get("scrocco-fissone")
     check("summary: la quota di chunk serviti e' sul totale dei chunk serviti",
           _scrocco is not None and _scrocco["served"] == 1
           and _scrocco["served_pct"] == 50.0)
     # whisper-gpu non ha servito nessun chunk: la sua quota deve essere 0,
     # non assente. E' la differenza fra "non ha mai risposto" e "non c'era".
+    # whisper-gpu served no chunk: its share must be 0, not absent. It is the
+    # difference between "it never answered" and "it was not there".
     check("summary: chi non ha servito ha quota 0.0, non un buco",
           _gpu is not None and _gpu["served"] == 0 and _gpu["served_pct"] == 0.0)
     # p95 su piu' campioni: qui 1 solo, quindi il percentile deve restare
     # indefinito e NON diventare 0 (che sembrerebbe una latenza piu' veloce).
+    # p95 over several samples: here only 1, so the percentile must stay
+    # undefined and NOT become 0 (which would look like a faster latency).
     check("summary: senza campioni riusciti ms resta None, non 0 inventato",
           cl_mod.summarize([{"attempts": [
               {"level": "x", "model": "m", "host": "h", "ms": 0,
                "ok": False, "err": "ko"}]}])[0]["ms_avg"] is None)
     # Ordine deterministico: a parita' di tentativi, per livello.
+    # Deterministic order: on equal attempts, by level.
     check("summary: le righe sono ordinate per tentativi decrescenti",
           [r["attempts"] for r in _sum_rows]
           == sorted([r["attempts"] for r in _sum_rows], reverse=True))
@@ -6410,6 +7689,10 @@ max_entries = 20
     # Ogni invocazione cattura il proprio stdout in un buffer separato: con
     # un solo buffer i due output si sommerebbero e la seconda verifica
     # passerebbe guardando testo prodotto dalla prima.
+    # --- 9. the log CLI: --summary and --last on the injected path -----
+    # Every invocation captures its own stdout in a separate buffer: with a
+    # single buffer the two outputs would add up and the second check would pass
+    # looking at text produced by the first.
     def _run_cli(args):
         out = io.StringIO()
         saved = sys.stdout
@@ -6417,7 +7700,7 @@ max_entries = 20
             sys.stdout = out
             rc = cl_mod.main(args)
         finally:
-            sys.stdout = saved  # ripristino OBBLIGATORIO, anche se main solleva
+            sys.stdout = saved  # ripristino OBBLIGATORIO, anche se main solleva | MANDATORY restore, even if main raises
         return rc, out.getvalue()
 
     _rc_sum, _sum_text = _run_cli(["--summary", "--path", str(_cl_log)])
@@ -6435,6 +7718,10 @@ max_entries = 20
     # Misurato prima del fix: "Authorization: Bearer sk-x" lasciava sk-x in
     # chiaro (il regex prendeva "Bearer" come valore), e password=/secret=/
     # user:pass@host non erano coperti.
+    # --- redact: the secret must NOT stay in the log (never tested by name) ----
+    # Measured before the fix: "Authorization: Bearer sk-x" left sk-x in clear
+    # (the regex took "Bearer" as the value), and password=/secret=/
+    # user:pass@host were not covered.
     _secret_cases = [
         ("Authorization: Bearer sk-TOPSECRET99", "sk-TOPSECRET99"),
         ("url: /v1/audio?api_key=TOPSECRET99&x=1", "TOPSECRET99"),
@@ -6452,6 +7739,8 @@ max_entries = 20
           "api_key=" in cl_mod.redact("?api_key=TOPSECRET99"))
     # Valore ESATTO della chiave configurata: un 401 stile OpenAI la ripete nel
     # corpo senza "nome=valore" agganciabile da un regex.
+    # EXACT value of the configured key: an OpenAI-style 401 repeats it in the
+    # body without a "name=value" a regex can latch onto.
     _lv_sec = types.SimpleNamespace(
         name="a", model="m", endpoint="http://h:1/v1",
         resolved_api_key=lambda: "sk-abcdef123456")
@@ -6470,6 +7759,9 @@ max_entries = 20
     # --- privacy: la rotazione non deve rendere il log leggibile da altri ----
     # Misurato dal vivo: il chunk_log reale (testo dettato) era 0644 dopo la
     # rotazione, perche' _rotate riscriveva con open(tmp, "wb") sotto umask.
+    # --- privacy: the rotation must not make the log readable by others ----
+    # Measured live: the real chunk_log (dictated text) was 0644 after the
+    # rotation, because _rotate rewrote with open(tmp, "wb") under umask.
     _cl_priv_dir = Path(tempfile.mkdtemp(prefix="brv-clpriv-"))
     _cl_priv = _cl_priv_dir / "chunk_log.jsonl"
     _old_umask = os.umask(0o022)
@@ -6488,6 +7780,10 @@ max_entries = 20
     # Anti-drift privacy sull'estensione: il file di testo vivo (testo dettato)
     # va creato PRIVATE (0600). Verificato dal vivo con gjs sotto umask 022:
     # senza il flag nasce 0644. Qui si presidia solo che il flag non sparisca.
+    # Privacy anti-drift on the extension: the live text file (dictated text)
+    # must be created PRIVATE (0600). Verified live with gjs under umask 022:
+    # without the flag it is born 0644. Here we only guard that the flag does not
+    # disappear.
     _ext_js = (ROOT / "gnome-extension" / "bravoric-indicator@local" / "extension.js").read_text(encoding="utf-8")
     _live_at = _ext_js.index("_writeStreamLiveText() {")
     _live_block = _ext_js[_live_at:_ext_js.index("_refreshStatus() {", _live_at)]
@@ -6495,6 +7791,7 @@ max_entries = 20
           "Gio.FileCreateFlags.PRIVATE" in _live_block)
 
     # --- audio.ensure_private_dir: dir di runtime con la VOCE dell'utente ------
+    # --- audio.ensure_private_dir: runtime dir with the user's VOICE ------
     _pd_root = Path(tempfile.mkdtemp(prefix="brv-privdir-"))
     _old_um = os.umask(0o022)
     try:
@@ -6542,6 +7839,9 @@ max_entries = 20
     # --- config_editor: caratteri di controllo in una stringa TOML -----------
     # Misurato: \x0b/\x1b/\x7f/\x00 rendevano il TOML invalido e il salvataggio
     # dalla GUI falliva ("Write aborted") per un testo che sembrava normale.
+    # --- config_editor: control characters in a TOML string -----------
+    # Measured: \x0b/\x1b/\x7f/\x00 made the TOML invalid and the save from the
+    # GUI failed ("Write aborted") for a text that looked normal.
     with tempfile.TemporaryDirectory() as _td_cc:
         _p_cc = Path(_td_cc) / "config.toml"
         _p_cc.write_text('[ocr]\nsystem_prompt = "x"\n', encoding="utf-8")
@@ -6564,6 +7864,11 @@ max_entries = 20
     # qualunque dell'utente, stop_recording/_terminate_pid gli mandavano
     # SIGINT/SIGTERM/SIGKILL. Processi REALI: uno innocente (sleep) e uno con
     # argv0 "ffmpeg". (I test non segnalano mai os.getpid(): ucciderebbe il runner.)
+    # --- signals only to OUR processes (pid reused by a stale lock) --------
+    # After a crash the lock stays; if the pid was REUSED by any process of the
+    # user, stop_recording/_terminate_pid sent it SIGINT/SIGTERM/SIGKILL. REAL
+    # processes: an innocent one (sleep) and one with argv0 "ffmpeg". (The tests
+    # never signal os.getpid(): it would kill the runner.)
     check("pid_matches: il nostro processo python contiene 'python'",
           audio.pid_matches(os.getpid(), ("python",)))
     check("pid_matches: marker assente -> False",
@@ -6619,6 +7924,7 @@ max_entries = 20
             _pr.wait()
 
     # --- ogni notifica ha il suo interruttore (GUI: pagina Notifiche) ------------
+    # --- every notification has its own switch (GUI: Notifications page) -------
     import dataclasses as _dc_nt
     _N = config.ServiceNotifications
     _nt_default = config._build_config({}).notif_stt
@@ -6646,6 +7952,7 @@ max_entries = 20
             notif_stream=_dc_nt.replace(base.notif_stream, **kw.get("stream", {})))
 
     # stt: errore di trascrizione + registrazione avviata
+    # stt: transcription error + recording started
     for _label_nt, _on_nt in (("acceso", True), ("spento", False)):
         with mock.patch.object(stt, "try_with_fallback", return_value="   "), \
              mock.patch.object(stt, "clipboard"), mock.patch.object(stt, "status"), \
@@ -6663,6 +7970,7 @@ max_entries = 20
         check(f"stt: 'recording started' con stt_on_recording_start {_label_nt} -> {'inviata' if _on_nt else 'NON inviata'}",
               (_sent_r >= 1) == _on_nt)
     # ocr: strumento screenshot mancante (un errore qualunque dell'OCR)
+    # ocr: missing screenshot tool (any OCR error)
     for _label_nt, _on_nt in (("acceso", True), ("spento", False)):
         with mock.patch.object(ocr, "screenshot") as _shot_nt, mock.patch.object(ocr, "status") as _st_nt, \
              mock.patch.object(ocr, "notify") as _nt_o:
@@ -6703,6 +8011,10 @@ max_entries = 20
     # Regola del progetto: nessuna notifica non configurabile da GUI. Le chiavi
     # che prefs.js costruisce (processing_start + contentRows con _content +
     # extraRows) devono coincidere ESATTAMENTE con NOTIFICATION_KEYS.
+    # --- anti-drift: EVERY backend notification has its row in the GUI ---------
+    # Project rule: no notification that cannot be configured from the GUI. The
+    # keys that prefs.js builds (processing_start + contentRows with _content +
+    # extraRows) must coincide EXACTLY with NOTIFICATION_KEYS.
     _prefs_nt = (ROOT / "gnome-extension" / "bravoric-indicator@local" / "prefs.js").read_text(encoding="utf-8")
     _groups_nt = _prefs_nt[_prefs_nt.index("const NOTIFICATION_GROUPS = ["):]
     _groups_nt = _groups_nt[:_groups_nt.index("\n];")]
@@ -6730,6 +8042,10 @@ max_entries = 20
     # --- "Transcribing..." (stream at_end) passa da uno slot icona ----------
     # Usava notify.ICON_PROCESSING fisso: non personalizzabile da GUI. Ora e'
     # lo slot stream_processing_start (Icone > "Stream — Transcribing").
+    # --- "Transcribing..." (stream at_end) goes through an icon slot ----------
+    # It used the fixed notify.ICON_PROCESSING: not customizable from the GUI.
+    # Now it is the stream_processing_start slot (Icons > "Stream —
+    # Transcribing").
     check("icone: lo slot stream_processing_start e' registrato",
           "stream_processing_start" in config.ICON_SLOT_KEYS)
     check("icone: IconsConfig ha il campo stream_processing_start",
@@ -6811,6 +8127,9 @@ max_entries = 20
     # Anti-drift GUI/backend: ogni campo scrivibile via set-general ha una
     # riga in prefs.js che lo scrive, e viceversa prefs.js non scrive campi
     # che il backend rifiuterebbe.
+    # GUI/backend anti-drift: every field writable via set-general has a row in
+    # prefs.js that writes it, and conversely prefs.js does not write fields
+    # that the backend would reject.
     _prefs_gen = (ROOT / "gnome-extension" / "bravoric-indicator@local" / "prefs.js").read_text(encoding="utf-8")
     _gui_fields = set(re.findall(r"setGeneralField\('(\w+)', '(\w+)'", _prefs_gen))
     check("GENERAL_FIELDS == campi scritti dalla GUI (nessun campo senza riga, nessuna riga orfana)",
@@ -6865,6 +8184,7 @@ max_entries = 20
           config.load_config(_tun_toml).notifications is False)
 
     # Scrittura via config_editor: stessi limiti, stesso file valido.
+    # Write via config_editor: same limits, same valid file.
     _saved_tun = config_editor.CONFIG_PATH
     try:
         config_editor.CONFIG_PATH = _tun_toml
@@ -7080,6 +8400,10 @@ max_entries = 20
     # (la verifica che il percorso reale non sia stato TOCCATO da nessun test
     # e' in fondo a main(): confronta mtime+size reali, non stringhe di path
     # — quella era la vecchia "difesa finale", tautologica per costruzione.)
+    # --- 10. the default path is the real one, not a duplicate -------
+    # (the check that the real path was not TOUCHED by any test is at the end of
+    # main(): it compares real mtime+size, not path strings — that was the old
+    # "final defense", tautological by construction.)
     check("chunk_log: CHUNK_LOG_PATH del modulo e' il percorso reale, non un doppione di test",
           cl_mod.CHUNK_LOG_PATH != _cl_log
           and str(_cl_log) not in str(cl_mod.CHUNK_LOG_PATH))
@@ -7088,11 +8412,17 @@ max_entries = 20
     # Il test qui sotto deve diventare ROSSO se il log smette di funzionare.
     # Non basta dirlo: si FA fallire il log e si asserisce che la verifica
     # diventi False. Se restasse True, il test coprirebbe niente.
+    # --- 11. NON-VACUITY PROOF ----------------------------------------
+    # The test below must turn RED if the log stops working. Saying so is not
+    # enough: the log is MADE to fail and it is asserted that the verification
+    # becomes False. If it stayed True, the test would cover nothing.
     _cl_probe_ok = len(_cl_read()) >= 1 and _cl_read()[0]["served_by"] is not None
     check("NON-VACUITA': con il log funzionante la verifica e' True",
           _cl_probe_ok is True)
     # Fallisco il log: il percorso e' un file, non una directory. La stessa
     # lettura/asserzione deve ora dichiarare il fallimento, non passare.
+    # I make the log fail: the path is a file, not a directory. The same
+    # reading/assertion must now declare the failure, not pass.
     _cl_probe_dir = _cl_dir / "probe_rotto"
     _cl_probe_dir.write_text("file", encoding="utf-8")
     _cl_probe_target = _cl_probe_dir / "chunk_log.jsonl"
@@ -7101,6 +8431,8 @@ max_entries = 20
     _cl_probe_after = cl_mod.read_records(_cl_probe_target)
     # La verifica "il chunk e' stato loggato" deve essere False qui: se fosse
     # True, il test che la usa passerebbe anche con il log morto.
+    # The verification "the chunk was logged" must be False here: if it were
+    # True, the test that uses it would pass even with the log dead.
     _cl_probe_detects_failure = (not _cl_probe_written) and not _cl_probe_after
     check("NON-VACUITA': la verifica diventa False quando il log e' rotto",
           _cl_probe_detects_failure is True)
@@ -7109,6 +8441,10 @@ max_entries = 20
     # nessun test di questa run abbia scritto su NESSUNO dei percorsi reali
     # dell'utente: confronto mtime+size di ogni file noto, snapshot preso a
     # inizio main() contro lo stato attuale.
+    # REAL verification (not tautological, see the comment at the start of
+    # main()) that no test of this run wrote to ANY of the user's real paths:
+    # mtime+size comparison of every known file, snapshot taken at the start of
+    # main() against the current state.
     _real_paths_after = _snapshot_real_paths()
     for _name_rp, _before_rp in _real_paths_before.items():
         check(f"{_name_rp}: il file REALE dell'utente ha mtime/size invariati dopo l'intera suite",
