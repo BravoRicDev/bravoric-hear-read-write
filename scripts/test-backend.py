@@ -6540,6 +6540,65 @@ max_entries = 20
         finally:
             config_editor.CONFIG_PATH = _saved_cc
 
+    # --- segnali solo a processi NOSTRI (pid riusato da un lock stale) --------
+    # Dopo un crash il lock resta; se il pid e' stato RIUSATO da un processo
+    # qualunque dell'utente, stop_recording/_terminate_pid gli mandavano
+    # SIGINT/SIGTERM/SIGKILL. Processi REALI: uno innocente (sleep) e uno con
+    # argv0 "ffmpeg". (I test non segnalano mai os.getpid(): ucciderebbe il runner.)
+    check("pid_matches: il nostro processo python contiene 'python'",
+          audio.pid_matches(os.getpid(), ("python",)))
+    check("pid_matches: marker assente -> False",
+          not audio.pid_matches(os.getpid(), ("marker-che-non-esiste-xyz",)))
+    _innocent = subprocess.Popen(["sleep", "60"])
+    _fake_ff = subprocess.Popen(["bash", "-c", "exec -a ffmpeg sleep 60"])
+    _sg_dir = Path(tempfile.mkdtemp(prefix="brv-sig-"))
+    _sg_saved_lock = audio.LOCK_PATH
+    try:
+        time.sleep(0.3)  # lascia partire exec
+        check("pid_matches: argv0 'ffmpeg' riconosciuto",
+              audio.pid_matches(_fake_ff.pid, ("ffmpeg",)))
+        check("pid_matches: un 'sleep' qualunque NON e' ffmpeg",
+              not audio.pid_matches(_innocent.pid, ("ffmpeg",)))
+        _sg_audio = _sg_dir / "a.ogg"
+        _sg_audio.write_bytes(b"dati")
+        audio.LOCK_PATH = _sg_dir / "recording.lock"
+        _sg_cfg = mock.Mock(toggle_debounce_seconds=0.0)
+
+        def _sg_lock(pid: int) -> None:
+            audio.LOCK_PATH.write_text(json.dumps(
+                {"pid": pid, "audio_path": str(_sg_audio), "started_at": 0}))
+
+        _sg_lock(_innocent.pid)
+        audio.stop_recording(_sg_cfg)
+        check("stop_recording: un pid riusato da un processo NON ffmpeg NON viene segnalato",
+              _innocent.poll() is None)
+        check("stop_recording: il lock stale viene comunque rimosso",
+              not audio.LOCK_PATH.exists())
+        _sg_lock(_fake_ff.pid)
+        audio.stop_recording(_sg_cfg)
+        for _ in range(30):
+            if _fake_ff.poll() is not None:
+                break
+            time.sleep(0.1)
+        check("stop_recording (contro): un vero 'ffmpeg' viene ancora fermato",
+              _fake_ff.poll() is not None)
+        # stream._terminate_pid: stessa protezione
+        _innocent2 = subprocess.Popen(["sleep", "60"])
+        try:
+            stream_mod._terminate_pid(_innocent2.pid, graceful=False)
+            time.sleep(0.3)
+            check("stream._terminate_pid: un processo non nostro NON viene segnalato",
+                  _innocent2.poll() is None)
+        finally:
+            _innocent2.kill()
+            _innocent2.wait()
+    finally:
+        audio.LOCK_PATH = _sg_saved_lock
+        for _pr in (_innocent, _fake_ff):
+            if _pr.poll() is None:
+                _pr.kill()
+            _pr.wait()
+
     # --- 10. il percorso di default e' quello vero, non un doppione -------
     # (la verifica che il percorso reale non sia stato TOCCATO da nessun test
     # e' in fondo a main(): confronta mtime+size reali, non stringhe di path

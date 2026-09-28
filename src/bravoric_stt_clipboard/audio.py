@@ -27,6 +27,8 @@ def _runtime_dir() -> Path:
 
 
 LOCK_PATH = _runtime_dir() / "recording.lock"
+# Sottostringhe attese nella cmdline del registratore (vedi pid_matches).
+RECORDER_MARKERS = ("ffmpeg",)
 
 
 def ensure_private_dir(path: Path) -> None:
@@ -224,7 +226,12 @@ def stop_recording(audio_cfg: AudioConfig) -> Path:
         LOCK_PATH.unlink(missing_ok=True)
         raise RuntimeError("No recording in progress")
     audio_path = Path(lock["audio_path"])
-    if _pid_alive(pid):
+    if _pid_alive(pid) and not pid_matches(pid, RECORDER_MARKERS):
+        # Lock stale con pid RIUSATO da un altro processo: non e' il nostro
+        # ffmpeg, nessun segnale (SIGKILL compreso). Si prosegue come per un
+        # ffmpeg gia' morto: lock rimosso e controllo del file sotto.
+        logger.warning("lock di registrazione stale: il pid %d non e' ffmpeg, non lo segnalo", pid)
+    elif _pid_alive(pid):
         with contextlib.suppress(ProcessLookupError):
             os.kill(pid, signal.SIGINT)
         for _ in range(50):
@@ -277,6 +284,25 @@ def stop_recording(audio_cfg: AudioConfig) -> Path:
             audio_path.unlink()
         raise RuntimeError("No recording in progress")
     return audio_path
+
+
+def pid_matches(pid: int, markers: tuple[str, ...]) -> bool:
+    """Il processo `pid` e' ancora QUELLO che ci aspettiamo (cmdline contiene
+    uno dei `markers`)?
+
+    Serve prima di mandare segnali (SIGINT/SIGTERM/SIGKILL) al pid scritto in
+    un lock: dopo un crash il lock resta, e se quel pid e' stato RIUSATO da
+    un processo qualunque dell'utente, os.kill lo ucciderebbe. _pid_alive
+    non basta: dice solo che *qualcuno* ha quel pid.
+
+    Se /proc non e' leggibile (non-Linux, processo appena sparito, permessi)
+    non si puo' giudicare: True, cioe' il comportamento di prima."""
+    try:
+        raw = Path(f"/proc/{int(pid)}/cmdline").read_bytes()
+    except (OSError, ValueError):
+        return True
+    cmdline = raw.replace(b"\0", b" ").decode("utf-8", "replace")
+    return any(marker in cmdline for marker in markers)
 
 
 def _pid_alive(pid: int) -> bool:

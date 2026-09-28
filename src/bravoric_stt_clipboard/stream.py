@@ -1418,6 +1418,13 @@ def _terminate_pid(pid: int, graceful: bool = True) -> None:
     """Termina un processo (SIGINT poi SIGTERM poi SIGKILL)."""
     if not _pid_alive(pid):
         return
+    # Solo processi NOSTRI: registratore (ffmpeg) o supervisore
+    # (python -m bravoric_stt_clipboard.stream). Un lock stale con pid
+    # riusato da un processo qualunque dell'utente non deve prendersi un
+    # SIGKILL (vedi audio.pid_matches).
+    if not audio.pid_matches(pid, ("ffmpeg", "bravoric_stt_clipboard")):
+        logger.warning("pid %d nel lock non e' ffmpeg ne' il supervisore: non lo segnalo", pid)
+        return
     sig = signal.SIGINT if graceful else signal.SIGTERM
     with contextlib.suppress(ProcessLookupError):
         os.kill(pid, sig)
