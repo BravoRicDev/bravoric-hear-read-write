@@ -346,6 +346,14 @@ function setLevelField(service, index, field, value) {
     return runConfigEditor(['set-level', service, String(index), field, value]).success;
 }
 
+function setGeneralField(section, field, value) {
+    return runConfigEditor(['set-general', section, field, String(value)]).success;
+}
+
+// Frequenze di campionamento accettate dall'encoder Opus (ffmpeg rifiuta le
+// altre, es. 44100): stesso elenco di config_editor.GENERAL_FIELDS.
+const SAMPLE_RATES = [8000, 12000, 16000, 24000, 48000];
+
 function setSectionField(service, field, value) {
     return runConfigEditor(['set-section', service, field, value]).success;
 }
@@ -566,6 +574,25 @@ export default class BravoricPreferences extends ExtensionPreferences {
         });
         window.add(page);
 
+        // Interruttore generale ([general] notifications): prima non aveva
+        // nessuna riga in GUI. Sta in [general], non in [notifications]: passa da
+        // set-general e si legge dallo stato del backend, non da TomlBoolEditor.
+        const generalState = getServicesState()?.general;
+        if (generalState) {
+            const masterGroup = new Adw.PreferencesGroup({ title: _('All notifications') });
+            page.add(masterGroup);
+            const masterRow = new Adw.SwitchRow({
+                title: _('Show notifications'),
+                subtitle: _('Master switch for every notification sent by the backend. Notifications from the extension itself are controlled in the group below.'),
+                active: generalState.notifications ?? true,
+            });
+            masterRow.connect('notify::active', () => {
+                if (!setGeneralField('general', 'notifications', masterRow.active ? 'true' : 'false'))
+                    masterRow.active = getServicesState()?.general?.notifications ?? true;
+            });
+            masterGroup.add(masterRow);
+        }
+
         for (const notifGroup of NOTIFICATION_GROUPS) {
             const group = new Adw.PreferencesGroup({ title: _(notifGroup.title) });
             page.add(group);
@@ -643,6 +670,7 @@ export default class BravoricPreferences extends ExtensionPreferences {
             extGroup.add(extRow);
         }
 
+        this._buildGeneralPage(window);
         this._buildShortcutsPage(window);
         this._buildStreamPage(window);
         this._buildStoragePage(window);
@@ -1334,6 +1362,123 @@ export default class BravoricPreferences extends ExtensionPreferences {
         const addCommand = new Gtk.Button({ label: _('Add command'), halign: Gtk.Align.START });
         addCommand.connect('clicked', () => addCommandRow(null));
         commandGroup.add(addCommand);
+    }
+
+    _buildGeneralPage(window) {
+        const page = new Adw.PreferencesPage({
+            title: _('General'),
+            icon_name: 'preferences-other-symbolic',
+        });
+        window.add(page);
+
+        const state = getServicesState();
+        if (!state?.general) {
+            this._showConfigError(page);
+            return;
+        }
+        const general = state.general;
+
+        // SpinRow che salva con debounce via set-general (o set-stream).
+        const spin = (group, { title, subtitle, lower, upper, step, digits = 0, value, save }) => {
+            const row = new Adw.SpinRow({
+                title: _(title),
+                subtitle: _(subtitle),
+                adjustment: new Gtk.Adjustment({ lower, upper, step_increment: step, value }),
+                digits,
+            });
+            row.connect('notify::value', debounce(() => save(digits > 0 ? row.value.toFixed(digits) : String(Math.round(row.value)))));
+            group.add(row);
+            return row;
+        };
+        const toggle = (group, { title, subtitle, active, save }) => {
+            const row = new Adw.SwitchRow({ title: _(title), subtitle: _(subtitle), active });
+            row.connect('notify::active', () => save(row.active ? 'true' : 'false'));
+            group.add(row);
+            return row;
+        };
+        // EntryRow con "apply": se il backend rifiuta il valore torna all'ultimo buono.
+        const entry = (group, { title, subtitle, text, save }) => {
+            let lastGood = text;
+            const row = new Adw.EntryRow({
+                title: _(title), tooltip_text: _(subtitle), text, show_apply_button: true,
+            });
+            row.connect('apply', () => {
+                if (save(row.text.trim()))
+                    lastGood = row.text.trim();
+                else
+                    row.text = lastGood;
+            });
+            group.add(row);
+            return row;
+        };
+
+        const audioGroup = new Adw.PreferencesGroup({ title: _('Audio recording') });
+        page.add(audioGroup);
+        spin(audioGroup, {
+            title: N_('Toggle debounce (seconds)'),
+            subtitle: N_('Ignore a second press within this time after a recording starts'),
+            lower: 0.1, upper: 10, step: 0.1, digits: 1, value: general.toggle_debounce_seconds ?? 1,
+            save: v => setGeneralField('audio', 'toggle_debounce_seconds', v),
+        });
+        toggle(audioGroup, {
+            title: N_('Retry on error'),
+            subtitle: N_('Run the whole transcription chain again when every endpoint fails'),
+            active: general.retry_on_error ?? true,
+            save: v => setGeneralField('audio', 'retry_on_error', v),
+        });
+        spin(audioGroup, {
+            title: N_('Attempts'),
+            subtitle: N_('Total attempts of the transcription chain when retry is on'),
+            lower: 1, upper: 10, step: 1, value: general.retry_count ?? 2,
+            save: v => setGeneralField('audio', 'retry_count', v),
+        });
+        spin(audioGroup, {
+            title: N_('Bitrate (kbps)'),
+            subtitle: N_('Audio bitrate of the recording sent for transcription'),
+            lower: 8, upper: 320, step: 8, value: general.bitrate_kbps ?? 16,
+            save: v => setGeneralField('audio', 'bitrate_kbps', v),
+        });
+        const rateRow = new Adw.ComboRow({
+            title: _('Sample rate'),
+            subtitle: _('Only rates supported by the Opus encoder are offered'),
+            model: new Gtk.StringList({ strings: SAMPLE_RATES.map(r => `${r} Hz`) }),
+            selected: Math.max(0, SAMPLE_RATES.indexOf(general.sample_rate)),
+        });
+        rateRow.connect('notify::selected', () => {
+            if (!setGeneralField('audio', 'sample_rate', SAMPLE_RATES[rateRow.selected]))
+                rateRow.selected = Math.max(0, SAMPLE_RATES.indexOf(getServicesState()?.general?.sample_rate));
+        });
+        audioGroup.add(rateRow);
+
+        const clipGroup = new Adw.PreferencesGroup({ title: _('Clipboard') });
+        page.add(clipGroup);
+        toggle(clipGroup, {
+            title: N_('Write raw text first'),
+            subtitle: N_('Copy the raw text right away, then replace it with the cleaned text when ready. Off: only the final text is copied'),
+            active: general.double_injection ?? true,
+            save: v => setGeneralField('clipboard', 'double_injection', v),
+        });
+        entry(clipGroup, {
+            title: N_('Copy command'),
+            subtitle: N_('Command that writes to the clipboard (default: wl-copy)'),
+            text: general.clipboard_tool ?? 'wl-copy',
+            save: v => setGeneralField('general', 'clipboard_tool', v),
+        });
+        entry(clipGroup, {
+            title: N_('Paste command'),
+            subtitle: N_('Command that reads the clipboard (default: wl-paste)'),
+            text: general.clipboard_paste_tool ?? 'wl-paste',
+            save: v => setGeneralField('general', 'clipboard_paste_tool', v),
+        });
+
+        const diagGroup = new Adw.PreferencesGroup({ title: _('Diagnostics') });
+        page.add(diagGroup);
+        spin(diagGroup, {
+            title: N_('Chunk log size (lines)'),
+            subtitle: N_('Lines kept in the streaming chunk log; 0 uses the default (2000)'),
+            lower: 0, upper: 1000000, step: 100, value: state.stream?.chunk_log_max_lines ?? 0,
+            save: v => runConfigEditor(['set-stream', 'chunk_log_max_lines', v]).success,
+        });
     }
 
     _buildStoragePage(window) {

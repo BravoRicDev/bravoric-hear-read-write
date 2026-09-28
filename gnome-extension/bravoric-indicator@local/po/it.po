@@ -1122,3 +1122,95 @@ msgstr "Notifica quando il file di stato viene ripristinato o il backend va in t
 #: gnome-extension/bravoric-indicator@local/prefs.js
 msgid "Stream — Transcribing"
 msgstr "Stream — Trascrizione in corso"
+
+#: gnome-extension/bravoric-indicator@local/prefs.js
+msgid "General"
+msgstr "Generale"
+
+#: gnome-extension/bravoric-indicator@local/prefs.js
+msgid "Audio recording"
+msgstr "Registrazione audio"
+
+#: gnome-extension/bravoric-indicator@local/prefs.js
+msgid "Toggle debounce (seconds)"
+msgstr "Antirimbalzo del comando (secondi)"
+
+#: gnome-extension/bravoric-indicator@local/prefs.js
+msgid "Ignore a second press within this time after a recording starts"
+msgstr "Ignora una seconda pressione entro questo tempo dall'avvio della registrazione"
+
+#: gnome-extension/bravoric-indicator@local/prefs.js
+msgid "Retry on error"
+msgstr "Riprova in caso di errore"
+
+#: gnome-extension/bravoric-indicator@local/prefs.js
+msgid "Run the whole transcription chain again when every endpoint fails"
+msgstr "Rilancia tutta la catena di trascrizione quando falliscono tutti gli endpoint"
+
+#: gnome-extension/bravoric-indicator@local/prefs.js
+msgid "Attempts"
+msgstr "Tentativi"
+
+#: gnome-extension/bravoric-indicator@local/prefs.js
+msgid "Total attempts of the transcription chain when retry is on"
+msgstr "Tentativi totali della catena di trascrizione quando il riprova è attivo"
+
+#: gnome-extension/bravoric-indicator@local/prefs.js
+msgid "Bitrate (kbps)"
+msgstr "Velocità di codifica (kbps)"
+
+#: gnome-extension/bravoric-indicator@local/prefs.js
+msgid "Audio bitrate of the recording sent for transcription"
+msgstr "Bitrate audio della registrazione inviata alla trascrizione"
+
+#: gnome-extension/bravoric-indicator@local/prefs.js
+msgid "Sample rate"
+msgstr "Frequenza di campionamento"
+
+#: gnome-extension/bravoric-indicator@local/prefs.js
+msgid "Only rates supported by the Opus encoder are offered"
+msgstr "Sono proposte solo le frequenze supportate dall'encoder Opus"
+
+#: gnome-extension/bravoric-indicator@local/prefs.js
+msgid "Write raw text first"
+msgstr "Scrivi prima il testo grezzo"
+
+#: gnome-extension/bravoric-indicator@local/prefs.js
+msgid "Copy the raw text right away, then replace it with the cleaned text when ready. Off: only the final text is copied"
+msgstr "Copia subito il testo grezzo, poi lo sostituisce con il testo pulito quando è pronto. Disattivo: viene copiato solo il testo finale"
+
+#: gnome-extension/bravoric-indicator@local/prefs.js
+msgid "Copy command"
+msgstr "Comando di copia"
+
+#: gnome-extension/bravoric-indicator@local/prefs.js
+msgid "Command that writes to the clipboard (default: wl-copy)"
+msgstr "Comando che scrive negli appunti (predefinito: wl-copy)"
+
+#: gnome-extension/bravoric-indicator@local/prefs.js
+msgid "Paste command"
+msgstr "Comando di incolla"
+
+#: gnome-extension/bravoric-indicator@local/prefs.js
+msgid "Command that reads the clipboard (default: wl-paste)"
+msgstr "Comando che legge gli appunti (predefinito: wl-paste)"
+
+#: gnome-extension/bravoric-indicator@local/prefs.js
+msgid "Chunk log size (lines)"
+msgstr "Dimensione log dei chunk (righe)"
+
+#: gnome-extension/bravoric-indicator@local/prefs.js
+msgid "Lines kept in the streaming chunk log; 0 uses the default (2000)"
+msgstr "Righe conservate nel log dei chunk dello streaming; 0 usa il predefinito (2000)"
+
+#: gnome-extension/bravoric-indicator@local/prefs.js
+msgid "All notifications"
+msgstr "Tutte le notifiche"
+
+#: gnome-extension/bravoric-indicator@local/prefs.js
+msgid "Show notifications"
+msgstr "Mostra le notifiche"
+
+#: gnome-extension/bravoric-indicator@local/prefs.js
+msgid "Master switch for every notification sent by the backend. Notifications from the extension itself are controlled in the group below."
+msgstr "Interruttore generale per ogni notifica inviata dal backend. Le notifiche dell'estensione stessa si controllano nel gruppo sottostante."

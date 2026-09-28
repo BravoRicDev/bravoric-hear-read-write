@@ -6738,6 +6738,57 @@ max_entries = 20
         check(f"stream at_end 'Transcribing...': icona dallo slot ({_label_ico})",
               _expect_ico in _icons_used)
 
+    # --- set_general_field: notifiche master, audio, clipboard da GUI --------
+    with tempfile.TemporaryDirectory() as _td_gf:
+        _p_gf = Path(_td_gf) / "config.toml"
+        _p_gf.write_text('[stt]\nlanguage = "it"\n', encoding="utf-8")  # niente [general]/[audio]/[clipboard]
+        _saved_gf = config_editor.CONFIG_PATH
+        try:
+            config_editor.CONFIG_PATH = _p_gf
+            _writes_gf = [
+                ("general", "notifications", "false"), ("general", "clipboard_tool", "xclip"),
+                ("general", "clipboard_paste_tool", "/usr/bin/wl-paste"),
+                ("audio", "toggle_debounce_seconds", "2.5"), ("audio", "retry_on_error", "false"),
+                ("audio", "retry_count", "4"), ("audio", "bitrate_kbps", "32"),
+                ("audio", "sample_rate", "24000"), ("clipboard", "double_injection", "false"),
+            ]
+            for _sec_gf, _fld_gf, _val_gf in _writes_gf:
+                config_editor.set_general_field(_sec_gf, _fld_gf, _val_gf)
+            _raw_gf = tomllib.loads(_p_gf.read_text(encoding="utf-8"))
+            check("set_general_field: sezioni assenti create, TOML valido, [stt] intatto",
+                  _raw_gf["stt"]["language"] == "it" and _raw_gf["audio"]["retry_count"] == 4)
+            _cfg_gf = config._build_config(_raw_gf)
+            check("set_general_field: il backend rilegge i valori scritti (notifiche master, tool, audio, doppia scrittura)",
+                  _cfg_gf.notifications is False and _cfg_gf.clipboard_tool == "xclip"
+                  and _cfg_gf.clipboard_paste_tool == "/usr/bin/wl-paste"
+                  and _cfg_gf.audio.toggle_debounce_seconds == 2.5 and _cfg_gf.audio.retry_on_error is False
+                  and _cfg_gf.audio.retry_count == 4 and _cfg_gf.audio.bitrate_kbps == 32
+                  and _cfg_gf.audio.sample_rate == 24000 and _cfg_gf.double_injection is False)
+            _st_gf = config_editor.get_state()["general"]
+            check("get_state()['general'] riflette i valori (la GUI mostra lo stato vero)",
+                  _st_gf["notifications"] is False and _st_gf["sample_rate"] == 24000
+                  and _st_gf["double_injection"] is False and _st_gf["clipboard_tool"] == "xclip")
+            config_editor.set_general_field("audio", "retry_count", "99")
+            config_editor.set_general_field("audio", "toggle_debounce_seconds", "0")
+            _raw_cl = tomllib.loads(_p_gf.read_text(encoding="utf-8"))["audio"]
+            check("set_general_field: retry_count 99 -> clamp 10, debounce 0 -> clamp 0.1",
+                  _raw_cl["retry_count"] == 10 and _raw_cl["toggle_debounce_seconds"] == 0.1)
+            for _bad_gf in (("audio", "sample_rate", "44100"), ("audio", "sample_rate", "abc"),
+                            ("general", "clipboard_tool", "wl-copy --primary"), ("general", "clipboard_tool", "  "),
+                            ("audio", "retry_count", "x"), ("audio", "toggle_debounce_seconds", "nan"),
+                            ("audio", "codec", "libopus"), ("nope", "x", "1")):
+                try:
+                    config_editor.set_general_field(*_bad_gf)
+                    _rej_gf = False
+                except config_editor.ConfigEditorError:
+                    _rej_gf = True
+                check(f"set_general_field: valore/campo non valido rifiutato {_bad_gf[1]}={_bad_gf[2]!r}", _rej_gf)
+            config_editor.set_general_field("general", "notifications", "true")
+            check("set_general_field: dopo i rifiuti il file e' ancora valido e la modifica valida passa",
+                  tomllib.loads(_p_gf.read_text(encoding="utf-8"))["general"]["notifications"] is True)
+        finally:
+            config_editor.CONFIG_PATH = _saved_gf
+
     # --- 10. il percorso di default e' quello vero, non un doppione -------
     # (la verifica che il percorso reale non sia stato TOCCATO da nessun test
     # e' in fondo a main(): confronta mtime+size reali, non stringhe di path

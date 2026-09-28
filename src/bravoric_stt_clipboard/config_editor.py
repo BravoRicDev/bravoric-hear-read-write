@@ -16,7 +16,13 @@ import tempfile
 import tomllib
 from pathlib import Path
 
-from .config import ICON_SLOT_KEYS, STREAM_DISPATCH_MODES, _coerce_bool, _coerce_int
+from .config import (
+    ICON_SLOT_KEYS,
+    STREAM_DISPATCH_MODES,
+    _coerce_bool,
+    _coerce_float_clamped,
+    _coerce_int,
+)
 
 CONFIG_PATH = Path.home() / ".config" / "bravoric-stt-clipboard" / "config.toml"
 
@@ -536,6 +542,75 @@ def set_history_max_entries(value: str) -> None:
         _write_validated(lines)
 
 
+# Impostazioni generali (sezioni singole, non servizi): ogni campo con il suo
+# tipo e i limiti che la GUI puo' proporre. `sample_rate` e' un ELENCO chiuso:
+# libopus accetta solo 8/12/16/24/48 kHz e ffmpeg rifiuta gli altri (44100).
+GENERAL_FIELDS: dict[tuple[str, str], tuple] = {
+    ("general", "notifications"): ("bool",),
+    ("general", "clipboard_tool"): ("tool",),
+    ("general", "clipboard_paste_tool"): ("tool",),
+    ("audio", "toggle_debounce_seconds"): ("float", 0.1, 10.0),
+    ("audio", "retry_on_error"): ("bool",),
+    ("audio", "retry_count"): ("int", 1, 10),
+    ("audio", "bitrate_kbps"): ("int", 8, 320),
+    ("audio", "sample_rate"): ("choice", (8000, 12000, 16000, 24000, 48000)),
+    ("clipboard", "double_injection"): ("bool",),
+}
+
+
+def _general_toml_value(section: str, field: str, value: str) -> str:
+    kind = GENERAL_FIELDS[(section, field)]
+    label = f"{section}.{field}"
+    if kind[0] == "bool":
+        return "true" if str(value).strip().lower() in ("true", "1", "yes") else "false"
+    if kind[0] == "int":
+        try:
+            number = int(str(value).strip())
+        except ValueError as exc:
+            raise ConfigEditorError(f"{label} must be an integer, got {value!r}") from exc
+        return str(max(kind[1], min(kind[2], number)))
+    if kind[0] == "float":
+        try:
+            number_f = float(str(value).strip())
+        except ValueError as exc:
+            raise ConfigEditorError(f"{label} must be a number, got {value!r}") from exc
+        if not math.isfinite(number_f):
+            raise ConfigEditorError(f"{label} must be finite")
+        return repr(max(kind[1], min(kind[2], number_f)))
+    if kind[0] == "choice":
+        try:
+            choice = int(str(value).strip())
+        except ValueError as exc:
+            raise ConfigEditorError(f"{label} must be one of {kind[1]}, got {value!r}") from exc
+        if choice not in kind[1]:
+            raise ConfigEditorError(f"{label} must be one of {kind[1]}, got {choice}")
+        return str(choice)
+    # "tool": un solo eseguibile (subprocess.run([tool]) senza shell): niente
+    # vuoto ne' spazi/argomenti, altrimenti ogni copia negli appunti fallirebbe.
+    tool = str(value).strip()
+    if not tool or any(ch.isspace() for ch in tool):
+        raise ConfigEditorError(f"{label} must be a single executable name or path, got {value!r}")
+    return _toml_line_value("tool", tool)
+
+
+def set_general_field(section: str, field: str, value: str) -> None:
+    """Scrive un campo di [general]/[audio]/[clipboard], validato e clampato
+    secondo GENERAL_FIELDS. La sezione assente viene creata."""
+    if (section, field) not in GENERAL_FIELDS:
+        raise ConfigEditorError(f"Unknown general field: {section}.{field}")
+    toml_value = _general_toml_value(section, field, value)
+    header = f"[{section}]"
+    with _locked():
+        lines = CONFIG_PATH.read_text().split("\n")
+        if not any(line.strip() == header for line in lines):
+            lines.extend(["", header, f"{field} = {toml_value}"])
+            _write_validated(lines)
+            return
+        start, end = _find_block_bounds(lines, header, 0)
+        _find_or_insert_key_in_block(lines, start, end, field, toml_value)
+        _write_validated(lines)
+
+
 def clear_output_history() -> None:
     from . import output_history
 
@@ -622,6 +697,18 @@ def get_state() -> dict:
         "history": {
             "max_entries": raw.get("history", {}).get("max_entries", 20),
         },
+        "general": {
+            "notifications": _coerce_bool(raw.get("general", {}).get("notifications", True)),
+            "clipboard_tool": str(raw.get("general", {}).get("clipboard_tool", "wl-copy")),
+            "clipboard_paste_tool": str(raw.get("general", {}).get("clipboard_paste_tool", "wl-paste")),
+            "toggle_debounce_seconds": _coerce_float_clamped(
+                raw.get("audio", {}).get("toggle_debounce_seconds"), 1.0, 0.1, 10.0),
+            "retry_on_error": _coerce_bool(raw.get("audio", {}).get("retry_on_error", True)),
+            "retry_count": _coerce_int(raw.get("audio", {}).get("retry_count"), 2, 1, 10),
+            "bitrate_kbps": _coerce_int(raw.get("audio", {}).get("bitrate_kbps"), 16, 8, 320),
+            "sample_rate": _coerce_int(raw.get("audio", {}).get("sample_rate"), 16000, 8000, 48000),
+            "double_injection": _coerce_bool(raw.get("clipboard", {}).get("double_injection", True)),
+        },
         "stream": {
             "commands": raw.get("stream", {}).get("command", []),
             "blacklist": raw.get("stream", {}).get("blacklist", ""),
@@ -682,7 +769,7 @@ def main(argv: list[str] | None = None) -> int:
     if not args:
         print("usage: config_editor.py get | set-level <service> <idx> <field> <value> "
               "| set-section <service> <field> <value> | set-storage <section> <field> <value> "
-              "| set-stream <field> <value> | set-stream-commands <json> | set-history-max <value> | clear-history "
+              "| set-stream <field> <value> | set-stream-commands <json> | set-general <section> <field> <value> | set-history-max <value> | clear-history "
               "| set-notification <key> <value> | set-icon <slot> <value> | reset",
               file=sys.stderr)
         return 1
@@ -712,6 +799,10 @@ def main(argv: list[str] | None = None) -> int:
             print("ok")
         elif args[0] == "set-stream-commands":
             set_stream_commands(json.loads(args[1]))
+            print("ok")
+        elif args[0] == "set-general":
+            _, section, field, value = args
+            set_general_field(section, field, value)
             print("ok")
         elif args[0] == "set-history-max":
             _, value = args

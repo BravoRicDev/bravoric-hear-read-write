@@ -1064,3 +1064,95 @@ msgstr ""
 #: gnome-extension/bravoric-indicator@local/prefs.js
 msgid "Stream — Transcribing"
 msgstr ""
+
+#: gnome-extension/bravoric-indicator@local/prefs.js
+msgid "General"
+msgstr ""
+
+#: gnome-extension/bravoric-indicator@local/prefs.js
+msgid "Audio recording"
+msgstr ""
+
+#: gnome-extension/bravoric-indicator@local/prefs.js
+msgid "Toggle debounce (seconds)"
+msgstr ""
+
+#: gnome-extension/bravoric-indicator@local/prefs.js
+msgid "Ignore a second press within this time after a recording starts"
+msgstr ""
+
+#: gnome-extension/bravoric-indicator@local/prefs.js
+msgid "Retry on error"
+msgstr ""
+
+#: gnome-extension/bravoric-indicator@local/prefs.js
+msgid "Run the whole transcription chain again when every endpoint fails"
+msgstr ""
+
+#: gnome-extension/bravoric-indicator@local/prefs.js
+msgid "Attempts"
+msgstr ""
+
+#: gnome-extension/bravoric-indicator@local/prefs.js
+msgid "Total attempts of the transcription chain when retry is on"
+msgstr ""
+
+#: gnome-extension/bravoric-indicator@local/prefs.js
+msgid "Bitrate (kbps)"
+msgstr ""
+
+#: gnome-extension/bravoric-indicator@local/prefs.js
+msgid "Audio bitrate of the recording sent for transcription"
+msgstr ""
+
+#: gnome-extension/bravoric-indicator@local/prefs.js
+msgid "Sample rate"
+msgstr ""
+
+#: gnome-extension/bravoric-indicator@local/prefs.js
+msgid "Only rates supported by the Opus encoder are offered"
+msgstr ""
+
+#: gnome-extension/bravoric-indicator@local/prefs.js
+msgid "Write raw text first"
+msgstr ""
+
+#: gnome-extension/bravoric-indicator@local/prefs.js
+msgid "Copy the raw text right away, then replace it with the cleaned text when ready. Off: only the final text is copied"
+msgstr ""
+
+#: gnome-extension/bravoric-indicator@local/prefs.js
+msgid "Copy command"
+msgstr ""
+
+#: gnome-extension/bravoric-indicator@local/prefs.js
+msgid "Command that writes to the clipboard (default: wl-copy)"
+msgstr ""
+
+#: gnome-extension/bravoric-indicator@local/prefs.js
+msgid "Paste command"
+msgstr ""
+
+#: gnome-extension/bravoric-indicator@local/prefs.js
+msgid "Command that reads the clipboard (default: wl-paste)"
+msgstr ""
+
+#: gnome-extension/bravoric-indicator@local/prefs.js
+msgid "Chunk log size (lines)"
+msgstr ""
+
+#: gnome-extension/bravoric-indicator@local/prefs.js
+msgid "Lines kept in the streaming chunk log; 0 uses the default (2000)"
+msgstr ""
+
+#: gnome-extension/bravoric-indicator@local/prefs.js
+msgid "All notifications"
+msgstr ""
+
+#: gnome-extension/bravoric-indicator@local/prefs.js
+msgid "Show notifications"
+msgstr ""
+
+#: gnome-extension/bravoric-indicator@local/prefs.js
+msgid "Master switch for every notification sent by the backend. Notifications from the extension itself are controlled in the group below."
+msgstr ""
