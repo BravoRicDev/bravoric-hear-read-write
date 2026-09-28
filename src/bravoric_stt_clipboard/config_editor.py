@@ -272,7 +272,7 @@ def _find_or_insert_key_in_block(
 
     Two variants PRESERVED exactly, not made uniform (they would change the
     TOML produced, which 5 gate points assert byte by byte):
-    - `key_regex`: `set_notification_field` uses `^{key}\s*=` instead of
+    - `key_regex`: `set_notification_field` uses `^{key}\\s*=` instead of
       `^{key} = .*$` (no check on the rest of the line). Default None = use
       the standard pattern.
     - `skip_trailing_blank`: `set_icon_field` always inserts at `end`, without
