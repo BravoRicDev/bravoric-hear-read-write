@@ -462,6 +462,15 @@ else
     done
 fi
 
+# Dettatura end-to-end: il comando vero contro programmi esterni finti e un server HTTP locale.
+# End-to-end dictation: the real command against fake external programs and a local HTTP server.
+echo "== dettatura end-to-end =="
+if python3 "$REPO/scripts/test-e2e-stt.py"; then
+    ok "test-e2e-stt.py"
+else
+    bad "test-e2e-stt.py"
+fi
+
 echo "== bottoni rapidi (unit) =="
 if node "$REPO/scripts/test-quick-buttons.js"; then
     ok "test-quick-buttons.js"

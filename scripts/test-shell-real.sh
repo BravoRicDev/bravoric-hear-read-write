@@ -334,6 +334,19 @@ wait_dump "[i['role'].rsplit('-',1)[-1] for i in items if i['quick']]==['dictati
     && pass "riabilitata: tornano indicatore e i due bottoni ancora accesi" || fail "dopo enable stato errato: $(dump)"
 [ "$(ext_state bravoric-indicator@local)" = ACTIVE ] && pass "di nuovo ACTIVE dopo il ciclo" || fail "non ACTIVE dopo il ciclo"
 
+# Molti cicli di fila: il numero di widget nella top bar non deve crescere (nessuna perdita).
+# Many cycles in a row: the number of top-bar widgets must not grow (no leak).
+COUNT_BEFORE="$(python3 -c "import json; print(len(json.load(open('$T/probe/dump.json'))))")"
+for n in 1 2 3 4 5 6; do
+    in_session "gnome-extensions disable bravoric-indicator@local; gnome-extensions enable bravoric-indicator@local" >/dev/null
+done
+wait_dump "[i['role'].rsplit('-',1)[-1] for i in items if i['quick']]==['dictation','stream']" || true
+COUNT_AFTER="$(python3 -c "import json; print(len(json.load(open('$T/probe/dump.json'))))")"
+[ "$COUNT_BEFORE" = "$COUNT_AFTER" ] \
+    && pass "6 cicli disable/enable: il numero di widget nella top bar non cresce ($COUNT_BEFORE)" \
+    || fail "widget nella top bar prima $COUNT_BEFORE, dopo $COUNT_AFTER: $(dump)"
+[ "$(ext_state bravoric-indicator@local)" = ACTIVE ] && pass "ACTIVE dopo i cicli ripetuti" || fail "non ACTIVE dopo i cicli ripetuti"
+
 echo "== lingua / language (${BRV_LANG:-en}) =="
 LABELS="$(probe_cmd labels)"
 if printf '%s' "$LABELS" | python3 -c "import json,sys; sys.exit(0 if json.load(sys.stdin)['dictation']==sys.argv[1] else 1)" "$MENU_DICT"; then
