@@ -2026,8 +2026,11 @@ def main() -> int:
     check("build_prompt personal + chunks", build_prompt("Ciao", ["uno","due","tre"]) == "Ciao uno due tre")
     check("build_prompt max 3 chunks", len((build_prompt("P", ["a","b","c","d","e"]) or "").split()) == 4)  # P + 3 chunks
 
-    # Hallucinations filtered
-    check("build_prompt filters hallucination", "Sottotitoli" not in (build_prompt("P", ["Sottotitoli a cura di", "vero"]) or ""))
+    # Le allucinazioni NON sono piu' filtrate qui da una lista fissa: sono la
+    # blacklist utente, applicata a monte in ingest() (test "blacklist dropped
+    # chunk never added to last_chunks"). build_prompt usa cio' che riceve.
+    check("build_prompt: nessun filtro nascosto (il filtro e' la blacklist, a monte)",
+          "Sottotitoli" in (build_prompt("P", ["Sottotitoli a cura di", "vero"]) or ""))
     # Empty chunks filtered
     check("build_prompt filters empty", build_prompt("P", ["", "  ", "vero"]) == "P vero")
     # Consecutive duplicates filtered
@@ -5221,9 +5224,14 @@ def main() -> int:
     check("D1: una trascrizione vuota viene trattata come errore",
           bool(_seen_st) and _seen_st[-1] == status.STATE_ERROR)
 
-    # Allucinazione nota come INTERA trascrizione (registrazione senza voce):
-    # stessa uscita dell'empty, appunti intatti, errore notificato.
-    for _hal_text in ("Grazie per la visione!", "  Sottotitoli a cura di Whisper  "):
+    # Frase in BLACKLIST utente come INTERA trascrizione (registrazione senza
+    # voce -> allucinazione Whisper): stessa uscita dell'empty, appunti
+    # intatti, errore notificato. E' la stessa lista [stream].blacklist
+    # configurabile da GUI, non una seconda lista.
+    import dataclasses as _dc_bl
+    _cfg_bl = _dc_bl.replace(cfg_stream_min, stream=_dc_bl.replace(
+        cfg_stream_min.stream, blacklist="grazie per la visione, Sottotitoli a cura di"))
+    for _hal_text in ("Grazie per la visione!", "  sottotitoli A CURA DI.  "):
         with mock.patch.object(stt, "try_with_fallback", return_value=_hal_text), \
              mock.patch.object(stt, "clipboard") as _clip_h, \
              mock.patch.object(stt, "status", _st_d1), \
@@ -5231,16 +5239,29 @@ def main() -> int:
              mock.patch.object(stt, "storage"), \
              mock.patch.object(stt, "output_history"):
             _st_d1.reset_mock()
-            stt._process_recording(cast(Any, cfg_stream_min), Path("/tmp/qualsiasi.ogg"))
+            stt._process_recording(cast(Any, _cfg_bl), Path("/tmp/qualsiasi.ogg"))
             _hal_clip = _clip_h.write_text.call_count
             _hal_st = [c.args[0] for c in _st_d1.write_status.call_args_list]
             _hal_notified = _nt_h.send.call_count >= 1
-        check(f"stt: allucinazione nota {_hal_text.strip()!r} come intera trascrizione NON va negli appunti",
+        check(f"stt: frase in blacklist {_hal_text.strip()!r} come intera trascrizione NON va negli appunti",
               _hal_clip == 0)
-        check(f"stt: allucinazione nota {_hal_text.strip()!r} -> errore + notifica",
+        check(f"stt: frase in blacklist {_hal_text.strip()!r} -> errore + notifica",
               bool(_hal_st) and _hal_st[-1] == status.STATE_ERROR and _hal_notified)
 
-    # CONTRO: una frase vera che CONTIENE la stessa espressione non e' toccata
+    # CONTRO: senza la frase in blacklist (default vuoto) la stessa trascrizione
+    # passa: e' l'utente a decidere, nessuna lista nascosta nel codice.
+    with mock.patch.object(stt, "try_with_fallback", return_value="Grazie per la visione!"), \
+         mock.patch.object(stt, "clipboard") as _clip_nb, \
+         mock.patch.object(stt, "status", _st_d1), \
+         mock.patch.object(stt, "notify"), \
+         mock.patch.object(stt, "storage"), \
+         mock.patch.object(stt, "output_history"):
+        stt._process_recording(cast(Any, cfg_stream_min), Path("/tmp/qualsiasi.ogg"))
+        _nb_clip = [c.args[0] for c in _clip_nb.write_text.call_args_list]
+    check("stt (contro): blacklist vuota -> nessun filtro nascosto, il testo passa",
+          "Grazie per la visione!" in _nb_clip)
+
+    # CONTRO: una frase vera che CONTIENE una voce della blacklist non e' toccata
     # (match sull'intero testo, mai su sottostringa).
     with mock.patch.object(stt, "try_with_fallback", return_value="Grazie per la visione! Ci vediamo domani."), \
          mock.patch.object(stt, "clipboard") as _clip_hs, \
@@ -5248,9 +5269,9 @@ def main() -> int:
          mock.patch.object(stt, "notify"), \
          mock.patch.object(stt, "storage"), \
          mock.patch.object(stt, "output_history"):
-        stt._process_recording(cast(Any, cfg_stream_min), Path("/tmp/qualsiasi.ogg"))
+        stt._process_recording(cast(Any, _cfg_bl), Path("/tmp/qualsiasi.ogg"))
         _hs_clip = [c.args[0] for c in _clip_hs.write_text.call_args_list]
-    check("stt (contro): frase vera che contiene l'espressione NON viene scartata",
+    check("stt (contro): frase vera che contiene una voce della blacklist NON viene scartata",
           "Grazie per la visione! Ci vediamo domani." in _hs_clip)
 
     # CONTRO: con un testo vero la clipboard viene comunque scritta — la
@@ -5582,17 +5603,15 @@ def main() -> int:
           _klw("ab cd", 0) == "" and _klw("ab cd", -5) == "")
     check("keep_leading_words: spazi/newline multipli normalizzati a uno",
           _klw("ab \n  cd", 99) == "ab cd")
-    # _filter_chunks: le allucinazioni note restano fuori dal contesto del
-    # prompt successivo (altrimenti si auto-rinforzano).
+    # _filter_chunks: vuoti e duplicati consecutivi, max 3. Le allucinazioni
+    # non sono piu' qui: sono la blacklist utente, applicata prima (ingest).
     _fc = stream_module._filter_chunks
-    check("filter_chunks: 'Grazie per la visione!' (allucinazione osservata) esclusa dal contesto",
-          _fc(["Ciao", "Grazie per la visione!", "mondo"]) == ["Ciao", "mondo"])
-    check("filter_chunks: variante senza punto esclamativo esclusa",
-          _fc(["Grazie per la visione"]) == [])
-    check("filter_chunks: testo vero simile ('Grazie mille') NON viene scartato",
+    check("filter_chunks: testo vero tenuto",
           _fc(["Grazie mille"]) == ["Grazie mille"])
     check("filter_chunks: duplicati consecutivi e vuoti scartati, max 3 tenuti",
           _fc(["a", "a", "", "  ", "b", "c", "d"]) == ["b", "c", "d"])
+    check("stream: la lista hardcoded KNOWN_HALLUCINATIONS non esiste piu' (una sola blacklist, configurabile)",
+          not hasattr(stream_module, "KNOWN_HALLUCINATIONS"))
     _cfg_shot_absent = config._build_config({})
     check("config: [ocr] assente -> capture_screenshot default False",
           _cfg_shot_absent.ocr_capture_screenshot is False)

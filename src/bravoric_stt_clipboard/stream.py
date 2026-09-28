@@ -98,18 +98,6 @@ _MIN_DB = -200.0
 FLOOR_WINDOW_FRAMES = 100  # ~3s di storia per stimare il floor
 MIN_FLOOR_FRAMES = 20      # ~0.6s prima di fidarsi della stima
 
-# Chunk noti da filtrare (allucinazioni comuni)
-KNOWN_HALLUCINATIONS = frozenset({
-    "Sottotitoli a cura di",
-    "Sottotitoli a cura di Whisper",
-    # Osservata dal vivo (Whisper italiano su ~1 min di rumore ambientale,
-    # nessuna voce): trascrizione "Grazie per la visione! Grazie per la
-    # visione!". Le due forme singole (con/senza punto esclamativo) sono
-    # cio' che arriva per chunk. Match esatto come le voci sopra.
-    "Grazie per la visione!",
-    "Grazie per la visione",
-})
-
 class _Stop:
     """Sentinella di arresto per _result_queue: tipo dedicato (non `object`
     generico) cosi' `isinstance(item, _Stop)` restringe `item` a `_ChunkResult`
@@ -1467,14 +1455,14 @@ def _spawn_recorder(audio_cfg: AudioConfig, out_path: Path) -> subprocess.Popen:
 # ---------------------------------------------------------------- session
 
 def _filter_chunks(last_chunks: list[str]) -> list[str]:
-    """Filtra chunk vuoti, allucinazioni note e duplicati consecutivi.
-    Mantiene al massimo gli ultimi 3 elementi utili (in ordine cronologico)."""
+    """Filtra chunk vuoti e duplicati consecutivi. Mantiene al massimo gli
+    ultimi 3 elementi utili (in ordine cronologico). Le allucinazioni note
+    NON sono piu' una lista hardcoded qui: sono la blacklist configurabile
+    dall'utente, applicata in ingest() PRIMA che un chunk raggiunga il contesto."""
     filtered: list[str] = []
     for chunk in last_chunks:
         stripped = chunk.strip() if isinstance(chunk, str) else ""
         if not stripped:
-            continue
-        if stripped in KNOWN_HALLUCINATIONS:
             continue
         if filtered and filtered[-1] == stripped:
             continue
@@ -1537,11 +1525,12 @@ def is_command_phrase(text: str, phrases: frozenset[str] | list[str] | None) -> 
 def update_last_chunks(state: dict, text: str, max_chunks: int = 3) -> None:
     """Aggiorna state['last_chunks'] con il nuovo testo trascritto.
 
-    Scarta chunk vuoti, allucinazioni note e duplicati consecutivi: non devono
-    finire né nel prompt di contesto del chunk successivo né in last_chunks.
+    Scarta chunk vuoti e duplicati consecutivi: non devono finire né nel prompt
+    di contesto del chunk successivo né in last_chunks. I chunk in blacklist
+    (allucinazioni incluse) non arrivano nemmeno qui: ingest() li scarta prima.
     """
     stripped = text.strip() if isinstance(text, str) else ""
-    if not stripped or stripped in KNOWN_HALLUCINATIONS:
+    if not stripped:
         return
     # Una parola comando non e' contesto: viene eseguita dall'estensione e non
     # deve diventare parte della frase che il chunk successivo deve completare.

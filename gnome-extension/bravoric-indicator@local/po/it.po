@@ -550,11 +550,13 @@ msgstr "Blacklist dei chunk"
 
 #: gnome-extension/bravoric-indicator@local/prefs.js:1032
 msgid ""
-"Comma-separated phrases; discard only chunks that match a whole phrase, "
-"ignoring case and trailing punctuation."
+"Comma-separated phrases; a transcription that matches a whole phrase is "
+"discarded (streaming chunks and dictation), ignoring case and trailing "
+"punctuation."
 msgstr ""
-"Frasi separate da virgole; scarta solo i chunk che coincidono interamente "
-"con una frase, ignorando maiuscole e punteggiatura finale."
+"Frasi separate da virgole; una trascrizione che coincide interamente con "
+"una frase viene scartata (chunk dello streaming e dettatura), ignorando "
+"maiuscole e punteggiatura finale."
 
 #: gnome-extension/bravoric-indicator@local/prefs.js:1042
 msgid "Add command"

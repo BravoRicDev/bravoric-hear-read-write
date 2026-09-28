@@ -1266,7 +1266,7 @@ export default class BravoricPreferences extends ExtensionPreferences {
         const blacklistRow = new Adw.EntryRow({
             title: _('Chunk blacklist'),
             text: streamState.blacklist ?? '',
-            tooltip_text: _('Comma-separated phrases; discard only chunks that match a whole phrase, ignoring case and trailing punctuation.'),
+            tooltip_text: _('Comma-separated phrases; a transcription that matches a whole phrase is discarded (streaming chunks and dictation), ignoring case and trailing punctuation.'),
             show_apply_button: true,
         });
         blacklistRow.connect('apply', () => {

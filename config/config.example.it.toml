@@ -291,7 +291,7 @@ chunk_timeout_seconds = 30.0      # timeout per singolo chunk (secondi)
 # output_history.json e' voluta.
 # Si legge con: bravoric-chunk-log --summary
 chunk_log_max_lines = 0           # numero massimo di righe tenute (0 = default 2000)
-blacklist = "grazie, thank you"   # scarta solo chunk interi uguali a una voce; ignora maiuscole
+blacklist = "grazie, thank you, sottotitoli a cura di, sottotitoli a cura di whisper, grazie per la visione"   # scarta la trascrizione intera (chunk streaming o dettatura) uguale a una voce; ignora maiuscole. Tipiche allucinazioni di Whisper sul silenzio.
 
 # Endpoint dedicato con 3 livelli di fallback (stessa struttura di [stt]/[ocr]).
 [[stream.fallback]]
