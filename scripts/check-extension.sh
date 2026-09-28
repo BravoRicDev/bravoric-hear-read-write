@@ -27,7 +27,21 @@ echo "== sintassi =="
 for f in "$EXT"/*.js "$EXT"/*.mjs; do
     if node --input-type=module --check < "$f" >/dev/null 2>&1; then ok "$(basename "$f")"; else bad "$(basename "$f")"; fi
 done
-if bash -n "$REPO/scripts/install.sh" 2>/dev/null; then ok "install.sh"; else bad "install.sh"; fi
+# Tutti gli script shell e i file Python fuori dal pacchetto (che i test non
+# importano, es. bin/whisper-server.py) vengono analizzati, non solo install.sh.
+# All the shell scripts and the Python files outside the package (which the tests
+# do not import, e.g. bin/whisper-server.py) are parsed, not only install.sh.
+for f in "$REPO"/scripts/*.sh "$REPO"/bin/*.sh "$REPO"/bin/stt-toggle "$REPO"/bin/ocr-capture "$REPO"/bin/stream-toggle; do
+    if bash -n "$f" 2>/dev/null; then ok "$(basename "$f")"; else bad "$(basename "$f")"; fi
+done
+for f in "$REPO"/bin/*.py "$REPO"/scripts/*.py; do
+    if python3 - "$f" <<'PYEOF' 2>/dev/null
+import sys
+with open(sys.argv[1], encoding="utf-8") as fh:
+    compile(fh.read(), sys.argv[1], "exec")
+PYEOF
+    then ok "$(basename "$f")"; else bad "$(basename "$f")"; fi
+done
 
 echo "== metadata.json =="
 if python3 - "$EXT" <<'PY'
