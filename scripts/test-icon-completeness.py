@@ -27,7 +27,7 @@ for filename in ("config/config.example.toml", "config/config.example.it.toml"):
 # ICONE-MANCANTI.md must list exactly the slots without a bundled PNG, and
 # every PNG declared in _PACKAGED_DEFAULTS must really exist.
 missing = {key for key in ICON_SLOT_KEYS if key not in notify._PACKAGED_DEFAULTS}
-documented = set(re.findall(r"^\| `(\w+)` \|", (ROOT / "ICONE-MANCANTI.md").read_text(), re.M))
+documented = set(re.findall(r"^\| `(\w+)` \|", (ROOT / "ICONE-MANCANTI.md").read_text(), re.MULTILINE))
 assert documented == missing, ("ICONE-MANCANTI.md fuori sync", missing - documented, documented - missing)
 for slot, filename in notify._PACKAGED_DEFAULTS.items():
     assert (ROOT / "src/bravoric_stt_clipboard/icons" / filename).is_file(), (slot, filename)
