@@ -8415,6 +8415,25 @@ max_entries = 20
     finally:
         config_editor.CONFIG_PATH = _saved_cd
 
+    # Anti-drift bottoni rapidi: chiavi booleane dello schema (default spento),
+    # righe della GUI (QUICK_BUTTON_SETTINGS) e tabella QUICK_BUTTONS del modulo
+    # puro devono coincidere, e ogni comando deve esistere fra i binari del backend.
+    # Quick buttons anti-drift: boolean schema keys (default off), GUI rows
+    # (QUICK_BUTTON_SETTINGS) and the pure module's QUICK_BUTTONS table must
+    # agree, and every command must exist among the backend binaries.
+    _qb_schema = re.findall(
+        r'<key name="(show-[\w-]+-button)" type="b">\s*<default>(true|false)</default>', _schema_xml)
+    _qb_gui = re.findall(r"\{ key: '(show-[\w-]+-button)', title: N_", _prefs_js)
+    _qb_mod = (_ext_dir / "quick-buttons.mjs").read_text(encoding="utf-8")
+    _qb_settings = re.findall(r"setting: '(show-[\w-]+-button)'", _qb_mod)
+    _qb_commands = re.findall(r"command: '([\w-]+)'", _qb_mod)
+    _scripts_declared = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    check("bottoni rapidi: chiavi schema == righe GUI == tabella del modulo (3, tutte spente)",
+          len(_qb_schema) == 3 and all(d == "false" for _, d in _qb_schema)
+          and [k for k, _ in _qb_schema] == _qb_gui == _qb_settings)
+    check("bottoni rapidi: ogni comando e' un binario dichiarato in pyproject.toml",
+          len(_qb_commands) == 3 and all(f"{c} =" in _scripts_declared for c in _qb_commands))
+
     # --- 10. il percorso di default e' quello vero, non un doppione -------
     # (la verifica che il percorso reale non sia stato TOCCATO da nessun test
     # e' in fondo a main(): confronta mtime+size reali, non stringhe di path

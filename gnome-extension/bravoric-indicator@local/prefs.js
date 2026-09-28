@@ -477,6 +477,16 @@ const AUDIO_FORMAT_PRESETS = [
 // Indicator values stored in GSettings (schema): key, bounds and texts. The
 // keys are read by extension.js through settingInt(); an anti-drift test
 // checks that the schema, the extension and this list agree.
+// Bottoni rapidi (chiavi booleane dello schema, default spento): stesse chiavi
+// di QUICK_BUTTONS in quick-buttons.mjs; un'anti-deriva nei test le confronta.
+// Quick buttons (boolean schema keys, default off): same keys as QUICK_BUTTONS
+// in quick-buttons.mjs; an anti-drift test compares them.
+const QUICK_BUTTON_SETTINGS = [
+    { key: 'show-dictation-button', title: N_('Dictation button'), subtitle: N_('One-click start/stop of dictation, next to the indicator') },
+    { key: 'show-ocr-button', title: N_('OCR button'), subtitle: N_('One-click text capture from the screen, next to the indicator') },
+    { key: 'show-stream-button', title: N_('Streaming button'), subtitle: N_('One-click start/stop of streaming dictation, next to the indicator') },
+];
+
 const INDICATOR_SETTINGS = [
     { key: 'recording-timeout-minutes', title: N_('Recording watchdog (minutes)'), subtitle: N_('Reset a recording state that stops updating after this long'), lower: 1, upper: 600, step: 1 },
     { key: 'stt-timeout-minutes', title: N_('Dictation processing watchdog (minutes)'), subtitle: N_('Reset a stuck dictation processing state after this long'), lower: 1, upper: 600, step: 1 },
@@ -1838,6 +1848,23 @@ export default class BravoricPreferences extends ExtensionPreferences {
         // Indicator settings (GSettings, not config.toml): they belong to the
         // extension itself and apply without a restart.
         const extSettings = this.getSettings();
+        // Bottoni rapidi: interruttori sulla stessa GSettings, visibili subito
+        // nella top bar (nessun riavvio). Schema stantio: nessun bind.
+        // Quick buttons: switches on the same GSettings, visible in the top bar
+        // right away (no restart). Stale schema: no bind.
+        const quickGroup = new Adw.PreferencesGroup({
+            title: _('Quick buttons'),
+            description: _('Buttons in the top bar, separate from the menu: one click or tap starts or stops the action. All off by default.'),
+        });
+        page.add(quickGroup);
+        for (const item of QUICK_BUTTON_SETTINGS) {
+            if (!extSettings.settings_schema.has_key(item.key))
+                continue;
+            const quickRow = new Adw.SwitchRow({ title: _(item.title), subtitle: _(item.subtitle) });
+            extSettings.bind(item.key, quickRow, 'active', Gio.SettingsBindFlags.DEFAULT);
+            quickGroup.add(quickRow);
+        }
+
         const indicatorGroup = new Adw.PreferencesGroup({ title: _('Indicator') });
         page.add(indicatorGroup);
         for (const item of INDICATOR_SETTINGS) {

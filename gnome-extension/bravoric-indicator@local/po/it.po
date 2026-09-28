@@ -1392,3 +1392,55 @@ msgstr "Pausa endpoint (secondi)"
 #: gnome-extension/bravoric-indicator@local/prefs.js
 msgid "How long an endpoint stays out of the pool after repeated failures; 0 never pauses one. Applies from the next session"
 msgstr "Per quanto tempo un endpoint resta fuori dal pool dopo errori ripetuti; 0 non ne sospende mai. Vale dalla sessione successiva"
+
+#: gnome-extension/bravoric-indicator@local/prefs.js
+msgid "Start dictation"
+msgstr "Avvia la dettatura"
+
+#: gnome-extension/bravoric-indicator@local/prefs.js
+msgid "Stop dictation"
+msgstr "Ferma la dettatura"
+
+#: gnome-extension/bravoric-indicator@local/prefs.js
+msgid "Read text with OCR"
+msgstr "Leggi il testo con l'OCR"
+
+#: gnome-extension/bravoric-indicator@local/prefs.js
+msgid "Start streaming dictation"
+msgstr "Avvia la dettatura in streaming"
+
+#: gnome-extension/bravoric-indicator@local/prefs.js
+msgid "Stop streaming dictation"
+msgstr "Ferma la dettatura in streaming"
+
+#: gnome-extension/bravoric-indicator@local/prefs.js
+msgid "Dictation button"
+msgstr "Pulsante dettatura"
+
+#: gnome-extension/bravoric-indicator@local/prefs.js
+msgid "One-click start/stop of dictation, next to the indicator"
+msgstr "Avvio e arresto della dettatura con un click, accanto all'indicatore"
+
+#: gnome-extension/bravoric-indicator@local/prefs.js
+msgid "OCR button"
+msgstr "Pulsante OCR"
+
+#: gnome-extension/bravoric-indicator@local/prefs.js
+msgid "One-click text capture from the screen, next to the indicator"
+msgstr "Cattura del testo dallo schermo con un click, accanto all'indicatore"
+
+#: gnome-extension/bravoric-indicator@local/prefs.js
+msgid "Streaming button"
+msgstr "Pulsante streaming"
+
+#: gnome-extension/bravoric-indicator@local/prefs.js
+msgid "One-click start/stop of streaming dictation, next to the indicator"
+msgstr "Avvio e arresto della dettatura in streaming con un click, accanto all'indicatore"
+
+#: gnome-extension/bravoric-indicator@local/prefs.js
+msgid "Quick buttons"
+msgstr "Pulsanti rapidi"
+
+#: gnome-extension/bravoric-indicator@local/prefs.js
+msgid "Buttons in the top bar, separate from the menu: one click or tap starts or stops the action. All off by default."
+msgstr "Pulsanti nella barra superiore, separati dal menu: un click o un tocco avvia o ferma l'azione. Tutti spenti per impostazione predefinita."

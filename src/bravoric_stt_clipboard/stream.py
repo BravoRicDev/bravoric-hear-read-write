@@ -136,6 +136,12 @@ _MIN_DB = -200.0
 
 # Finestra/stima del noise floor adattivo (usate dal supervisore per_chunk).
 # Window/estimate of the adaptive noise floor (used by the per_chunk supervisor).
+# Valori di default: il valore in uso viene da [stream].vad_floor_window_frames
+# e vad_min_floor_frames (config.StreamConfig); queste costanti restano solo come
+# riferimento documentato e non sono piu' lette dal loop VAD.
+# Default values: the value in use comes from [stream].vad_floor_window_frames
+# and vad_min_floor_frames (config.StreamConfig); these constants stay only as
+# a documented reference and are no longer read by the VAD loop.
 FLOOR_WINDOW_FRAMES = 100  # ~3s di storia per stimare il floor | ~3 s of history to estimate the floor
 MIN_FLOOR_FRAMES = 20      # ~0.6s prima di fidarsi della stima | ~0.6 s before trusting the estimate
 

@@ -18,6 +18,10 @@ Three ways to get text into the clipboard without typing it:
   ("new line", "delete last word", …) and live context so the model sees
   what was already typed.
 
+Mouse and touch friendly: optional one-click buttons in the top bar (dictation,
+OCR, streaming; Preferences → General → Quick buttons, all off by default) start
+and stop the actions without opening the menu.
+
 A top-bar indicator shows the current state (idle / recording / processing)
 and a preferences window (GTK4/Adw) configures every part of it — no config
 file editing required for day-to-day use.

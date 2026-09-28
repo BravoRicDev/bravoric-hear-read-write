@@ -3,3 +3,24 @@
 .bravoric-recording-icon {
     color: #e01b24; /* rosso Adwaita standard */
 }
+
+/*
+ * Bottoni rapidi: area cliccabile larga (comoda anche col dito) e stati
+ * visibili al passaggio e al focus da tastiera.
+ * Quick buttons: wide clickable area (comfortable with a finger too) and
+ * states visible on hover and on keyboard focus.
+ */
+.bravoric-quick-button {
+    min-width: 32px;
+    padding: 0 10px;
+    border-radius: 8px;
+}
+
+.bravoric-quick-button:hover,
+.bravoric-quick-button:focus {
+    background-color: rgba(255, 255, 255, 0.14);
+}
+
+.bravoric-quick-button:active {
+    background-color: rgba(255, 255, 255, 0.24);
+}

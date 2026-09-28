@@ -786,6 +786,9 @@ console.log('Smoke test GTK4/Adw PASS: riga, segnali, visibilità, cattura tasto
     const fmtMatch = prefsSrc.match(/const AUDIO_FORMAT_PRESETS = \[[\s\S]*?\n\];/);
     if (!fmtMatch)
         throw new Error('AUDIO_FORMAT_PRESETS non trovato in prefs.js');
+    const qbMatch = prefsSrc.match(/const QUICK_BUTTON_SETTINGS = \[[\s\S]*?\n\];/);
+    if (!qbMatch)
+        throw new Error('QUICK_BUTTON_SETTINGS non trovato in prefs.js');
     const indMatch = prefsSrc.match(/const INDICATOR_SETTINGS = \[[\s\S]*?\n\];/);
     if (!indMatch)
         throw new Error('INDICATOR_SETTINGS non trovato in prefs.js');
@@ -831,11 +834,12 @@ console.log('Smoke test GTK4/Adw PASS: riga, segnali, visibilità, cattura tasto
 
     const make = new Function('Adw', 'Gtk', 'Gio', 'GLib', '_', 'N_', 'debounce',
         'getServicesState', 'runConfigEditor', 'setGeneralField',
-        `${rateMatch[0]}\n${fmtMatch[0]}\n${indMatch[0]}\nreturn { build: function (window) {${body}}, INDICATOR_SETTINGS };`);
+        `${rateMatch[0]}\n${fmtMatch[0]}\n${qbMatch[0]}\n${indMatch[0]}\nreturn { build: function (window) {${body}}, INDICATOR_SETTINGS, QUICK_BUTTON_SETTINGS };`);
     const built2 = make(AdwRec, Gtk, { SettingsBindFlags: { DEFAULT: 0 } }, GLibFake,
         t => t, t => t, debounce, () => state, runConfigEditor, setGeneralField);
     const method = built2.build;
     const INDICATOR = built2.INDICATOR_SETTINGS;
+    const QUICK = built2.QUICK_BUTTON_SETTINGS;
 
     // GSettings finto: registra i bind e simula uno schema stantio (has_key falso).
     // Fake GSettings: records binds and simulates a stale schema (has_key false).
@@ -876,11 +880,17 @@ console.log('Smoke test GTK4/Adw PASS: riga, segnali, visibilità, cattura tasto
 
     // Ogni impostazione dell'indicatore e' legata alla propria chiave GSettings.
     // Every indicator setting is bound to its own GSettings key.
-    if (binds.length !== INDICATOR.length || INDICATOR.length !== 10)
-        throw new Error(`bind GSettings: attesi 10, trovati ${binds.length}`);
-    if (JSON.stringify(binds.map(b => b[0])) !== JSON.stringify(INDICATOR.map(i => i.key)))
-        throw new Error('i bind non seguono INDICATOR_SETTINGS');
-    if (!binds.every(b => b[1] === 'value'))
+    // Prima i tre interruttori dei bottoni rapidi (proprieta active), poi le
+    // dieci SpinRow dell'indicatore (proprieta value).
+    // First the three quick-button switches (active property), then the ten
+    // indicator SpinRows (value property).
+    if (QUICK.length !== 3 || INDICATOR.length !== 10 || binds.length !== QUICK.length + INDICATOR.length)
+        throw new Error(`bind GSettings: attesi 13, trovati ${binds.length}`);
+    if (JSON.stringify(binds.map(b => b[0])) !== JSON.stringify([...QUICK, ...INDICATOR].map(i => i.key)))
+        throw new Error('i bind non seguono QUICK_BUTTON_SETTINGS + INDICATOR_SETTINGS');
+    if (!binds.slice(0, QUICK.length).every(b => b[1] === 'active'))
+        throw new Error('un interruttore dei bottoni rapidi non punta alla proprieta active');
+    if (!binds.slice(QUICK.length).every(b => b[1] === 'value'))
         throw new Error('un bind non punta alla proprieta value');
 
     // Toggle e SpinRow scrivono il campo giusto col formato giusto.

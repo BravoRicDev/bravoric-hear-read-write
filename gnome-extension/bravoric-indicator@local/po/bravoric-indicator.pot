@@ -1341,3 +1341,55 @@ msgstr ""
 #: gnome-extension/bravoric-indicator@local/prefs.js
 msgid "How long an endpoint stays out of the pool after repeated failures; 0 never pauses one. Applies from the next session"
 msgstr ""
+
+#: gnome-extension/bravoric-indicator@local/prefs.js
+msgid "Start dictation"
+msgstr ""
+
+#: gnome-extension/bravoric-indicator@local/prefs.js
+msgid "Stop dictation"
+msgstr ""
+
+#: gnome-extension/bravoric-indicator@local/prefs.js
+msgid "Read text with OCR"
+msgstr ""
+
+#: gnome-extension/bravoric-indicator@local/prefs.js
+msgid "Start streaming dictation"
+msgstr ""
+
+#: gnome-extension/bravoric-indicator@local/prefs.js
+msgid "Stop streaming dictation"
+msgstr ""
+
+#: gnome-extension/bravoric-indicator@local/prefs.js
+msgid "Dictation button"
+msgstr ""
+
+#: gnome-extension/bravoric-indicator@local/prefs.js
+msgid "One-click start/stop of dictation, next to the indicator"
+msgstr ""
+
+#: gnome-extension/bravoric-indicator@local/prefs.js
+msgid "OCR button"
+msgstr ""
+
+#: gnome-extension/bravoric-indicator@local/prefs.js
+msgid "One-click text capture from the screen, next to the indicator"
+msgstr ""
+
+#: gnome-extension/bravoric-indicator@local/prefs.js
+msgid "Streaming button"
+msgstr ""
+
+#: gnome-extension/bravoric-indicator@local/prefs.js
+msgid "One-click start/stop of streaming dictation, next to the indicator"
+msgstr ""
+
+#: gnome-extension/bravoric-indicator@local/prefs.js
+msgid "Quick buttons"
+msgstr ""
+
+#: gnome-extension/bravoric-indicator@local/prefs.js
+msgid "Buttons in the top bar, separate from the menu: one click or tap starts or stops the action. All off by default."
+msgstr ""

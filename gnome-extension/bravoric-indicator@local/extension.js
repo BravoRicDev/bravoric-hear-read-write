@@ -21,6 +21,11 @@ import { consumeStreamSnapshot, classifyStreamItem, computeStreamDelete, parseBl
 // second corpse, of the same kind as the one removed.
 import { watchStatusFile, watchStreamStateFile } from './watch-cache.mjs';
 import { setRecordingBlink } from './recording-blink.mjs';
+// Bottoni rapidi (un click, niente menu): la logica e' nel modulo puro, qui
+// restano solo il widget e il cablaggio con le impostazioni.
+// Quick buttons (one click, no menu): the logic is in the pure module, only the
+// widget and the wiring with the settings stay here.
+import { QUICK_BUTTONS, createQuickButtons } from './quick-buttons.mjs';
 
 const STATUS_PATH = GLib.build_filenamev([
     GLib.get_home_dir(), '.cache', 'bravoric-stt-clipboard', 'status.json',
@@ -192,6 +197,22 @@ function settingInt(key, fallback) {
     return fallback;
 }
 
+// Interruttore booleano con default esplicito: chiave assente (schema stantio)
+// o lettura che fallisce => `fallback`. Per i bottoni rapidi il default e'
+// falso: senza la chiave non compare nulla.
+// Boolean switch with an explicit default: missing key (stale schema) or a
+// failing read => `fallback`. For the quick buttons the default is false:
+// without the key nothing shows up.
+function settingBool(key, fallback) {
+    try {
+        if (notificationSettings?.settings_schema?.has_key(key))
+            return notificationSettings.get_boolean(key);
+    } catch (e) {
+        logError(e, `bravoric-indicator: lettura di ${key} fallita`);
+    }
+    return fallback;
+}
+
 function notifyErrorIfEnabled(title, body) {
     if (notificationEnabled('notify-errors'))
         Main.notifyError(title, body);
@@ -262,6 +283,58 @@ function spawnConfigEditor(...args) {
 }
 
 const BravoricIndicator = GObject.registerClass(
+// Nomi accessibili dei bottoni rapidi (lettori di schermo e suggerimenti),
+// tradotti al momento dell'uso. `start`/`stop` cambiano quando l'azione sta
+// registrando.
+// Accessible names of the quick buttons (screen readers and hints), translated
+// at the time of use. `start`/`stop` change when the action is recording.
+function quickButtonLabels() {
+    return {
+        dictation: { start: _('Start dictation'), stop: _('Stop dictation') },
+        ocr: { start: _('Read text with OCR'), stop: _('Read text with OCR') },
+        stream: { start: _('Start streaming dictation'), stop: _('Stop streaming dictation') },
+    };
+}
+
+// Costruisce il widget di un bottone rapido: un PanelMenu.Button SENZA menu
+// (dontCreateMenu = true), quindi nessun grab modale e il focus resta nel campo
+// di destinazione, con dentro un St.Button che riceve sia il click sia il tocco.
+// Builds the widget of a quick button: a PanelMenu.Button WITHOUT a menu
+// (dontCreateMenu = true), hence no modal grab and the focus stays in the
+// destination field, with an St.Button inside that receives both click and touch.
+function makeQuickButton(uuid, spec, labels, onClick) {
+    const panelButton = new PanelMenu.Button(0.0, `${uuid} ${spec.key}`, true);
+    const icon = new St.Icon({ icon_name: spec.icon, style_class: 'system-status-icon' });
+    const inner = new St.Button({
+        style_class: 'bravoric-quick-button',
+        child: icon,
+        reactive: true,
+        can_focus: true,
+        track_hover: true,
+        accessible_name: labels.start,
+    });
+    inner.connect('clicked', () => onClick());
+    panelButton.add_child(inner);
+    Main.panel.addToStatusArea(`${uuid}-quick-${spec.key}`, panelButton);
+    return {
+        setSensitive(sensitive) {
+            inner.reactive = sensitive;
+            inner.can_focus = sensitive;
+            inner.opacity = sensitive ? 255 : 110;
+        },
+        setActive(active) {
+            if (active)
+                icon.add_style_class_name(BLINK_CLASS);
+            else
+                icon.remove_style_class_name(BLINK_CLASS);
+            inner.accessible_name = active ? labels.stop : labels.start;
+        },
+        destroy() {
+            panelButton.destroy();
+        },
+    };
+}
+
 class BravoricIndicator extends PanelMenu.Button {
     _init(extension) {
         super._init(0.0, 'Bravoric STT/OCR');
@@ -1400,6 +1473,11 @@ class BravoricIndicator extends PanelMenu.Button {
                 // (bravoric-stream-toggle answered False without showing anything). The
                 // three entries are enabled and disabled together.
                 this._streamItem.setSensitive(canStart);
+                // Bottoni rapidi: stesso stato e stesso servizio, ma il bottone
+                // che sta registrando resta cliccabile (il suo click e' lo stop).
+                // Quick buttons: same state and same service, but the button that
+                // is recording stays clickable (its click is the stop).
+                this._extension?._quick?.update(state, data.service);
                 if (state === 'processing' && data.service) {
                     this._lastOutputItem.setSensitive(false);
                     this._lastOutputItem.label.text = data.service === 'stt'
@@ -1511,6 +1589,27 @@ export default class BravoricIndicatorExtension extends Extension {
         this._indicator = new BravoricIndicator(this);
         Main.panel.addToStatusArea(this.uuid, this._indicator);
 
+        // Bottoni rapidi opzionali: creati subito e ricreati a ogni cambio delle
+        // tre chiavi. Dopo la creazione si rilegge lo stato, cosi' partono gia'
+        // nella condizione giusta invece di aspettare il prossimo evento.
+        // Optional quick buttons: created right away and rebuilt on every change
+        // of the three keys. After the creation the state is re-read, so they
+        // start in the right condition instead of waiting for the next event.
+        this._quick = createQuickButtons({
+            readBool: key => settingBool(key, false),
+            makeButton: (spec, onClick) => makeQuickButton(this.uuid, spec, quickButtonLabels()[spec.key], onClick),
+            spawn: command => spawnBackground(command),
+        });
+        const refreshQuick = () => {
+            this._quick?.sync();
+            this._indicator?._refreshStatus();
+        };
+        refreshQuick();
+        const quickSchema = this._settings.settings_schema;
+        this._quickSettingIds = QUICK_BUTTONS
+            .filter(spec => quickSchema?.has_key(spec.setting))
+            .map(spec => this._settings.connect(`changed::${spec.setting}`, refreshQuick));
+
         this._registeredKeybindings = new Set();
 
         // Un gschemas.compiled stantio non deve mai arrivare a
@@ -1542,6 +1641,11 @@ export default class BravoricIndicatorExtension extends Extension {
     }
 
     disable() {
+        for (const id of this._quickSettingIds ?? [])
+            this._settings?.disconnect(id);
+        this._quickSettingIds = null;
+        this._quick?.destroy();
+        this._quick = null;
         for (const name of this._registeredKeybindings ?? [])
             Main.wm.removeKeybinding(name);
         this._registeredKeybindings = null;

@@ -83,5 +83,20 @@
       <summary>Watchdog check interval (seconds)</summary>
       <description>How often the indicator re-evaluates the status when the backend stops writing.</description>
     </key>
+    <key name="show-dictation-button" type="b">
+      <default>false</default>
+      <summary>Show the dictation button</summary>
+      <description>One-click start/stop of dictation in the top bar, next to the indicator.</description>
+    </key>
+    <key name="show-ocr-button" type="b">
+      <default>false</default>
+      <summary>Show the OCR button</summary>
+      <description>One-click text capture (OCR) in the top bar, next to the indicator.</description>
+    </key>
+    <key name="show-stream-button" type="b">
+      <default>false</default>
+      <summary>Show the streaming button</summary>
+      <description>One-click start/stop of streaming dictation in the top bar, next to the indicator.</description>
+    </key>
   </schema>
 </schemalist>

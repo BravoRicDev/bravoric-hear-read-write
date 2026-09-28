@@ -394,6 +394,15 @@ else
     bad "test-stream-consumer.js"
 fi
 
+# Bottoni rapidi della top bar: modulo puro eseguito con widget finti.
+# Top-bar quick buttons: pure module run with fake widgets.
+echo "== bottoni rapidi (unit) =="
+if node "$REPO/scripts/test-quick-buttons.js"; then
+    ok "test-quick-buttons.js"
+else
+    bad "test-quick-buttons.js"
+fi
+
 echo "== logica timeout (unit) =="
 if node "$REPO/scripts/test-timeout-logic.js"; then
     ok "test-timeout-logic.js (27 asserzioni)"
