@@ -42,7 +42,13 @@ grepany() {
     fi
 }
 
-block="$(awk '/^echo "== estensione GNOME Shell =="/{f=1} f&&/^echo "== fatto =="/{exit} f' "$INSTALL_SH")"
+block="$(awk '/^say "== estensione GNOME Shell =="/{f=1} f&&/^say "== fatto =="/{exit} f' "$INSTALL_SH")"
+# Helper di lingua (say/INSTALL_LANG): il blocco da solo non li definisce.
+i18n_block="$(awk '/^# i18n-begin/{f=1} f{print} /^# i18n-end/{exit}' "$INSTALL_SH")"
+if [ -z "$i18n_block" ]; then
+    echo "  FAIL  helper i18n non trovato in install.sh"
+    exit 1
+fi
 if [ -z "$block" ]; then
     echo "  FAIL  blocco estensione non trovato in install.sh"
     exit 1
@@ -55,6 +61,7 @@ RUNNER="$WORK/runner.sh"
 {
     printf '#!/usr/bin/env bash\n'
     printf 'set -euo pipefail\n'
+    printf '%s\n' "$i18n_block"
     printf '%s\n' "$block"
 } >"$RUNNER"
 
@@ -67,7 +74,7 @@ run_block() {
     local logdir
     logdir="$WORK/log-$(basename "$(dirname "$xdg")")"
     mkdir -p "$(dirname "$proj")/home" "$xdg" "$logdir"
-    env HOME="$(dirname "$proj")/home" XDG_DATA_HOME="$xdg" PROJECT_DIR="$proj" bash "$RUNNER" >"$logdir/out.txt" 2>"$logdir/err.txt"
+    env -u LC_ALL -u LC_MESSAGES -u LANG HOME="$(dirname "$proj")/home" XDG_DATA_HOME="$xdg" PROJECT_DIR="$proj" LANGUAGE="${TEST_LANG:-it}" bash "$RUNNER" >"$logdir/out.txt" 2>"$logdir/err.txt"
     local rc=$?
     if [ "$rc" -ne 0 ]; then
         echo "    (blocco uscito con $rc — stderr del blocco:)"
@@ -146,7 +153,7 @@ done
 # falso per l'upgrade (diceva solo 'prima volta' e non nominava il reload).
 if grep -qi 'per la prima volta' "$INSTALL_SH"; then v1=0; else v1=1; fi
 check "F2: il vecchio messaggio 'per la prima volta' non e' piu' in install.sh" "$v1"
-install_echoes="$(grep -nE '^[[:space:]]*echo' "$INSTALL_SH")"
+install_echoes="$(grep -nE '^[[:space:]]*(echo|say)' "$INSTALL_SH")"
 check "F2: l'output di install.sh nomina il reload (logout/Alt+F2/ricarica)" "$(printf '%s' "$install_echoes" | grepany 'logout|Alt.F2|ricaric|riavvi')"
 
 # --- Non-vacuità meccanica di F1: il puro `ln -sfn` e' davvero inerte sulla
@@ -156,6 +163,30 @@ mkdir -p "$LNT/parent/ext_real" "$LNT/src_ext"
 ln -sfn "$LNT/src_ext" "$LNT/parent/ext_real" 2>/dev/null
 if [ -d "$LNT/parent/ext_real" ] && [ ! -L "$LNT/parent/ext_real" ]; then ln_inert=1; else ln_inert=0; fi
 check "F1: il meccanismo e' reale — ln -sfn su directory non la sostituisce" "$ln_inert"
+
+# --- Inglese: stessa fixture, lingua di sistema diversa da it ---------------
+# Il caso 1 (copia reale) e il caso 2 (symlink) devono parlare inglese, senza
+# residui italiani, e nominare le stesse cose (copia, git pull, reload).
+export TEST_LANG=en
+E1="$WORK/en1"
+mkdir -p "$E1/proj/gnome-extension" "$E1/xdg/gnome-shell/extensions"
+cp -r "$SRC_EXT" "$E1/proj/gnome-extension/bravoric-indicator@local"
+cp -r "$SRC_EXT" "$E1/xdg/gnome-shell/extensions/bravoric-indicator@local"
+run_block "$E1/xdg" "$E1/proj"
+EO1="$(outof "$E1/xdg" out.txt)"; EE1="$(outof "$E1/xdg" err.txt)"
+E2="$WORK/en2"
+mkdir -p "$E2/proj/gnome-extension"
+cp -r "$SRC_EXT" "$E2/proj/gnome-extension/bravoric-indicator@local"
+run_block "$E2/xdg" "$E2/proj"
+EO2="$(outof "$E2/xdg" out.txt)"; EE2="$(outof "$E2/xdg" err.txt)"
+unset TEST_LANG
+check "EN: avviso di copia reale in inglese" "$(grepany 'real directory' "$EE1")"
+check "EN: dice che git pull non aggiorna l'estensione" "$(grepany 'git pull' "$EE1")"
+check "EN: 'NOT linked' quando e' una copia" "$(grepany 'NOT linked' "$EE1")"
+check "EN: 'Extension linked' nel caso normale" "$(grepany 'Extension linked' "$EO2")"
+check "EN: il reload e' nominato anche dopo un update" "$(grepany 'after an update' "$EO2")"
+check "EN: nessun residuo italiano nell'output" "$(if grep -qiE 'ATTENZIONE|ERRORE|Estensione|aggiornament|copia' "$EO1" "$EE1" "$EO2" "$EE2"; then echo 0; else echo 1; fi)"
+check "EN: nessun avviso nel caso normale (stderr vuoto)" "$(if [ -s "$EE2" ]; then echo 0; else echo 1; fi)"
 
 echo
 if [ "$FAIL" -eq 0 ]; then
