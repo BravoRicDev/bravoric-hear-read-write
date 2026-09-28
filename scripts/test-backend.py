@@ -730,6 +730,31 @@ def main() -> int:
             m_notify.send.call_count >= 1,
         )
 
+    # --- cli.ocr_capture_main: mai chiamata da nessun test finora ----------
+    # Stesso schema di stt_toggle_main sopra (mai testato per la sua propria
+    # entry point, solo per handle_capture direttamente): ConfigError e
+    # un'eccezione inattesa da ocr.handle_capture devono entrambe tornare 1
+    # senza far esplodere il processo CLI.
+    with mock.patch.object(cli, "load_config", side_effect=config.ConfigError("bad config")), \
+         mock.patch.object(cli, "notify") as m_notify_ocr:
+        ret_ocr = cli.ocr_capture_main()
+        check("ocr_capture_main: ConfigError -> ritorna 1", ret_ocr == 1)
+        check("ocr_capture_main: ConfigError -> notify.send chiamato",
+              m_notify_ocr.send.call_count >= 1)
+
+    with mock.patch.object(cli, "load_config", return_value=mock.Mock()), \
+         mock.patch.object(cli, "ocr") as m_ocr_cli, \
+         mock.patch.object(cli, "status") as m_status_cli, \
+         mock.patch.object(cli, "notify") as m_notify_ocr2:
+        m_ocr_cli.handle_capture.side_effect = RuntimeError("boom (simulato)")
+        ret_ocr2 = cli.ocr_capture_main()
+        check("ocr_capture_main: eccezione inattesa da handle_capture -> ritorna 1, non solleva",
+              ret_ocr2 == 1)
+        check("ocr_capture_main: eccezione inattesa -> stato ERROR scritto",
+              m_status_cli.write_status.call_args_list[-1][0][0] == m_status_cli.STATE_ERROR)
+        check("ocr_capture_main: eccezione inattesa -> notifica utente",
+              m_notify_ocr2.send.call_count >= 1)
+
     # --- storage.py: _purge_expired con file che scompare -----------------
     print("== storage.py (giro 10) ==")
     from bravoric_stt_clipboard import storage
