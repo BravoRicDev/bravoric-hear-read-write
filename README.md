@@ -87,6 +87,22 @@ Then enable the extension (`gnome-extensions enable bravoric-indicator@local`,
 or via the Extensions app) and open its preferences to point the fallback
 chain at your endpoints.
 
+## Language and customization
+
+- **English and Italian** everywhere a user can read text: the preferences
+  window, the indicator menu, notifications, `install.sh` and the
+  `bravoric-chunk-log` help. The language follows `LANGUAGE`/`LC_ALL`/
+  `LC_MESSAGES`/`LANG`; anything not Italian falls back to English. The
+  config template installed on first run follows the same rule.
+- **Everything is configurable from the preferences window**: fallback
+  levels, notification switches (one master switch, plus one per event and
+  service), notification icons (one slot per event), audio, clipboard
+  commands, streaming behaviour and diagnostics. The TOML file stays the
+  source of truth; the window edits it in place.
+- **Debugging the streaming chain**: `bravoric-chunk-log --summary` shows
+  which endpoint served each chunk, failure counts and latency percentiles
+  (`--last N`, `--session ID`, `--since MINUTES` narrow it down).
+
 ## Testing
 
 ```sh
