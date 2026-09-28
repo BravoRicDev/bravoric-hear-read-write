@@ -5529,6 +5529,15 @@ def main() -> int:
                   config_editor.get_state()["ocr"]["capture_screenshot"] is False)
         finally:
             config_editor.CONFIG_PATH = _saved_cp_gs
+    # storage.base_dir vuoto: Path("") e' la cwd -> dati sensibili in $HOME.
+    check("config: storage.base_dir = \"\" (vuoto) cade sul default, non sulla cwd",
+          config._build_config({"storage": {"base_dir": ""}}).storage.base_dir
+          == config.DEFAULT_STORAGE_BASE_DIR)
+    check("config: storage.base_dir solo spazi cade sul default",
+          config._build_config({"storage": {"base_dir": "   "}}).storage.base_dir
+          == config.DEFAULT_STORAGE_BASE_DIR)
+    check("config: storage.base_dir valido resta invariato",
+          config._build_config({"storage": {"base_dir": "/dati/x"}}).storage.base_dir == "/dati/x")
     _cfg_shot_absent = config._build_config({})
     check("config: [ocr] assente -> capture_screenshot default False",
           _cfg_shot_absent.ocr_capture_screenshot is False)

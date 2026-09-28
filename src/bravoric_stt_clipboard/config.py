@@ -29,6 +29,9 @@ def _example_config_path() -> Path:
 CONFIG_PATH_EXAMPLE = _example_config_path()
 
 
+DEFAULT_STORAGE_BASE_DIR = "~/.local/share/bravoric-stt-clipboard/history"
+
+
 class ConfigError(RuntimeError):
     pass
 
@@ -632,7 +635,11 @@ def _build_config(raw: dict) -> Config:
             ),
             double_injection=clipboard_raw.get("double_injection", True),
             storage=StorageConfig(
-                base_dir=storage_raw.get("base_dir", "~/.local/share/bravoric-stt-clipboard/history"),
+                # `or DEFAULT`: una stringa vuota esplicita (config a mano, campo
+                # svuotato) diventerebbe Path("") = cwd del processo, cioe' di
+                # norma $HOME: audio e testo dettato salvati alla rinfusa li',
+                # in silenzio. Assente e vuoto cadono entrambi sul default.
+                base_dir=(str(storage_raw.get("base_dir", "")).strip() or DEFAULT_STORAGE_BASE_DIR),
                 stt_original=retention("stt_original"),
                 stt_raw=retention("stt_raw"),
                 stt_clean=retention("stt_clean"),
