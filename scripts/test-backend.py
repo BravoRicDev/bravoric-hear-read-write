@@ -2747,6 +2747,35 @@ def main() -> int:
             mock_p.wait(timeout=5)
     check("process wait timeout triggers kill fallback", mock_p.killed and mock_p.terminated)
 
+    # --- endpoint_breaker.py: compute_state/endpoint_id, mai testate a diretto ---
+    # compute_state e' documentata come funzione PURA con 3 casi limite
+    # espliciti (last_failure None, age<0 orologio indietro, boundary esatto
+    # al cooldown): esercitata solo indirettamente via EndpointBreaker.state()
+    # finora, mai con un'asserzione diretta sui suoi limiti.
+    from bravoric_stt_clipboard.endpoint_breaker import (
+        CLOSED,
+        HALF_OPEN,
+        OPEN,
+        compute_state,
+        endpoint_id,
+    )
+    check("compute_state: mai fallito -> CLOSED", compute_state(None, 1000.0, 3600.0) == CLOSED)
+    check("compute_state: appena fallito -> OPEN", compute_state(1000.0, 1000.1, 3600.0) == OPEN)
+    check("compute_state: cooldown appena scaduto (boundary esatto) -> HALF_OPEN",
+          compute_state(1000.0, 1000.0 + 3600.0, 3600.0) == HALF_OPEN)
+    check("compute_state: un istante prima del boundary -> ancora OPEN",
+          compute_state(1000.0, 1000.0 + 3600.0 - 0.001, 3600.0) == OPEN)
+    check("compute_state: timestamp nel futuro (orologio indietro/altro processo) -> CLOSED, non bloccato",
+          compute_state(2000.0, 1000.0, 3600.0) == CLOSED)
+    # endpoint_id: normalizzazione dello slash finale, documentata esplicitamente
+    # come idempotente PRIMA di endpoint_key (non due implementazioni diverse).
+    check("endpoint_id: slash finale non cambia la chiave",
+          endpoint_id("http://h:4001/v1/", "m") == endpoint_id("http://h:4001/v1", "m"))
+    check("endpoint_id: model diverso -> chiave diversa (stesso endpoint)",
+          endpoint_id("http://h:4001/v1", "m1") != endpoint_id("http://h:4001/v1", "m2"))
+    check("endpoint_id: endpoint diverso, model uguale -> chiave diversa",
+          endpoint_id("http://h1:4001/v1", "m") != endpoint_id("http://h2:4001/v1", "m"))
+
     # --- onda 2: dispatcher (stream.py) ------------------------------------
     # Un test verde puo' essere VERDE BUGGATO: in questo progetto e' gia'
     # successo (bytecode avvelenato, 648 combinazioni in attesa). Percio' i
