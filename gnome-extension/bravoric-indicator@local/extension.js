@@ -15,6 +15,10 @@ import { consumeStreamSnapshot, classifyStreamItem, computeStreamDelete, parseBl
 // un punto di aggancio qui dentro, lo arma watchStatusFile dal modulo (che
 // chiama lui l'export scheduleRefresh). Un import per un metodo che nessuno
 // chiama e' solo un secondo cadavere, dello stesso genere di quello rimosso.
+// Only the two watchers that _init really starts: the refresh debounce has
+// no hook here, watchStatusFile arms it from the module (which itself calls
+// the scheduleRefresh export). An import for a method nobody calls is just a
+// second corpse, of the same kind as the one removed.
 import { watchStatusFile, watchStreamStateFile } from './watch-cache.mjs';
 import { setRecordingBlink } from './recording-blink.mjs';
 
@@ -30,6 +34,9 @@ const STREAM_STATE_PATH = GLib.build_filenamev([
 // Testo VIVO del campo, letto dal backend per costruire il prompt di contesto.
 // Contiene solo cio' che l'utente ha davvero davanti: i chunk cancellati non ci
 // sono piu' e le parole comando non ci sono mai state (sono state eseguite).
+// LIVE text of the field, read by the backend to build the context prompt.
+// It contains only what the user really has in front of them: deleted chunks
+// are gone and command words were never there (they were executed).
 const STREAM_LIVE_TEXT_PATH = GLib.build_filenamev([
     GLib.get_home_dir(), '.cache', 'bravoric-stt-clipboard', 'stream_live_text.json',
 ]);
@@ -52,44 +59,73 @@ const BLINK_INTERVAL_MS = 500;
 const REFRESH_DEBOUNCE_MS = 250;
 // Anteprima delle voci di Cronologia nel menu (caratteri, non byte): oltre
 // questa lunghezza il testo e' troncato, non accorciato.
+// Preview of the History entries in the menu (characters, not bytes): beyond
+// this length the text is truncated, not shortened.
 const HISTORY_PREVIEW_CHARS = 50;
 // Anteprima dell'ultimo output in _refreshStatus: stessa funzione del troncamento,
 // lunghezza maggiore perche' non c'e' il tag di servizio accanto.
+// Preview of the last output in _refreshStatus: same truncation function,
+// greater length because there is no service tag next to it.
 const LAST_OUTPUT_PREVIEW_CHARS = 60;
 // notify_keyval() e' Clutter e aspetta il tempo evento in MICROSECONDI, mentre
 // Clutter.get_current_event_time() restituisce i MILLISECONDI: la conversione
 // e' unita' di sistema, non un fattore di misura (Giro 2, B2-frontend-B).
+// notify_keyval() is Clutter and expects the event time in MICROSECONDS,
+// while Clutter.get_current_event_time() returns MILLISECONDS: the conversion
+// is a system-of-units matter, not a measurement factor (Round 2,
+// B2-frontend-B).
 const EVENT_TIME_MS_TO_US = 1000;
 // Il file monitor scatta solo quando il backend *scrive*: se muore a metà
 // (crash, VPN giù) non arriva più alcun evento. Questo timer rivaluta
 // periodicamente lo stato così la logica di timeout viene comunque eseguita.
+// The file monitor fires only when the backend *writes*: if it dies halfway
+// (crash, VPN down) no event arrives any more. This timer periodically
+// re-evaluates the state so the timeout logic runs anyway.
 const TIMEOUT_CHECK_INTERVAL_SECONDS = 30;
 
 // Pacing fra due incolla consecutivi in modalità per_chunk (D5).
 // Il valore effettivo arriva da stream_state.json (paste_delay_ms); questo è
 // solo il fallback se il backend non l'ha ancora scritto.
+// Pacing between two consecutive pastes in per_chunk mode (D5). The
+// effective value comes from stream_state.json (paste_delay_ms); this is
+// only the fallback if the backend has not written it yet.
 const STREAM_PACING_DEFAULT_MS = 250;
 const STREAM_SETTLE_MS = 30;
 const STREAM_DEBOUNCE_MS = 250;
 // Intervallo fra due caratteri consecutivi in modalita' per_chunk con
 // paste_channel='type': e' un ritardo di HIGS, non un timeout, e serve a
 //che l'applicazione riceva i key event uno alla volta.
+// Interval between two consecutive characters in per_chunk mode with
+// paste_channel='type': it is a HIGS delay, not a timeout, and it serves so
+// that the application receives the key events one at a time.
 const TYPE_KEY_INTERVAL_MS = 3;
 // Tetto di attesa del drenaggio della coda PRIMA di chiudere la sessione a
 // comando vocale. Prima la fine sessione non aveva un tetto: se la coda non
 // si svuotava il pallino rosso restava acceso indefinitamente (difetto
 // segnalato dall'utente). Superato il tetto si chiude comunque, scartando
 // quello che resta in coda.
+// Wait cap for the queue drain BEFORE closing the session by voice command.
+// Before, the end of the session had no cap: if the queue did not empty the
+// red dot stayed on indefinitely (defect reported by the user). Once the cap
+// is exceeded we close anyway, discarding what remains in the queue.
 const STREAM_END_TIMEOUT_MS = 5 * 1000;
 // Quanto spesso _requestStreamEnd ricontrolla se la coda si e' svuotata. Non e'
 // un timeout: e' l'intervallo fra due interrogazioni di stream_state.json, e
 // non deve essere confuso con STREAM_END_TIMEOUT_MS qui sopra.
+// How often _requestStreamEnd checks again whether the queue has emptied.
+// It is not a timeout: it is the interval between two queries of
+// stream_state.json, and it must not be confused with STREAM_END_TIMEOUT_MS
+// above.
 const STREAM_END_POLL_MS = 100;
 
 // Un'operazione può morire a metà (backend ucciso, VPN giù, crash durante
 // l'elaborazione): senza questi limiti l'icona resterebbe bloccata per sempre
 // in uno stato non-idle. Chiave = stato; per il processing il limite dipende
 // dal servizio (STT più veloce, OCR più lento).
+// An operation can die halfway (backend killed, VPN down, crash during
+// processing): without these limits the icon would stay stuck forever in a
+// non-idle state. Key = state; for processing the limit depends on the
+// service (STT faster, OCR slower).
 const STATE_TIMEOUT_SECONDS = {
     recording: 15 * 60,
     error: 5 * 60,
@@ -118,6 +154,13 @@ const PROCESSING_TIMEOUT_KEYS = {
 // azzerato in disable(). Un gschemas.compiled stantio senza la chiave (o una
 // lettura che fallisce) NON deve mai spegnere una notifica ne' sollevare:
 // resta acceso, come prima dell'introduzione dell'interruttore.
+// Every notification generated by the extension has its own GSettings switch
+// (GUI: Notifications page > Extension notifications): `notify-errors` for
+// errors (streaming, backend, status file), `notify-status` for status
+// messages (status file restored, timeout). Set in enable(), cleared in
+// disable(). A stale gschemas.compiled without the key (or a read that
+// fails) must NEVER switch off a notification nor raise: it stays on, as
+// before the switch was introduced.
 let notificationSettings = null;
 
 function notificationEnabled(key) {
@@ -164,6 +207,10 @@ function notifyStatusIfEnabled(title, body) {
 // e notificati, ma il codice (build del path, test di esistenza, avviso
 // "backend non installato", cattura dell'eccezione) smette di esistere due
 // volte.
+// Single start point of the venv binaries. The two public names below are
+// one-line wrappers: calling them changes nothing about how they are built
+// and notified, but the code (path build, existence test, "backend not
+// installed" warning, exception catch) stops existing twice.
 function spawnVenvBinary(binName, args, logPrefix) {
     const path = GLib.build_filenamev([VENV_BIN, binName]);
     if (!GLib.file_test(path, GLib.FileTest.EXISTS)) {
@@ -182,6 +229,9 @@ function spawnVenvBinary(binName, args, logPrefix) {
 }
 // Dipendenze iniettate ai moduli puri: i test eseguono watch-cache.mjs
 // davvero, con stub al posto di Gio/GLib, quindi il modulo non li importa.
+// Dependencies injected into the pure modules: the tests really run
+// watch-cache.mjs, with stubs in place of Gio/GLib, so the module does not
+// import them.
 const ioDeps = { Gio, GLib, logError };
 
 
@@ -202,6 +252,10 @@ function showCopiedOsd() {
 // scenario venv assente) che avvisa con Main.notifyError. Click su "Svuota
 // cronologia" non faceva nulla senza spiegazione. Ora l'avviso arriva da
 // spawnVenvBinary, comune a tutti i binari del venv.
+// Round 16: it was a silent no-op, unlike spawnBackground (same scenario,
+// missing venv) which warns with Main.notifyError. A click on "Clear
+// history" did nothing with no explanation. Now the warning comes from
+// spawnVenvBinary, common to all the venv binaries.
 function spawnConfigEditor(...args) {
     spawnVenvBinary('bravoric-config-editor', args,
         'bravoric-indicator: impossibile eseguire config-editor');
@@ -221,6 +275,13 @@ class BravoricIndicator extends PanelMenu.Button {
         // _monitor/_monitorId e _streamMonitor/_streamMonitorId sono i campi che
         // destroy() disconnette: _watchStatusFile e _watchStreamStateFile li
         // scrivono (vedi _watchCacheFile).
+        // Session resources: initialized to null/0 and NOT left to the fact that
+        // `undefined` is falsy. destroy() reads all of them by name and the methods
+        // reset them after use: if a field did not exist, the teardown would work by
+        // chance and a new field would be added silently. _monitor/_monitorId and
+        // _streamMonitor/_streamMonitorId are the fields that destroy() disconnects:
+        // _watchStatusFile and _watchStreamStateFile write them (see
+        // _watchCacheFile).
         this._monitor = null;
         this._monitorId = 0;
         this._streamMonitor = null;
@@ -234,10 +295,13 @@ class BravoricIndicator extends PanelMenu.Button {
 
         // contatori di stato: inizializzati esplicitamente qui, non affidati
         // al fatto che `undefined` sia falsy (fragile se il codice cambia).
+        // state counters: initialized explicitly here, not left to the fact that
+        // `undefined` is falsy (fragile if the code changes).
         this._statusParseErrors = 0;
         this._timeoutWarned = false;
 
         // Stato dettatura streaming (modalità per_chunk).
+        // Streaming dictation state (per_chunk mode).
         this._streamSessionId = null;
         this._streamIndex = 0;
         this._streamDebounceId = null;
@@ -248,6 +312,9 @@ class BravoricIndicator extends PanelMenu.Button {
         // _streamSegments null = buffer sconosciuto (reload, cambio sessione):
         // NON [], altrimenti un delete partirebbe da "campo vuoto" invece che
         // dal fail-safe no-op dichiarato in _writeStreamLiveText.
+        // _streamSegments null = unknown buffer (reload, session change): NOT [],
+        // otherwise a delete would start from "empty field" instead of from the
+        // fail-safe no-op declared in _writeStreamLiveText.
         this._streamSegments = null;
         this._streamRules = [];
         this._streamBlacklist = new Set();
@@ -280,6 +347,9 @@ class BravoricIndicator extends PanelMenu.Button {
             // Giro 14: stessa azione del click su una voce di Cronologia
             // (copia negli appunti), che mostra l'OSD — qui non lo faceva,
             // feedback incoerente tra le due voci di menu equivalenti.
+            // Round 14: same action as the click on a History entry (copy to the
+            // clipboard), which shows the OSD — here it did not, inconsistent feedback
+            // between the two equivalent menu entries.
             showCopiedOsd();
         });
         this.menu.addMenuItem(this._lastOutputItem);
@@ -318,6 +388,9 @@ class BravoricIndicator extends PanelMenu.Button {
         // Rivalutazione periodica indipendente dal file monitor: copre il caso
         // in cui il backend muore senza più scrivere status.json (nessun evento
         // 'changed'), che altrimenti lascerebbe l'icona bloccata per sempre.
+        // Periodic re-evaluation independent of the file monitor: it covers the case
+        // where the backend dies without writing status.json any more (no 'changed'
+        // event), which would otherwise leave the icon stuck forever.
         this._timeoutCheckId = GLib.timeout_add_seconds(
             GLib.PRIORITY_DEFAULT, settingInt('timeout-check-interval-seconds', TIMEOUT_CHECK_INTERVAL_SECONDS), () => {
                 this._refreshStatus();
@@ -330,6 +403,11 @@ class BravoricIndicator extends PanelMenu.Button {
     // (righe tradotte del menu): prima duplicati identici salvo la sola
     // differenza _()/nessun _() sulle etichette 'OK'/'MISSING'. Un solo
     // punto dove VENV_BIN e lo schema compilato vengono localizzati.
+    // Raw facts (computed paths + state on disk) shared by _diagnosticsReport
+    // (text for the clipboard) and _buildDiagnosticsSubmenu (translated menu
+    // rows): before, identical duplicates except for the sole difference
+    // _()/no _() on the 'OK'/'MISSING' labels. A single place where VENV_BIN and
+    // the compiled schema are located.
     _diagnosticsFacts() {
         const venvToggle = GLib.build_filenamev([VENV_BIN, 'bravoric-stt-toggle']);
         const schemaPath = GLib.build_filenamev([
@@ -348,6 +426,8 @@ class BravoricIndicator extends PanelMenu.Button {
     _diagnosticsReport() {
         // Report testuale completo (path + stato): copiato negli appunti così
         // il menu resta compatto ma il dettaglio è sempre recuperabile.
+        // Full text report (path + state): copied to the clipboard so the menu stays
+        // compact but the detail is always recoverable.
         const f = this._diagnosticsFacts();
         const label = (ok) => ok ? 'OK' : 'MISSING';
         return [
@@ -398,6 +478,8 @@ class BravoricIndicator extends PanelMenu.Button {
             return _('OCR clean');
         // kind/service inatteso (voce corrotta o formato futuro): non
         // indovinare un servizio non richiesto, mostra il dato grezzo.
+        // unexpected kind/service (corrupt entry or future format): do not guess an
+        // unrequested service, show the raw datum.
         return `${service ?? '?'} ${kind ?? '?'}`;
     }
 
@@ -406,6 +488,10 @@ class BravoricIndicator extends PanelMenu.Button {
         // monitor osserva l'intera directory, quindi un burst di eventi può
         // far partire due load_contents_async sovrapposti su HISTORY_PATH; se
         // completano fuori ordine il menu mostrerebbe per un istante dati stale.
+        // Generation token (same reason as _refreshStatus, round 13): the file
+        // monitor watches the whole directory, so a burst of events can start two
+        // overlapping load_contents_async calls on HISTORY_PATH; if they complete out
+        // of order the menu would show stale data for an instant.
         this._historyRefreshGen += 1;
         const gen = this._historyRefreshGen;
         const file = Gio.File.new_for_path(HISTORY_PATH);
@@ -413,18 +499,21 @@ class BravoricIndicator extends PanelMenu.Button {
             if (this._cancellable.is_cancelled())
                 return; // estensione disabilitata mentre la lettura era in corso
             if (gen !== this._historyRefreshGen)
-                return; // superata da una lettura più recente
+                return; // superata da una lettura più recente | superseded by a more recent read
 
             let entries = [];
             try {
                 const [, contents] = source.load_contents_finish(result);
                 entries = JSON.parse(new TextDecoder().decode(contents));
             } catch {
-                entries = []; // file non ancora creato o vuoto
+                entries = []; // file non ancora creato o vuoto | file not yet created or empty
             }
             // JSON valido ma di forma inattesa (oggetto, scalare, null): senza
             // questa guardia entries.length sarebbe undefined e il for...of
             // sottostante lancerebbe un TypeError fuori dal try/catch.
+            // Valid JSON but of an unexpected shape (object, scalar, null): without this
+            // guard entries.length would be undefined and the for...of below would throw
+            // a TypeError outside the try/catch.
             if (!Array.isArray(entries))
                 entries = [];
 
@@ -460,6 +549,8 @@ class BravoricIndicator extends PanelMenu.Button {
 
     // Il lampeggio vive in recording-blink.mjs, modulo puro eseguito dai test;
     // qui resta l'aggancio con i valori dichiarati in questo file.
+    // The blink lives in recording-blink.mjs, a pure module run by the tests;
+    // here only the hook with the values declared in this file remains.
     _setRecordingBlink(active) {
         setRecordingBlink(this, ioDeps, active, BLINK_CLASS, settingInt('blink-interval-ms', BLINK_INTERVAL_MS));
     }
@@ -467,6 +558,8 @@ class BravoricIndicator extends PanelMenu.Button {
     _timeoutLimitFor(state, service) {
         // Nessun limite per 'idle': è lo stato di riposo. Per il processing
         // il limite dipende dal servizio, che può mancare (status vecchio).
+        // No limit for 'idle': it is the rest state. For processing the limit
+        // depends on the service, which may be missing (old status).
         if (state === 'processing') {
             if (!service || !PROCESSING_TIMEOUT_SECONDS[service])
                 return null;
@@ -483,6 +576,17 @@ class BravoricIndicator extends PanelMenu.Button {
         // la voce Streaming che avviava un secondo ffmpeg. Una sessione
         // streaming che muole davvero si libera da sola: il supervisore
         // finito scrive IDLE, e il lock stale viene ripulito da is_stream_active().
+        // P4: the limit on 'recording' does NOT apply to a per_chunk streaming
+        // session. The 15 minutes are a watchdog meant for an STT recording, which
+        // occupies the microphone and must be closed: here the supervisor beats the
+        // heart of status.json (stream.heartbeat), but the age the extension reads
+        // is still that of the heart and proves nothing about the session being
+        // alive. Applying the limit switched off a dictation in progress (icon to
+        // idle, "Recording timed out" notification) while ffmpeg still held the
+        // microphone, and re-enabled the Streaming entry, which started a second
+        // ffmpeg. A streaming session that really dies frees itself: the finished
+        // supervisor writes IDLE, and the stale lock is cleaned up by
+        // is_stream_active().
         if (state === 'recording' && service === 'stream')
             return null;
         if (!STATE_TIMEOUT_SECONDS[state])
@@ -529,7 +633,7 @@ class BravoricIndicator extends PanelMenu.Button {
             const [, contents] = GLib.file_get_contents(STREAM_STATE_PATH);
             state = JSON.parse(new TextDecoder().decode(contents));
         } catch {
-            return; // file assente o corrotto: niente da incollare
+            return; // file assente o corrotto: niente da incollare | file missing or corrupt: nothing to paste
         }
         if (!state || typeof state !== 'object' || Array.isArray(state))
             return;
@@ -538,7 +642,7 @@ class BravoricIndicator extends PanelMenu.Button {
         const result = consumeStreamSnapshot(this, state);
         const sessionChanged = previousSession !== this._streamSessionId;
         if (sessionChanged) {
-            this._streamSegments = null; // history unknown after restart/session switch: deletes are fail-safe no-op.
+            this._streamSegments = null; // storia sconosciuta dopo riavvio/cambio sessione: le cancellazioni sono un no-op sicuro. | history unknown after restart/session switch: deletes are fail-safe no-op.
             // Giro 2 (F1): la coda apparteneva alla sessione PRECEDENTE. Il
             // blocco su un invio fallito poteva lasciare in testa chunk mai
             // consegnati: al cambio di sessione venivano RICONSEGNATI insieme ai
@@ -550,6 +654,16 @@ class BravoricIndicator extends PanelMenu.Button {
             // sono null, quindi un delete residuo resta il fail-safe no-op
             // dichiarato sopra. Non e' uno scarto di testo consegnato: quei
             // chunk non sono mai arrivati nel campo della sessione vecchia.
+            // Round 2 (F1): the queue belonged to the PREVIOUS session. The block on a
+            // failed send could leave never-delivered chunks at the head: at the session
+            // change they were RE-DELIVERED together with the new ones (duplicated text)
+            // and, if the head was a 'delete' command, computeStreamDelete executed it on
+            // the segments already replaced by the new chunks (destructive BackSpaces on
+            // the text just dictated). Emptying here closes both destructive cases: with
+            // the queue emptied the head item is no longer re-executed, and the segments
+            // are null, so a leftover delete stays the fail-safe no-op declared above.
+            // It is not a discard of delivered text: those chunks never arrived in the
+            // old session's field.
             this._streamQueue = [];
         }
         this._streamBlacklist = parseBlacklist(state.blacklist);
@@ -564,6 +678,8 @@ class BravoricIndicator extends PanelMenu.Button {
         this._pasteChannel = state.paste_channel === 'type' ? 'type' : 'clipboard';
 
         // Consuma tutto lo snapshot: il monitor/debounce può aver accorpato più scritture.
+        // Consumes the whole snapshot: the monitor/debounce may have merged several
+        // writes.
         this._streamRules = Array.isArray(state.commands) ? state.commands : [];
         this._streamQueue.push(...result.items.map(item => classifyStreamItem(item, this._streamRules, this._streamBlacklist)));
         // L'azzzeramento del latch viene DOPO il push, non prima: al cambio di
@@ -571,6 +687,11 @@ class BravoricIndicator extends PanelMenu.Button {
         // decidere se il blocco ha ancora senso. I due casi in cui il latch si
         // libera sono: coda vuota (tutto scartato dalla blacklist) o cambio di
         // sessione (coda ripulita e ricaricata con i chunk nuovi).
+        // The latch reset comes AFTER the push, not before: at the session change
+        // the just-emptied queue must be filled with the new chunks before deciding
+        // whether the block still makes sense. The two cases in which the latch is
+        // released are: empty queue (everything discarded by the blacklist) or
+        // session change (queue cleaned and reloaded with the new chunks).
         if (this._streamQueue.length === 0 || sessionChanged)
             this._streamPasteBlocked = false;
         this._startStreamPasteWorker();
@@ -583,6 +704,13 @@ class BravoricIndicator extends PanelMenu.Button {
     // l'attesa fra l'invio della scorciatoia e il chunk successivo (quella e'
     // STREAM_SETTLE_MS): qui si aspetta DOPO che il chunk e' stato consegnato,
     // per dare all'applicazione il tempo di consumarlo.
+    // Wait delay between two consecutive DELIVERIES (D5): it comes from
+    // stream_state.json with paste_delay_ms, the fallback in here is the default
+    // declared in STREAM_PACING_DEFAULT_MS. It is not the typing time of a
+    // single character (that is TYPE_KEY_INTERVAL_MS) nor the wait between
+    // sending the shortcut and the next chunk (that is STREAM_SETTLE_MS): here
+    // we wait AFTER the chunk has been delivered, to give the application time
+    // to consume it.
     _pacingDelayMs() {
         return Number.isFinite(this._pasteDelayMs)
             ? this._pasteDelayMs : STREAM_PACING_DEFAULT_MS;
@@ -598,6 +726,15 @@ class BravoricIndicator extends PanelMenu.Button {
     // l'invio e' riuscito, il canale 'type' quando ha finito di digitare i
     // caratteri. La coda non puo' essere svuotata in anticipo nel secondo
     // caso, perche' i caratteri non sono ancora nel campo.
+    // Queue and field model are two views of the SAME fact: a chunk is delivered
+    // when it disappears from the queue and enters the segments. The queue only
+    // works if the two things happen together, so they live in a single method.
+    //
+    // Called AFTER a successful send on both channels, and the two channels
+    // remain DIFFERENT paths: the clipboard calls this one as soon as the send
+    // succeeded, the 'type' channel when it has finished typing the characters.
+    // The queue cannot be emptied early in the second case, because the
+    // characters are not in the field yet.
     _commitStreamItem(item) {
         this._streamQueue.shift();
         if (!this._streamSegments)
@@ -613,6 +750,12 @@ class BravoricIndicator extends PanelMenu.Button {
         // e resta vera. Sostituisce il flag di ciclo di vita `_streamDestroyed`
         // (G1): non dice "l'istanza distrutta", dice "questo lavoro non e'
         // piu' in corso", che e' la domanda che le guardie facevano davvero.
+        // `this._cancellable` is the only resource that `destroy()` cancels first
+        // (Gio.Cancellable.cancel, line 1129) and that no other path reopens: after
+        // the teardown its condition is true and stays true. It replaces the
+        // lifecycle flag `_streamDestroyed` (G1): it does not say "the instance was
+        // destroyed", it says "this work is no longer in progress", which is the
+        // question the guards were really asking.
         if (this._cancellable.is_cancelled() || this._streamWorkerActive || this._streamPasteBlocked
             || this._streamQueue.length === 0)
             return;
@@ -624,7 +767,7 @@ class BravoricIndicator extends PanelMenu.Button {
                 logError(new Error('tastiera virtuale non disponibile; chunk stream mantenuti in coda'),
                     'bravoric-indicator: paste stream sospeso');
             }
-            return; // Nessun retry busy-loop; un prossimo evento può riprovare.
+            return; // Nessun retry busy-loop; un prossimo evento può riprovare. | No busy-loop retry; a next event can retry.
         }
 
         this._streamWorkerActive = true;
@@ -683,6 +826,8 @@ class BravoricIndicator extends PanelMenu.Button {
             } else {
                 // I tasti effettivamente premuti sono già stati rilasciati nel finally;
                 // il risultato dell'incolla resta ambiguo.
+                // The keys actually pressed have already been released in the finally; the
+                // result of the paste stays ambiguous.
                 notifyErrorIfEnabled(_('Streaming paste incomplete'),
                     _('A chunk could not be sent. Check the focused field before restarting to avoid duplicates.'));
                 logError(new Error(
@@ -692,6 +837,8 @@ class BravoricIndicator extends PanelMenu.Button {
                     'bravoric-indicator: paste stream incompleto');
                 // Esito ambiguo: trattieni l'elemento e blocca il drain per non
                 // dichiararlo consegnato né ritentare automaticamente/duplicare.
+                // Ambiguous outcome: hold the item and block the drain so as not to declare
+                // it delivered nor retry automatically/duplicate.
                 this._streamPasteBlocked = true;
             }
             this._streamPasteTimerId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, delay, () => {
@@ -788,6 +935,23 @@ class BravoricIndicator extends PanelMenu.Button {
     // costo e' nullo rispetto a un invio di tasti, mentre spostarla fuori
     // romperebbe i due ambienti di eval che ricevono solo Clutter, Main,
     // logError, computeStreamDelete, GLib e _ come variabili libere.
+    // The 4 error exit branches below stay EXPLICIT and are not merged into a
+    // helper: each one blocks the queue and must reset by itself
+    // _streamWorkerActive, the latch (a failed key has its own message;
+    // "delete on invalid scope" and "unknown action" today share the same text
+    // _('Invalid streaming command') — they are not 4 distinct messages, they
+    // are 3: the difference between these two cases is not visible to the user.
+    // It is not a defect to fix here: changing the text is a product choice (new
+    // msgid, new IT translation), not a cleanup. This comment describes what the
+    // code does TODAY, not what it should do.
+    // that _startStreamPasteWorker() checks so as not to re-enter. Merging them
+    // would move the list of blocks inside the helper, and the counter in
+    // test-timeout-logic.js (4 blocks, each followed by the reset before the
+    // return) would stop guarding the real branch. Also keyMap stays in here,
+    // rebuilt at every call: the keys are few and the cost is nil compared to a
+    // key send, while moving it out would break the two eval environments that
+    // receive only Clutter, Main, logError, computeStreamDelete, GLib and _ as
+    // free variables.
     _runStreamCommand(item) {
         const command = item.command || {};
         const keyMap = {
@@ -808,6 +972,12 @@ class BravoricIndicator extends PanelMenu.Button {
             // True per tutta la sessione GNOME: la coda si svuotava in _streamQueue
             // ma il worker non ripartiva piu', nemmeno alla sessione successiva
             // (che azzera solo _streamPasteBlocked, vedi _onStreamStateChanged).
+            // Every error exit branch MUST release _streamWorkerActive: the flag is the
+            // latch that _startStreamPasteWorker() checks so as not to re-enter, and
+            // without this reset a single failed key left it True for the whole GNOME
+            // session: the queue emptied into _streamQueue but the worker never
+            // restarted, not even at the next session (which resets only
+            // _streamPasteBlocked, see _onStreamStateChanged).
             if (!down || !up) {
                 this._streamPasteBlocked = true;
                 this._streamWorkerActive = false;
@@ -829,6 +999,19 @@ class BravoricIndicator extends PanelMenu.Button {
             // non e' conosciuto, quindi trattarlo come chunk e' l'unica
             // approssimazione onesta. Nota che NON si inviano altri tasti: il
             // tasto e' gia' stato premuto e rilasciato sopra.
+            // DESTRUCTIVE key: the text is really gone from the field, but the
+            // _streamSegments model — which represents what is in the field — stayed
+            // unchanged and the context file was not rewritten. The backend therefore
+            // read as "present in the field" words that had just been deleted. Defect
+            // measured by execution (DIF-1).
+            //
+            // The character count is NOT reinvented here: computeStreamDelete is reused,
+            // which is already solved and tested. On the model, the destructive key is
+            // worth a CHUNK deletion, which is the default scope: the number of
+            // characters a single BackSpace deletes depends on the state of the focused
+            // field, which is not known here, so treating it as a chunk is the only
+            // honest approximation. Note that NO other keys are sent: the key has
+            // already been pressed and released above.
             if (command.key === 'BackSpace' || command.key === 'Delete') {
                 const erased = computeStreamDelete(this._streamSegments || [], 'chunk');
                 this._streamSegments = erased.segments;
@@ -874,6 +1057,10 @@ class BravoricIndicator extends PanelMenu.Button {
         // stessa sessione (il comando puo' arrivare da piu' code/rerun). Non e'
         // pero' un blocco definitivo: STREAM_END_RETRY_MS sotto fa ritentare,
         // quindi un primo tentativo a vuoto non blocca la sessione per sempre.
+        // Per-session latch: it serves to avoid arming TWO closing timers for the
+        // same session (the command can arrive from several queues/reruns). It is
+        // not a definitive block though: STREAM_END_RETRY_MS below makes it retry, so
+        // a first empty attempt does not block the session forever.
         if (this._streamEndRequested === sessionId) return;
         this._streamEndRequested = sessionId;
         const endTimeoutMs = settingInt('stream-end-timeout-seconds', STREAM_END_TIMEOUT_MS / 1000) * 1000;
@@ -883,6 +1070,11 @@ class BravoricIndicator extends PanelMenu.Button {
         // comando di fine sessione (o un ritento) non faceva NULLA. Con
         // `stop` idempotente un ritento non e' pericoloso — e' esattamente
         // cio' che serve quando il primo tentativo e' partito a vuoto.
+        // Latch released at every TERMINAL exit of check(): without this the latch
+        // stayed armed for the whole GNOME session and a second end-of-session
+        // command (or a retry) did NOTHING. With an idempotent `stop` a retry is not
+        // dangerous — it is exactly what is needed when the first attempt went off
+        // empty.
         const finish = () => {
             if (this._streamEndRequested === sessionId)
                 this._streamEndRequested = null;
@@ -892,6 +1084,9 @@ class BravoricIndicator extends PanelMenu.Button {
             // Il timer che ha invocato check è già scaduto: azzera il riferimento
             // prima di un eventuale ri-scheduling, così destroy() non tenta di
             // rimuovere un id non più valido.
+            // The timer that invoked check has already expired: reset the reference
+            // before a possible re-scheduling, so destroy() does not try to remove an id
+            // that is no longer valid.
             this._streamEndTimerId = null;
             if (this._cancellable.is_cancelled())
                 return GLib.SOURCE_REMOVE;
@@ -905,6 +1100,14 @@ class BravoricIndicator extends PanelMenu.Button {
                 // partire perche' dipende dal drenaaggio della coda. Con la
                 // coda bloccata si rinuncia e si lascia la traccia nel log:
                 // l'errore e' gia' stato notificato all'utente.
+                // DECLARED (round 1, reviewer's note on this re-arm): the BLOCKED queue does
+                // not empty by itself — _startStreamPasteWorker() exits immediately on
+                // _streamPasteBlocked — so the condition above stayed true forever and the
+                // timer rescheduled itself every 100 ms (10 wake-ups per second) until
+                // destroy(): perpetual useless work, and the session end could not start
+                // anyway because it depends on the queue draining. With the queue blocked we
+                // give up and leave a trace in the log: the error has already been notified
+                // to the user.
                 if (this._streamPasteBlocked) {
                     logError(new Error(`fine sessione stream ${sessionId} abbandonata: coda bloccata da un errore di invio, attesa infinita`),
                         'bravoric-indicator: stream end abbandonato');
@@ -917,6 +1120,11 @@ class BravoricIndicator extends PanelMenu.Button {
                     // non veniva mai chiusa. Meglio chiudere con quello che c'e'
                     // che restare appesi: la coda residua viene scartata dal
                     // cambio di sessione (_onStreamStateChanged).
+                    // Defect reported by the user: the queue does not empty (e.g. a chunk
+                    // waiting for a slow endpoint) and without this cap the RED dot stayed on
+                    // because the session was never closed. Better to close with what is there
+                    // than to stay hung: the residual queue is discarded by the session change
+                    // (_onStreamStateChanged).
                     logError(new Error(`fine sessione stream ${sessionId}: coda non svuotata entro ${endTimeoutMs} ms, chiusura forzata`),
                         'bravoric-indicator: stream end forzato');
                     this._streamQueue = [];
@@ -949,12 +1157,33 @@ class BravoricIndicator extends PanelMenu.Button {
             // verifica sul session_id resta, ma serve solo a NON chiudere una
             // sessione DIVERSA (un'altra sessione puo' essere partita nel
             // frattempo): non e' piu' una condizione di partenza.
+            // REPORTED DEFECT (red dot that stays). Before, the condition here was
+            // `state.session_id === sessionId && state.active
+            // === true`: if the read of
+            // stream_state.json was obsolete (write not yet visible, or the supervisor
+            // having already written active=false) the toggle did NOT start and we
+            // returned silently: no log, no notification, and the dot stayed on because
+            // the backend never wrote IDLE.
+            //
+            // The simple toggle is not a road: `bravoric-stream-toggle` WITHOUT
+            // arguments is a real toggle, and with no live session it STARTS a new
+            // recording instead of closing (measured in stream_toggle_main: rc 0, lock
+            // created, state.active True). Firing it here would have reopened the
+            // microphone instead of closing it.
+            //
+            // The `stop` subcommand is therefore used, which is idempotent: it closes
+            // the session if there is one, and if there is none it exits 0 doing
+            // nothing. The check on the session_id stays, but only serves to NOT close a
+            // DIFFERENT session (another session may have started in the meantime): it
+            // is no longer a start condition.
             try {
                 const [, data] = GLib.file_get_contents(STREAM_STATE_PATH);
                 const state = JSON.parse(new TextDecoder().decode(data));
                 if (state.session_id !== sessionId) {
                     // Sessione gia' cambiata: chiudere quella sarebbe dannoso.
                     // Non e' un fallimento: non e' piu' la nostra da chiudere.
+                    // Session already changed: closing that one would be harmful. It is not a
+                    // failure: it is no longer ours to close.
                     logError(new Error(`sessione ${sessionId} non piu' attiva (ora ${state.session_id}): nessuna chiusura necessaria`),
                         'bravoric-indicator: stream end già avvenuto');
                     return finish();
@@ -964,6 +1193,9 @@ class BravoricIndicator extends PanelMenu.Button {
                 // Lettura dello stato impossibile: NON si torna in silenzio.
                 // Si tenta comunque la chiusura — `stop` e' idempotente e
                 // sicuro anche se non sappiamo lo stato — e si lascia la traccia.
+                // State read impossible: we do NOT return silently. We try to close anyway —
+                // `stop` is idempotent and safe even if we do not know the state — and leave
+                // a trace.
                 logError(e, 'stream end state verification');
                 spawnBackground('bravoric-stream-toggle', 'stop');
             }
@@ -977,6 +1209,8 @@ class BravoricIndicator extends PanelMenu.Button {
     _startVirtualDevice() {
         // Tastiera virtuale Clutter per inviare Ctrl+V (nessun tool esterno
         // come xdotool/ydotool: non presenti sul sistema, verificato).
+        // Clutter virtual keyboard to send Ctrl+V (no external tool like
+        // xdotool/ydotool: not present on the system, verified).
         try {
             const seat = Clutter.get_default_backend().get_default_seat();
             this._virtualDevice = seat.create_virtual_device(
@@ -996,6 +1230,15 @@ class BravoricIndicator extends PanelMenu.Button {
     // l'unita' dichiarata dall'API. Il commento sta SOPRA la funzione, non
     // dentro: il corpo deve restare compatto, il gate ci misura la distanza
     // fra i due return per verificare che il fallimento venga segnalato.
+    // Round 2 (B2-frontend-B): get_current_event_time() returns MILLISECONDS,
+    // notify_keyval expects MICROSECONDS. The project's own three references
+    // (docs/ROADMAP-CHUNK.md:41-45, clipboard-indicator/keyboard.js:24,
+    // emoji-copy:304) all write "* 1000": the prescription was already written
+    // and had not been applied. Impact not measurable without a live Mutter:
+    // here only the unit declared by the API is corrected. The comment sits
+    // ABOVE the function, not inside: the body must stay compact, the gate
+    // measures the distance between the two returns there to verify that the
+    // failure is reported.
     _sendKey(keyval, state) {
         if (!this._virtualDevice)
             return false;
@@ -1023,6 +1266,20 @@ class BravoricIndicator extends PanelMenu.Button {
     // prompt successivo riceveva frasi mai uscite dalla bocca dell'utente. Il
     // push dei segmenti avviene solo dopo l'invio riuscito, in entrambi i rami
     // (clipboard e type): qui il file registra quello che c'e', senza filtro.
+    // Writes the text the user really has in the field, so the backend can use
+    // it as context. Atomic write: the backend can read at any time and always
+    // find a valid JSON, never half written. _streamSegments null = unknown
+    // buffer (after a reload): in that case we write nothing, so the backend
+    // falls back on its approximation.
+    //
+    // Round 2 (C2): the file declares "only what the user has in front of them",
+    // and the backend consumes it in get_context_snapshot to build the prompt of
+    // the next transcription. _streamSegments also took in NON-delivered
+    // segments, because a chunk re-delivered by the blocked queue ended up in
+    // the list at the session change (measured by the reviewer) and the next
+    // prompt received sentences that never left the user's mouth. The push of
+    // the segments happens only after the successful send, in both branches
+    // (clipboard and type): here the file records what is there, with no filter.
     _writeStreamLiveText() {
         if (!this._streamSessionId)
             return;
@@ -1040,12 +1297,17 @@ class BravoricIndicator extends PanelMenu.Button {
                 // PRIVATE: il file contiene il testo dettato in tempo reale; senza,
                 // GIO lo crea con l'umask (0644) e ogni utente locale lo legge.
                 // Gli altri file di ~/.cache/bravoric-stt-clipboard sono 0600.
+                // PRIVATE: the file contains the text dictated in real time; without it, GIO
+                // creates it with the umask (0644) and every local user reads it. The other
+                // files in ~/.cache/bravoric-stt-clipboard are 0600.
                 Gio.FileCreateFlags.REPLACE_DESTINATION | Gio.FileCreateFlags.PRIVATE, null, (source, result) => {
                     try {
                         source.replace_contents_finish(result);
                     } catch (e) {
                         // Il file di contesto e' un miglioramento: se la scrittura
                         // fallisce il backend usa last_chunks, nessun errore utente.
+                        // The context file is an improvement: if the write fails the backend uses
+                        // last_chunks, no user error.
                         logError(e, 'bravoric-indicator: scrittura contesto vivo fallita');
                     }
                 });
@@ -1060,6 +1322,11 @@ class BravoricIndicator extends PanelMenu.Button {
         // due load_contents_async possono essere in volo insieme. Senza
         // questo controllo, una risposta più vecchia che completa dopo una
         // più recente sovrascrive l'icona/label con dati stale.
+        // Generation token: the periodic timer (30 s) calls _refreshStatus directly,
+        // without going through the file monitor's debounce, so two
+        // load_contents_async calls can be in flight together. Without this check,
+        // an older answer completing after a more recent one overwrites the
+        // icon/label with stale data.
         this._statusRefreshGen += 1;
         const gen = this._statusRefreshGen;
         const file = Gio.File.new_for_path(STATUS_PATH);
@@ -1067,17 +1334,18 @@ class BravoricIndicator extends PanelMenu.Button {
             if (this._cancellable.is_cancelled())
                 return; // estensione disabilitata mentre la lettura era in corso
             if (gen !== this._statusRefreshGen)
-                return; // superata da una lettura più recente
+                return; // superata da una lettura più recente | superseded by a more recent read
 
             let contents;
             try {
                 [, contents] = source.load_contents_finish(result);
             } catch {
-                return; // status file non ancora creato
+                return; // status file non ancora creato | status file not yet created
             }
             try {
                 const data = JSON.parse(new TextDecoder().decode(contents));
                 // B4: valida la forma di data prima di accedere a data.state.
+                // B4: validates the shape of data before accessing data.state.
                 if (!data || typeof data !== 'object' || Array.isArray(data))
                     throw new Error('status.json: forma inattesa');
                 if (this._statusParseErrors >= 3)
@@ -1098,6 +1366,8 @@ class BravoricIndicator extends PanelMenu.Button {
                     } else {
                         // stato attivo e recente: pronto a riavvisare se si
                         // dovesse bloccare di nuovo più avanti
+                        // active and recent state: ready to warn again if it were to block again
+                        // later
                         this._timeoutWarned = false;
                     }
                 } else {
@@ -1111,6 +1381,10 @@ class BravoricIndicator extends PanelMenu.Button {
                 // voci di avvio sono disabilitate (evita race su audio/clipboard).
                 // B3: in stato error l'utente deve poter riprovare (la scorciatoia
                 // funziona già, ma le voci menu restano disabilitate per 5 minuti).
+                // One capture at a time: during recording/processing the start entries are
+                // disabled (avoids races on audio/clipboard). B3: in error state the user
+                // must be able to retry (the shortcut already works, but the menu entries
+                // stay disabled for 5 minutes).
                 const canStart = state === 'idle' || state === 'error';
                 this._dictationItem.setSensitive(canStart);
                 this._ocrItem.setSensitive(canStart);
@@ -1120,6 +1394,11 @@ class BravoricIndicator extends PanelMenu.Button {
                 // processing e il click partiva a vuoto (bravoric-stream-toggle
                 // rispondeva False senza mostrare nulla). Le tre voci si
                 // abilitano e disabilitano insieme.
+                // Round 3 (F7): the Streaming entry is also a capture start, so the same
+                // guard as the other two. Before it never received setSensitive: it stayed
+                // clickable during recording/processing and the click went off empty
+                // (bravoric-stream-toggle answered False without showing anything). The
+                // three entries are enabled and disabled together.
                 this._streamItem.setSensitive(canStart);
                 if (state === 'processing' && data.service) {
                     this._lastOutputItem.setSensitive(false);
@@ -1134,6 +1413,9 @@ class BravoricIndicator extends PanelMenu.Button {
                     // Errore/stop senza output (es. API giù): senza questo ramo la
                     // voce resterebbe bloccata su "transcribing…" e disabilitata,
                     // nascondendo l'ultimo output valido già copiabile.
+                    // Error/stop with no output (e.g. API down): without this branch the entry
+                    // would stay stuck on "transcribing…" and disabled, hiding the last valid
+                    // output that could already be copied.
                     const preview = this._lastOutputText
                         ? this._lastOutputText.slice(0, settingInt('last-output-preview-chars', LAST_OUTPUT_PREVIEW_CHARS)) : null;
                     this._lastOutputItem.setSensitive(preview !== null);
@@ -1161,6 +1443,12 @@ class BravoricIndicator extends PanelMenu.Button {
             // accumulando device morti che mantengono la tastiera attiva. Non
             // c'e' destroy() alterno: questo e' l'unico punto in cui la
             // proprietaria del device viene a sapere che puo' liberarlo.
+            // G32: the device is a GObject created by the seat and attached to it for
+            // the whole session: without run_dispose it stays registered in the Clutter
+            // backend even after the extension has been switched off and on again
+            // (disable/enable, screen unlock, shell reload), accumulating dead devices
+            // that keep the keyboard active. There is no alternate destroy(): this is
+            // the only point where the device's owner learns it can free it.
             this._virtualDevice.run_dispose();
             this._virtualDevice = null;
         }
@@ -1192,6 +1480,8 @@ class BravoricIndicator extends PanelMenu.Button {
                 this._monitor.disconnect(this._monitorId);
             // B7: cancel() rilascia inotify/fanotify; senza questo c'è un leak
             // ad ogni ciclo disable/enable.
+            // B7: cancel() releases inotify/fanotify; without this there is a leak at
+            // every disable/enable cycle.
             this._monitor.cancel();
             this._monitor = null;
         }
@@ -1214,6 +1504,7 @@ class BravoricIndicator extends PanelMenu.Button {
 export default class BravoricIndicatorExtension extends Extension {
     enable() {
         // Prima dell'indicatore: gia' la sua costruzione puo' notificare.
+        // Before the indicator: its construction alone can already notify.
         this._settings = this.getSettings();
         notificationSettings = this._settings;
 
@@ -1226,6 +1517,10 @@ export default class BravoricIndicatorExtension extends Extension {
         // Main.wm.addKeybinding(): Mutter tratta una chiave assente come
         // assertion fatale e può terminare l'intera sessione GNOME. È il caso
         // reale osservato al login dopo l'aggiunta di stream-shortcut.
+        // A stale gschemas.compiled must never reach Main.wm.addKeybinding(): Mutter
+        // treats a missing key as a fatal assertion and can terminate the whole GNOME
+        // session. It is the real case observed at login after adding
+        // stream-shortcut.
         const bindings = [
             ['dictation-shortcut', 'bravoric-stt-toggle'],
             ['ocr-shortcut', 'bravoric-ocr-capture'],
@@ -1263,6 +1558,16 @@ export default class BravoricIndicatorExtension extends Extension {
         // Giro 13: rimosso qui un cleanup duplicato che
         // operava sui campi omonimi di `this` (Extension), sempre undefined
         // — dead code silenzioso, nessun leak reale ma fuorviante da leggere.
+        // Cancellable/monitor/timers live on BravoricIndicator (this._indicator),
+        // not on this Extension class: BravoricIndicator.destroy() already cleans
+        // them up (cancels _cancellable, disconnects and cancels _monitor and
+        // _streamMonitor, removes the sources of the five timers/debounces and
+        // resets every field after using it). The reference is to the METHOD and to
+        // the fields it reads, not to the lines: a line number dies at every
+        // extraction into a module, and it already died once here.
+        // Round 13: removed here a duplicate cleanup that operated on the
+        // same-named fields of `this` (Extension), always undefined — silent dead
+        // code, no real leak but misleading to read.
         this._indicator?.destroy();
         this._indicator = null;
     }
