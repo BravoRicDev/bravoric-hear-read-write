@@ -17,6 +17,24 @@ Endpoint:
     POST /v1/audio/transcriptions   multipart: file=<audio>, model=<ignorato>
     GET  /v1/models                 lista minimale (compatibilità client)
     GET  /health                    stato e modello caricato
+
+Local Whisper as an OpenAI-compatible endpoint on 127.0.0.1.
+
+It exposes `/v1/audio/transcriptions` with the same format as OpenAI using
+faster-whisper. It serves to use a local STT model (fast, offline, in
+Italian) without changing the plugin code: just point the
+`[[stream.fallback]]` (or `[[stt.fallback]]`) fallback to this endpoint.
+
+Dependencies (separate from the plugin's, see bin/whisper-requirements.txt):
+    pip install faster-whisper fastapi uvicorn
+
+Usage:
+    python3 bin/whisper-server.py [--model small] [--host 127.0.0.1] [--port 8080]
+
+Endpoints:
+    POST /v1/audio/transcriptions   multipart: file=<audio>, model=<ignored>
+    GET  /v1/models                 minimal list (client compatibility)
+    GET  /health                    status and loaded model
 """
 from __future__ import annotations
 
@@ -97,6 +115,10 @@ async def transcribe(
         # hotwords (bias verso parole specifiche) come parametri di transcribe.
         # Li passiamo solo se valorizzati, per non alterare il comportamento
         # di default quando il client non li invia.
+        # faster-whisper supports both initial_prompt (decoding context) and
+        # hotwords (bias towards specific words) as transcribe parameters. We pass
+        # them only if set, so as not to alter the default behavior when the client
+        # does not send them.
         transcribe_kwargs: dict = {
             "language": lang,
             "beam_size": 5,
@@ -114,7 +136,7 @@ async def transcribe(
         try:
             segments, info = whisper.transcribe(str(tmp_path), **transcribe_kwargs)
             text = " ".join(s.text for s in segments).strip()
-        except Exception as exc:  # audio illeggibile/corrotto → 400, non 500
+        except Exception as exc:  # audio illeggibile/corrotto → 400, non 500 | unreadable/corrupt audio → 400, not 500
             raise HTTPException(status_code=400, detail=f"transcription failed: {exc}") from exc
         return JSONResponse({
             "text": text,

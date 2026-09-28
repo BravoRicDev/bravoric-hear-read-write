@@ -8,6 +8,16 @@
 // pulsa'". Accendere e spegnere stanno insieme perche' condividono la stessa
 // risorsa, il timer: la sua pulizia sta accanto alla creazione (G6), e
 // destroy() legge un solo campo, _blinkTimeoutId.
+// Icon blink while recording.
+//
+// Pure module like watch-cache.mjs: no import lines and GLib arrives as a
+// dependency from the caller, so this piece too can be run by the tests
+// without extracting its source and transforming it.
+//
+// A single block with a single reason to exist: "the icon pulses or it does
+// not". Turning on and off live together because they share the same
+// resource, the timer: its cleanup sits next to its creation (G6), and
+// destroy() reads a single field, _blinkTimeoutId.
 
 export function setRecordingBlink(instance, deps, active, className, intervalMs) {
     if (active) {

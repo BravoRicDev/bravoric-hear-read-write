@@ -9,6 +9,18 @@ Uso:
 
 Nota: il VAD dello streaming è adattivo (stima il noise floor da solo), ma
 conoscere i livelli reali aiuta a capire se il microfono è troppo basso.
+
+Measures the microphone's RMS levels to calibrate the streaming VAD.
+
+It captures N seconds from ffmpeg (PulseAudio source "default") and prints
+min/max/mean in dB, plus a recommended threshold for `[stream].noise_db`.
+
+Usage:
+    python3 scripts/mic-levels.py [--seconds 8] [--source default]
+
+Note: the streaming VAD is adaptive (it estimates the noise floor by
+itself), but knowing the real levels helps to tell whether the microphone
+is too low.
 """
 from __future__ import annotations
 
@@ -28,6 +40,8 @@ MARGIN_DB = 6.0
 
 # Lingua dei messaggi: italiano se la lingua di sistema inizia per "it",
 # inglese altrimenti (stessa regola di scripts/install.sh).
+# Message language: Italian if the system language starts with "it",
+# English otherwise (same rule as scripts/install.sh).
 _LOCALE = os.environ.get("LANGUAGE") or os.environ.get("LC_ALL") \
     or os.environ.get("LC_MESSAGES") or os.environ.get("LANG") or ""
 _IT = _LOCALE.startswith("it")

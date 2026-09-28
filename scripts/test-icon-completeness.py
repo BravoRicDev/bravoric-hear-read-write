@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
-"""Static contract test for icon slot registry, preferences and templates."""
+"""Test di contratto statico per il registro degli slot icona, le preferenze e i template.
+
+Static contract test for icon slot registry, preferences and templates.
+"""
 import re
 import sys
 import tomllib
@@ -21,6 +24,8 @@ for filename in ("config/config.example.toml", "config/config.example.it.toml"):
     assert all(value == "" for value in icons.values()), filename
 # ICONE-MANCANTI.md deve elencare esattamente gli slot senza PNG incluso, e
 # ogni PNG dichiarato in _PACKAGED_DEFAULTS deve esistere davvero.
+# ICONE-MANCANTI.md must list exactly the slots without a bundled PNG, and
+# every PNG declared in _PACKAGED_DEFAULTS must really exist.
 missing = {key for key in ICON_SLOT_KEYS if key not in notify._PACKAGED_DEFAULTS}
 documented = set(re.findall(r"^\| `(\w+)` \|", (ROOT / "ICONE-MANCANTI.md").read_text(), re.M))
 assert documented == missing, ("ICONE-MANCANTI.md fuori sync", missing - documented, documented - missing)

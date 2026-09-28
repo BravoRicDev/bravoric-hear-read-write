@@ -6,11 +6,24 @@
 // sorgente e trasformarlo, Gio, GLib e logError arrivano come dipendenze
 // dal chiamante. Dato che non c'e' nessun import, la purezza richiesta da
 // G7/G18 e' garantita per costruzione, non per promessa.
+// Observation of the cache files written by the backend: the directory
+// monitor, the re-read debounce and the two hook points.
+//
+// Pure module: it imports NO gi:// module, and so that the tests can really
+// run it (like stream-consumer.mjs) instead of extracting its source and
+// transforming it, Gio, GLib and logError arrive as dependencies from the
+// caller. Since there are no imports, the purity required by G7/G18 is
+// guaranteed by construction, not by promise.
 
 /**
  * Rimanda una lettura: la sorgente gia' armata viene rimossa PRIMA di
  * crearne una nuova e il riferimento resta accanto alla creazione, cosi'
  * destroy() ha un solo campo da leggere per questo debounce (G6).
+ */
+/*
+ * Defers a read: the already armed source is removed BEFORE creating a new
+ * one and the reference stays next to the creation, so destroy() has a
+ * single field to read for this debounce (G6).
  */
 function armDebounce(instance, deps, idField, debounceMs, onFire) {
     if (instance[idField])
@@ -33,6 +46,17 @@ function armDebounce(instance, deps, idField, debounceMs, onFire) {
 // smetterebbe di disconnettere. Per lo stesso motivo createLabel e
 // watchLabel sono distinti: i due file non usano lo stesso suffisso nei due
 // messaggi ('stream' alla creazione, 'stream_state' al monitoraggio).
+// Monitoring of a cache directory: creates the directory if missing and
+// watches it, invoking onChanged at every write. The monitor is the one of
+// the DIRECTORY, not of the file: the backend writes atomically (tmp +
+// rename) and the tmp would not belong to the monitor of the final file.
+//
+// The two fields that destroy() disconnects (_monitor/_monitorId for the
+// state, _streamMonitor/_streamMonitorId for the stream) are passed by NAME:
+// here we do not know which one it is, and with a fixed name one of the two
+// teardowns would stop disconnecting. For the same reason createLabel and
+// watchLabel are distinct: the two files do not use the same suffix in the
+// two messages ('stream' at creation, 'stream_state' at monitoring).
 export function watchCacheFile(instance, deps, filePath, onChanged,
     { monitorField, monitorIdField, createLabel, watchLabel }) {
     const dir = deps.Gio.File.new_for_path(deps.GLib.path_get_dirname(filePath));
@@ -55,6 +79,9 @@ export function watchCacheFile(instance, deps, filePath, onChanged,
 // status.json e output_history.json possono essere scritti in rapida
 // successione (es. doppia iniezione clipboard): rimanda la lettura
 // effettiva e si resetta a ogni evento, legge solo dopo l'ultimo.
+// status.json and output_history.json can be written in rapid succession
+// (e.g. double clipboard injection): the actual read is deferred and reset at
+// every event, it reads only after the last one.
 export function scheduleRefresh(instance, deps, debounceMs) {
     armDebounce(instance, deps, '_refreshDebounceId', debounceMs, () => {
         instance._refreshStatus();
@@ -75,6 +102,9 @@ export function watchStatusFile(instance, deps, statusPath, debounceMs) {
 // stream_state.json per incollare i chunk appena pronti (modalita'
 // per_chunk). Stesso pattern di watchStatusFile, con debounce dedicato per
 // assorbire la scrittura atomica (tmp + rename).
+// stream_state.json to paste the chunks just ready (per_chunk mode). Same
+// pattern as watchStatusFile, with a dedicated debounce to absorb the atomic
+// write (tmp + rename).
 export function watchStreamStateFile(instance, deps, streamStatePath, debounceMs) {
     watchCacheFile(instance, deps, streamStatePath, () => {
         armDebounce(instance, deps, '_streamDebounceId', debounceMs,

@@ -6,6 +6,14 @@
 # ripiega sul python3 di sistema (che vede la user site-packages).
 #
 # Uso: bin/whisper-server.sh [--model small] [--port 8080] [...]
+# Launcher of the local Whisper server (OpenAI-compatible on 127.0.0.1).
+#
+# It picks the interpreter automatically: it prefers the dedicated venv
+# ($XDG_DATA_HOME/bravoric-stt-clipboard/whisper-venv) if it exists,
+# otherwise it falls back on the system python3 (which sees the user
+# site-packages).
+#
+# Usage: bin/whisper-server.sh [--model small] [--port 8080] [...]
 set -euo pipefail
 
 PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"

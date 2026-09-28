@@ -15,6 +15,22 @@
 //
 // matchBrace(src, openIndex): openIndex deve puntare a '{'. Ritorna l'indice
 // della '}' che la richiude, o -1 se le graffe non sono bilanciate.
+// F6-rest: single brace-matching algorithm, before duplicated identically in
+// 7 places among test-timeout-logic.js, test-prefs-voice-commands.js and
+// test-stream-consumer.js (the same depth++/depth-- loop copied by hand, a
+// copy forgotten in a future fix would have stayed behind without any gate
+// noticing). Naive counter: it is NOT quote/comment-aware (a '{' inside a
+// string or a comment of the extracted block throws the count off). It is
+// fine here because the sources it operates on today (extension.js,
+// prefs.js at the points used by these tests) have no unpaired braces
+// inside strings/comments in those blocks: a caller extracting from a new
+// point must verify it in person, as every manual copy already did. The
+// quote/comment-aware extractor of test-smoke-gjs-prefs.js (the
+// _buildShortcutsPage entry) stays separate on purpose: different
+// algorithm, not a copy of this one.
+//
+// matchBrace(src, openIndex): openIndex must point to '{'. It returns the
+// index of the '}' that closes it, or -1 if the braces are not balanced.
 function matchBrace(src, openIndex) {
     let depth = 0;
     for (let i = openIndex; i < src.length; i++) {

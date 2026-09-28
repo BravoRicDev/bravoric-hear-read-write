@@ -1,3 +1,4 @@
+// Consumatore puro degli snapshot dello stream, condiviso da GNOME Shell e dai test di regressione Node.
 // Pure stream snapshot consumer shared by GNOME Shell and Node regression tests.
 export function computeStreamDelete(segments, scope) {
     const updated = segments.slice();
@@ -45,6 +46,8 @@ export function classifyStreamItem(item, rules = [], blacklistSet = new Set()) {
     return { ...item, action: rule.action, command: { ...rule } };
 }
 
+// `nextIndex` indica i chunk consumati dallo snapshot verso la coda di incolla locale;
+// non è una conferma che l'applicazione di destinazione abbia inserito il testo.
 // `nextIndex` means chunks consumed from the snapshot into the local paste queue;
 // it is not an acknowledgement that the target application inserted the text.
 export function consumeStreamSnapshot(consumer, state) {
@@ -61,6 +64,10 @@ export function consumeStreamSnapshot(consumer, state) {
         // True dalla sessione precedente. Quello e' sparito: oggi l'unico
         // lettore del campo e' il test, non il modulo, dove sotto il flag
         // viene solo riscritto.
+        // Per-session reset: there also used to be a same-named field WITHOUT an
+        // underscore, initialized and never read, while the real flag stayed True
+        // from the previous session. That one is gone: today the only reader of the
+        // field is the test, not the module, where below the flag is only rewritten.
         consumer._streamFinalObserved = false;
     } else if (state.active === true) {
         consumer._streamWasActive = true;
