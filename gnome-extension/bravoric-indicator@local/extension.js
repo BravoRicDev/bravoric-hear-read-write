@@ -1600,8 +1600,16 @@ export default class BravoricIndicatorExtension extends Extension {
             makeButton: (spec, onClick) => makeQuickButton(this.uuid, spec, quickButtonLabels()[spec.key], onClick),
             spawn: command => spawnBackground(command),
         });
+        // Un widget che non si riesce a costruire non deve mai impedire il
+        // caricamento dell'estensione: l'errore si logga e il resto continua.
+        // A widget that cannot be built must never prevent the extension from
+        // loading: the error is logged and the rest goes on.
         const refreshQuick = () => {
-            this._quick?.sync();
+            try {
+                this._quick?.sync();
+            } catch (e) {
+                logError(e, 'bravoric-indicator: bottoni rapidi non creati');
+            }
             this._indicator?._refreshStatus();
         };
         refreshQuick();

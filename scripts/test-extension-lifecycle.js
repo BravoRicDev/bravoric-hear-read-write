@@ -331,6 +331,29 @@ async function loadExtensionModule() {
     if (logged.length)
         console.log(logged.map(l => '    ' + l).join('\n'));
 
+    console.log('== un widget che non si costruisce non blocca l\'estensione / a failing widget does not block it ==');
+    {
+        const { ext, settings } = build();
+        ext.enable();
+        logged.length = 0;
+        // St.Button che lancia: simula un errore di costruzione del widget.
+        // St.Button that throws: simulates a widget construction error.
+        const RealButton = St.Button;
+        St.Button = class { constructor() { throw new Error('boom widget'); } };
+        settings.values['show-dictation-button'] = true;
+        let threwHere = null;
+        try {
+            settings.fire('changed::show-dictation-button');
+        } catch (e) {
+            threwHere = e;
+        }
+        St.Button = RealButton;
+        check('il segnale changed:: non propaga l\'errore di costruzione', threwHere === null);
+        check('l\'errore e\' loggato con un\'etichetta leggibile',
+            logged.some(l => l.includes('bottoni rapidi non creati') && l.includes('boom widget')));
+        ext.disable();
+    }
+
     console.log('');
     console.log(`${pass} PASS / ${fail} FAIL`);
     process.exit(fail ? 1 : 0);

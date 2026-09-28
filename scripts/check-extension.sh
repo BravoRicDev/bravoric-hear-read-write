@@ -375,6 +375,19 @@ if command -v gjs >/dev/null 2>&1; then
     # that Mutter rejects ended up in dconf forever and never fired, with no
     # message. Here the REAL function extracted from prefs.js is run under real
     # gjs.
+    # prefs.js INTERO con widget veri e backend vero su una config temporanea
+    # (XDG_DATA_HOME e GSETTINGS_BACKEND=memory: nessun file dell'utente toccato).
+    # WHOLE prefs.js with real widgets and the real backend on a temporary config
+    # (XDG_DATA_HOME and GSETTINGS_BACKEND=memory: no user file touched).
+    echo "== prefs.js intero (gjs, backend vero su config temporanea) =="
+    PREFS_TMP="$(mktemp -d /tmp/brv-prefs-XXXXXX)"
+    if XDG_DATA_HOME="$PREFS_TMP" GSETTINGS_BACKEND=memory gjs -m "$REPO/scripts/test-prefs-whole.js"; then
+        ok "test-prefs-whole.js"
+    else
+        bad "test-prefs-whole.js"
+    fi
+    rm -rf "$PREFS_TMP"
+
     echo "== validazione acceleratori (gjs, funzione reale) =="
     if (cd "$REPO" && gjs -m "$REPO/scripts/test-shortcut-accelerator.js"); then
         ok "test-shortcut-accelerator.js (21 asserzioni)"
