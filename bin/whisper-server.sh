@@ -17,7 +17,10 @@ if [ -x "$WHISPER_VENV/bin/python" ]; then
 elif command -v python3 >/dev/null 2>&1; then
     PY="python3"
 else
-    echo "Errore: python3 non trovato" >&2
+    case "${LANGUAGE:-${LC_ALL:-${LC_MESSAGES:-${LANG:-}}}}" in
+        it*) echo "Errore: python3 non trovato" >&2 ;;
+        *) echo "Error: python3 not found" >&2 ;;
+    esac
     exit 1
 fi
 
