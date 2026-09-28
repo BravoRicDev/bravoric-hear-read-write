@@ -239,6 +239,7 @@ def py_unescape(s):
     return "".join(out)
 
 # Chiamate _() con argomento letterale (concatenazione compresa: _("a" "b")).
+# _() calls with a literal argument (concatenation included: _("a" "b")).
 strings = set()
 for match in re.finditer(r"(?<![\w.])_\(\s*((?:\"(?:[^\"\\]|\\.)*\"\s*)+)", src):
     parts = re.findall(r"\"((?:[^\"\\]|\\.)*)\"", match.group(1))
@@ -426,6 +427,15 @@ fi
 
 echo "== icon slot completeness =="
 if PYTHONPATH="$REPO/src" python3 "$REPO/scripts/test-icon-completeness.py"; then ok "test-icon-completeness.py"; else bad "test-icon-completeness.py"; fi
+
+# Convenzione del progetto: ogni blocco di commento sostanzioso e' bilingue
+# (prima italiano, poi inglese). La guardia e' prudente: fallisce solo su
+# blocchi chiaramente monolingua.
+# Project convention: every substantial comment block is bilingual (Italian
+# first, then English). The guard is cautious: it fails only on clearly
+# monolingual blocks.
+echo "== commenti bilingue (IT + EN) =="
+if python3 "$REPO/scripts/test-bilingual-comments.py"; then ok "commenti bilingue"; else bad "commenti bilingue"; fi
 
 echo "== backend python (unit) =="
 PY=""

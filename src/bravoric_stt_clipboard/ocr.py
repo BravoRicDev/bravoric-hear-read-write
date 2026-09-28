@@ -94,7 +94,7 @@ def handle_capture(cfg: Config) -> None:
     else:
         try:
             image_bytes = clipboard.read_image_png(cfg.clipboard_paste_tool, cfg.clipboard_timeout_seconds)
-        except Exception as exc:  # noqa: BLE001 - fail fast con notifica utente
+        except Exception as exc:  # noqa: BLE001 - fail fast con notifica utente | fail fast with a user notification
             status.write_status(status.STATE_ERROR)
             if cfg.notifications and cfg.notif_ocr.error:
                 notify.send(_("OCR: no image in clipboard"), str(exc), icon=notify.resolve_icon("error_general", cfg.icons.error_general))
@@ -169,7 +169,7 @@ def handle_capture(cfg: Config) -> None:
 
     try:
         clipboard.write_text(final_text, cfg.clipboard_tool, cfg.clipboard_timeout_seconds)
-    except Exception as exc:  # noqa: BLE001 - fail fast con notifica utente
+    except Exception as exc:  # noqa: BLE001 - fail fast con notifica utente | fail fast with a user notification
         # Senza questa guardia l'eccezione salterebbe write_status(IDLE)
         # lasciando lo stato bloccato su "processing" fino al timeout
         # dell'estensione (120 min), con l'icona ferma su content-loading.

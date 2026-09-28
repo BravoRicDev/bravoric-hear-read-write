@@ -50,7 +50,12 @@ def cleanup_with_validation(
 ) -> str:
     """Il modello di cleanup a volte tronca parole in modo non deterministico
     (osservato: stesso input, stesso output atteso, esito variabile). Scarta
-    risultati troppo corti rispetto all'originale e riprova."""
+    risultati troppo corti rispetto all'originale e riprova.
+
+    The cleanup model sometimes truncates words non-deterministically
+    (observed: same input, same expected output, variable outcome). It
+    discards results that are too short compared to the original and retries.
+    """
     last_error: Exception | None = None
     for attempt in range(max(1, retry_count)):
         try:

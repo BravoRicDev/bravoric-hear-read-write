@@ -1300,6 +1300,7 @@ const NOTIFY_PRELUDE = 'const notifyErrorIfEnabled = (t, b) => Main.notifyError(
         && wcIoE.calls.some(c => c[1] === 'bravoric-indicator: impossibile monitorare stream_state dir'));
 
     // --- debounce del refresh ------------------------------------------
+    // --- refresh debounce ----------------------------------------------
     const wcIoF = wcMakeIo();
     const wcIndF = { _monitor: null, _monitorId: 0, _refreshDebounceId: null, refreshed: 0 };
     wcIndF._refreshStatus = () => { wcIndF.refreshed++; };

@@ -123,6 +123,8 @@ CONFIG_DIR="$HOME/.config/bravoric-stt-clipboard"
 if [ ! -f "$CONFIG_DIR/config.toml" ]; then
     # Prompt di default (system_prompt) in italiano o inglese secondo la
     # lingua di sistema rilevata da LANGUAGE/LC_ALL/LC_MESSAGES/LANG.
+    # Default prompt (system_prompt) in Italian or English depending on the
+    # system language detected from LANGUAGE/LC_ALL/LC_MESSAGES/LANG.
     if [ "$INSTALL_LANG" = it ]; then
         EXAMPLE_CONFIG="$PROJECT_DIR/config/config.example.it.toml"
     else

@@ -90,7 +90,7 @@ def list_models() -> dict:
 @app.post("/v1/audio/transcriptions")
 async def transcribe(
     file: UploadFile = File(...),
-    model: str | None = Form(None),  # noqa: ARG001 — accettato per compatibilità OpenAI
+    model: str | None = Form(None),  # noqa: ARG001 — accettato per compatibilità OpenAI | accepted for OpenAI compatibility
     language: str | None = Form(None),
     prompt: str | None = Form(None),
     hotwords: str | None = Form(None),

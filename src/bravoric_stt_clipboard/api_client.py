@@ -88,7 +88,7 @@ def _error_body(resp, level: FallbackLevel) -> str:
     text = str(getattr(resp, "text", "") or "")
     try:
         key = level.resolved_api_key()
-    except Exception:  # noqa: BLE001 - un livello anomalo non deve mascherare l'errore HTTP
+    except Exception:  # noqa: BLE001 - un livello anomalo non deve mascherare l'errore HTTP | an anomalous level must not mask the HTTP error
         key = ""
     if len(key) >= 6:
         text = text.replace(key, "<redacted>")

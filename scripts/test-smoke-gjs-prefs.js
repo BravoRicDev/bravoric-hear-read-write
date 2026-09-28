@@ -10,6 +10,8 @@ console.log('Smoke test GTK4/Adw per Voice Commands UI (+ cattura tasto)...');
 
 // Whitelist identica a COMMAND_KEYS del backend (drift guardata dal test
 // node test-prefs-voice-commands.js) e alias espliciti, come in prefs.js.
+// Whitelist identical to the backend's COMMAND_KEYS (drift guarded by the
+// node test-prefs-voice-commands.js test) and explicit aliases, as in prefs.js.
 const COMMAND_KEYS = [
     'Return', 'Enter', 'Tab', 'space', 'Escape', 'BackSpace', 'Delete',
     'Home', 'End', 'Page_Up', 'Page_Down', 'Left', 'Right', 'Up', 'Down',
@@ -23,6 +25,7 @@ const CAPTURE_KEY_ALIASES = {
 };
 
 // Mock finestra: raccoglie i toast di feedback (window.add_toast in prefs.js).
+// Window mock: collects the feedback toasts (window.add_toast in prefs.js).
 const toasts = [];
 const window = { add_toast: toast => toasts.push(toast.title) };
 

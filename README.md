@@ -99,6 +99,10 @@ chain at your endpoints.
   service), notification icons (one slot per event), audio, clipboard
   commands, streaming behaviour and diagnostics. The TOML file stays the
   source of truth; the window edits it in place.
+- **Bilingual comments**: every code comment and docstring is written twice,
+  Italian first and English second, in the same block. `scripts/check-extension.sh`
+  fails on a substantial comment block that is clearly single-language, so new
+  code follows the same convention.
 - **Debugging the streaming chain**: `bravoric-chunk-log --summary` shows
   which endpoint served each chunk, failure counts and latency percentiles
   (`--last N`, `--session ID`, `--since MINUTES` narrow it down).

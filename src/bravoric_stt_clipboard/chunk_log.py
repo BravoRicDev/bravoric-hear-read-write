@@ -222,7 +222,7 @@ def _level_secrets(level) -> tuple[str, ...]:
     resolver = getattr(level, "resolved_api_key", None)
     try:
         key = resolver() if callable(resolver) else ""
-    except Exception:  # noqa: BLE001 - un livello anomalo non deve rompere il log
+    except Exception:  # noqa: BLE001 - un livello anomalo non deve rompere il log | an anomalous level must not break the log
         return ()
     return (key,) if isinstance(key, str) and key else ()
 

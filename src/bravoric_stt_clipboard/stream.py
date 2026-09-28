@@ -897,7 +897,10 @@ def _push_attempts() -> tuple[Any, list[dict]]:
 
 
 def _pop_attempts(previous) -> None:
-    """Ripristina il raccoglitore precedente (None = nessuno in ascolto)."""
+    """Ripristina il raccoglitore precedente (None = nessuno in ascolto).
+
+    Restores the previous collector (None = nobody listening).
+    """
     _attempts_tls.attempts = previous
 
 
@@ -1132,7 +1135,7 @@ def _submit_via_sequential_chain(seq, wav_path, prompt, stream, endpoint_gate,
             _sync_audio_s, (time.monotonic() - _sync_started) * 1000.0))
         _pop_attempts(_previous_attempts)
         return
-    except Exception as exc:  # noqa: BLE001 - l'ultima rete non butta via il supervisore
+    except Exception as exc:  # noqa: BLE001 - l'ultima rete non butta via il supervisore | the last safety net must not throw the supervisor away
         logger.error("utterance %d lost: %r", seq, exc)
         _sync_audio_s = _wav_seconds(wav_path)
         with contextlib.suppress(OSError):
@@ -1289,7 +1292,7 @@ def _worker(seq, wav_path, prompt, *, stream, sem, result_queue,
                         # way for those attempts to end up in the log. With the collector active it
                         # is a simple wrapper.
                         text = _transcribe_traced(level_leased, wav_path, stream, prompt)
-                    except Exception as exc:  # noqa: BLE001 - un endpoint fallito non deve far fallire il chunk
+                    except Exception as exc:  # noqa: BLE001 - un endpoint fallito non deve far fallire il chunk | a failed endpoint must not fail the chunk
                         errors.append(f"{key}: {exc}")
                         dispatcher.release(leased_key)
                         leased_key = None
@@ -1798,7 +1801,11 @@ def _stop_drain_budget(levels: Any) -> float:
 
 def _atomic_write_json(path: Path, payload: dict) -> None:
     """Scrittura atomica (stesso pattern di status.py / output_history.py,
-    ora condiviso in atomic_io.py: P17, mandato perfetto)."""
+    ora condiviso in atomic_io.py: P17, mandato perfetto).
+
+    Atomic write (same pattern as status.py / output_history.py, now shared
+    in atomic_io.py: P17, "perfect" mandate).
+    """
     atomic_write_json(path, payload)
 
 
@@ -2543,6 +2550,7 @@ class StreamSession:
                 time.sleep(0.1)
             else:
                 # Timeout di sicurezza superato: fallback a terminazione forzata.
+                # Safety timeout exceeded: fall back to a forced termination.
                 _terminate_pid(pid, graceful=False)
         except (KeyError, OSError):
             pass
@@ -3109,7 +3117,7 @@ class StreamSession:
         # user knows to check the destination field before retrying.
         try:
             clipboard.write_text(chunk, self._cfg.clipboard_tool, self._cfg.clipboard_timeout_seconds)
-        except Exception as exc:  # noqa: BLE001 - wl-copy puo' fallire in molti modi
+        except Exception as exc:  # noqa: BLE001 - wl-copy puo' fallire in molti modi | wl-copy can fail in many ways
             # (assente, timeout, exit!=0): tutti devono lasciare il chunk in coda, non
             # far propagare un'eccezione che fermerebbe paste_next senza registrare nulla.
             # (missing, timeout, exit!=0): all must leave the chunk in the queue, not

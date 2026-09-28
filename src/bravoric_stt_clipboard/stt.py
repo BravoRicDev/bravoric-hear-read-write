@@ -271,7 +271,7 @@ def _process_recording(cfg: Config, audio_path: Path) -> None:
     # only write to the clipboard.
     try:
         clipboard.write_text(final_text, cfg.clipboard_tool, cfg.clipboard_timeout_seconds)
-    except Exception as exc:  # noqa: BLE001 - fail fast con notifica utente
+    except Exception as exc:  # noqa: BLE001 - fail fast con notifica utente | fail fast with a user notification
         # Senza questa guardia l'eccezione salterebbe write_status(IDLE)
         # lasciando lo stato bloccato su "processing" fino al timeout
         # dell'estensione (30 min), con l'icona ferma su content-loading.

@@ -416,7 +416,7 @@ def _modulo_con_budget_neutro(sorgente: Path):
     modulo = types.ModuleType("bravoric_stt_clipboard._budget_neutro")
     modulo.__package__ = "bravoric_stt_clipboard"
     modulo.__file__ = str(sorgente)
-    exec(modulo_compilato, modulo.__dict__)  # noqa: S102 - controprova, non produzione
+    exec(modulo_compilato, modulo.__dict__)  # noqa: S102 - controprova, non produzione | counter-proof, not production
     return modulo
 
 
@@ -1570,6 +1570,7 @@ def main() -> int:
     check("get_state() = dict vuoto", session.get_state() == {})
 
     # start() con nessun fallback -> notifica "No endpoint configured"
+    # start() with no fallback -> "No endpoint configured" notification
     result = session.start()
     check("start() senza fallback = False", not result)
 
@@ -2091,6 +2092,7 @@ def main() -> int:
     )
 
     # --- stream.py (A1: il silenzio digitale a RMS zero non avvelena il floor) --
+    # --- stream.py (A1: digital silence at zero RMS does not poison the floor) --
     print("== stream.py (A1: floor VAD ignora RMS nullo) ==")
     from bravoric_stt_clipboard.stream import (
         _MIN_DB,
@@ -2099,6 +2101,8 @@ def main() -> int:
     )
     # Frame a rumore reale (-40 dB) mescolati a silenzio digitale esatto
     # (rms 0 -> sentinella _MIN_DB): solo i primi sono campioni validi.
+    # Frames of real noise (-40 dB) mixed with exact digital silence
+    # (rms 0 -> _MIN_DB sentinel): only the former are valid samples.
     mixed_frames = [-40.0] * 80 + [_MIN_DB] * 20
     valid_samples = [db for db in mixed_frames if _is_valid_floor_sample(db, -30.0)]
     check("A1: sentinella _MIN_DB esclusa dalla raccolta", len(valid_samples) == 80)
@@ -2480,6 +2484,7 @@ def main() -> int:
         check("transcribe_audio invia model", sent.get("model") == "m")
 
     # Livello opt-in: frase completa, soltanto per endpoint abilitato.
+    # Opt-in level: complete sentence, only for an enabled endpoint.
     from bravoric_stt_clipboard.config import FallbackLevel
     level_vocab = FallbackLevel("vocab", "http://x/v1", "m", "", "", "", 1, True)
     with mock.patch.object(api_client.requests, "post", return_value=OkResp()) as m_post:
@@ -3067,6 +3072,7 @@ def main() -> int:
         check(f"non-string stt fields coerced to str ({type(exc).__name__})", False)
 
     # Regressione: float non finiti in stream (silence_seconds, noise_db, ecc.)
+    # Regression: non-finite floats in stream (silence_seconds, noise_db, etc.)
     cfg_nonfinite = tmp / "config_nonfinite.toml"
     cfg_nonfinite.write_text(
         '[stream]\n'
@@ -3450,6 +3456,8 @@ def main() -> int:
 
     # _worker senza dispatcher deve usare try_with_fallback: primo livello
     # della config, in ordine, e nessun lease.
+    # _worker without a dispatcher must use try_with_fallback: first level of
+    # the config, in order, and no lease.
     def _wav():
         p = Path(tempfile.mkdtemp()) / "utt.wav"
         p.write_bytes(b"")
@@ -3981,7 +3989,11 @@ def main() -> int:
 
     def _probe(t, side_effect=None, session=None):
         """Chiama transcribe_audio catturando il timeout realmente passato
-        a requests.post; restituisce (timeout_catturato, eccezione)."""
+        a requests.post; restituisce (timeout_catturato, eccezione).
+
+        Calls transcribe_audio capturing the timeout really passed to
+        requests.post; returns (captured_timeout, exception).
+        """
         cap = {}
         def _post(*a, **kw):
             cap["timeout"] = kw.get("timeout")
@@ -3992,7 +4004,7 @@ def main() -> int:
             with mock.patch.object(_ac.requests, "post", side_effect=_post):
                 _ac.transcribe_audio(_lvl_to(t), _audio, session=session)
             return cap.get("timeout"), None
-        except Exception as exc:  # noqa: BLE001 - il test osserva l'errore
+        except Exception as exc:  # noqa: BLE001 - il test osserva l'errore | the test observes the error
             return cap.get("timeout"), exc
 
     # 1. Il timeout per-livello ARRIVA DAVVERO a requests.post. Prima
@@ -4204,7 +4216,7 @@ def main() -> int:
             check(f"inf gestito senza traceback ({label})", True)
         except config.ConfigError:
             check(f"inf diventa ConfigError leggibile ({label})", True)
-        except Exception as exc:  # noqa: BLE001 - la fuga e' il difetto
+        except Exception as exc:  # noqa: BLE001 - la fuga e' il difetto | the leak is the defect
             check(f"inf non sfugge come {type(exc).__name__} ({label})", False)
     # -inf e nan restano tollerati: non devono diventare errori nuovi.
     # -inf and nan stay tolerated: they must not become new errors.
@@ -4350,7 +4362,7 @@ def main() -> int:
         raised = None
         try:
             paste_next_fn()
-        except Exception as exc:  # noqa: BLE001 - la fuga e' il difetto
+        except Exception as exc:  # noqa: BLE001 - la fuga e' il difetto | the leak is the defect
             raised = exc
         after_L = json.loads(stream_module.STREAM_STATE_PATH.read_text())
         check("clipboard rotta: paste_next non propaga l'eccezione", raised is None)
@@ -4562,7 +4574,7 @@ def main() -> int:
                 seen.append(("chain", lv.name))
                 try:
                     return behaviour(lv)
-                except Exception as exc:  # noqa: BLE001 - il doppione guarda i fallimenti
+                except Exception as exc:  # noqa: BLE001 - il doppione guarda i fallimenti | the double watches the failures
                     errs.append(f"{lv.name}: {exc}")
             raise _sm.AllLevelsFailedError("All levels failed: " + " | ".join(errs))
         return _inner
@@ -4704,6 +4716,7 @@ def main() -> int:
           old_fail and [n for _, n in old_seen] == ["A"])
 
     # --- caso 2: pool INTERAMENTE in cooldown -> catena, non scarto -------
+    # --- case 2: pool ENTIRELY in cooldown -> chain, not discard -----------
     p_bad = _lvl("COOL")
     q_good = _lvl("AFTER")
     brk2 = _tmp_breaker()
@@ -5690,7 +5703,7 @@ def main() -> int:
         try:
             g5_seen["returned"] = audio.stop_recording(
                 mock.Mock(toggle_debounce_seconds=0.0))
-        except Exception as exc:  # noqa: BLE001 - e' l'esito che si misura
+        except Exception as exc:  # noqa: BLE001 - e' l'esito che si misura | it is the outcome being measured
             g5_seen["raised"] = exc
         return mock.Mock(pid=os.getpid())
 
@@ -5879,6 +5892,8 @@ def main() -> int:
     # =================================================================
     # GIRO 18 — P4 (watchdog) e il difetto del pallino rosso segnalato
     # dall'utente (chiusura a comando vocale). Test APPENDATI in fondo.
+    # ROUND 18 — P4 (watchdog) and the red-dot defect reported by the user
+    # (closing by voice command). Tests APPENDED at the bottom.
     # =================================================================
     from bravoric_stt_clipboard import audio as _a18
     from bravoric_stt_clipboard import stt as _stt18
@@ -6177,6 +6192,7 @@ def main() -> int:
           not _deb["processed"])
 
     # Anti-drift: le due catene di cattura devono stare in _stop_and_process.
+    # Anti-drift: the two capture chains must stay in _stop_and_process.
     _stop_body = (_stt_src.split("def _stop_and_process(cfg: Config) -> None:")[1]
                   .split("\ndef ")[0])
     check("P2: stt.py cattura RuntimeError oltre a ToggleDebouncedError",
@@ -6573,6 +6589,7 @@ def main() -> int:
           _cancel_states and _cancel_states[-1] == status.STATE_IDLE)
 
     # CONTRO: capture_screenshot=False (default) continua a leggere la clipboard, invariato.
+    # CONTRA: capture_screenshot=False (default) keeps reading the clipboard, unchanged.
     with mock.patch.object(ocr, "screenshot") as _shot_off, \
          mock.patch.object(ocr, "clipboard") as _clip_off, \
          mock.patch.object(ocr, "try_with_fallback", return_value="testo da clipboard"), \
@@ -7367,6 +7384,7 @@ max_entries = 20
           "CL_API_KEY_VALUE" not in _raw1 and "CL_ENV_VAR" not in _raw1)
 
     # --- 2. chunk CON fallback: primo errore, secondo ok, served_by = 2o ---
+    # --- 2. chunk WITH fallback: first error, second ok, served_by = 2nd ---
     _r2 = cl_mod.make_record(
         session="sess-A", seq=4, audio_s=6.2,
         attempts=[
@@ -7572,7 +7590,7 @@ max_entries = 20
     _ok_write = None
     try:
         _ok_write = cl_mod.append_record({"seq": 0, "text": "x"}, path=_cl_bad)
-    except Exception:  # noqa: BLE001 - il testvuole dimostrare che NON solleva
+    except Exception:  # noqa: BLE001 - il testvuole dimostrare che NON solleva | the test wants to prove that it does NOT raise
         _raised = True
     check("chunk_log: percorso non scrivibile -> False, nessuna eccezione",
           _ok_write is False and _raised is False)
@@ -7981,6 +7999,7 @@ max_entries = 20
         check(f"ocr: notifica d'errore con ocr_on_error {_label_nt} -> {'inviata' if _on_nt else 'NON inviata'}",
               (_sent_o >= 1) == _on_nt)
     # cli: "Unexpected error" segue l'interruttore del servizio; "Config error" NO
+    # cli: "Unexpected error" follows the service's switch; "Config error" does NOT
     for _label_nt, _on_nt in (("acceso", True), ("spento", False)):
         with mock.patch.object(cli, "load_config", return_value=_cfg_nt(stt={"error": _on_nt})), \
              mock.patch.object(cli, "stt") as _stt_cli, mock.patch.object(cli, "status"), \

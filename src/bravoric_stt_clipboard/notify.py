@@ -9,6 +9,9 @@ from .config import ICON_SLOT_REGISTRY, NotificationEvent
 
 # Stessi nomi icona usati dall'indicatore top-bar (extension.js ICONS), per
 # coerenza visiva tra notifica e stato mostrato in alto a destra.
+# Same icon names used by the top-bar indicator (extension.js ICONS), for
+# visual consistency between the notification and the state shown at the top
+# right.
 ICON_RECORDING = "media-record-symbolic"
 ICON_PROCESSING = "content-loading-symbolic"
 ICON_ERROR = "dialog-error-symbolic"
