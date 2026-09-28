@@ -403,6 +403,13 @@ function debounce(fn, delayMs = 400) {
     return debounced;
 }
 
+// Notifiche generate dall'estensione stessa (Shell), non dal backend: vivono in
+// GSettings (chiavi dello schema), non in config.toml.
+const EXTENSION_NOTIFICATIONS = [
+    { key: 'notify-errors', title: N_('Errors'), subtitle: N_('Notify about streaming paste/typing failures, invalid voice commands, a missing backend and status file errors') },
+    { key: 'notify-status', title: N_('Status messages'), subtitle: N_('Notify when the status file is restored or the backend times out') },
+];
+
 const NOTIFICATION_GROUPS = [
     {
         prefix: 'stt',
@@ -414,6 +421,10 @@ const NOTIFICATION_GROUPS = [
         contentRows: [
             { title: N_('Raw text ready'), subtitle: N_('Notify when the raw text is in the clipboard'), key: 'raw_ready' },
             { title: N_('Cleaned text ready'), subtitle: N_('Notify when the LLM-corrected text is in the clipboard'), key: 'cleanup_ready' },
+        ],
+        extraRows: [
+            { title: N_('Recording started'), subtitle: N_('Notify when the microphone starts recording'), key: 'recording_start' },
+            { title: N_('Errors'), subtitle: N_('Notify when transcription or clipboard writing fails'), key: 'error' },
         ],
     },
     {
@@ -427,6 +438,9 @@ const NOTIFICATION_GROUPS = [
             { title: N_('Raw text ready'), subtitle: N_('Notify when the raw text is in the clipboard'), key: 'raw_ready' },
             { title: N_('Cleaned text ready'), subtitle: N_('Notify when the LLM-corrected text is in the clipboard'), key: 'cleanup_ready' },
         ],
+        extraRows: [
+            { title: N_('Errors'), subtitle: N_('Notify when screenshot capture, text extraction or clipboard writing fails'), key: 'error' },
+        ],
     },
     {
         prefix: 'stream',
@@ -437,6 +451,10 @@ const NOTIFICATION_GROUPS = [
         },
         contentRows: [
             { title: N_('Transcribed text ready'), subtitle: N_('Notify when streamed text is ready'), key: 'raw_ready' },
+        ],
+        extraRows: [
+            { title: N_('Streaming session ended'), subtitle: N_('Notify when the streaming session ends'), key: 'session_end' },
+            { title: N_('Errors'), subtitle: N_('Notify about streaming errors, a busy microphone or a failed transcription'), key: 'error' },
         ],
     },
 ];
@@ -565,6 +583,22 @@ export default class BravoricPreferences extends ExtensionPreferences {
             });
             group.add(startRow);
 
+            // Notifiche solo on/off (senza testo): ogni notifica del backend
+            // ha il suo interruttore, nessuna resta non configurabile.
+            for (const extra of notifGroup.extraRows ?? []) {
+                const extraKey = `${notifGroup.prefix}_on_${extra.key}`;
+                const extraRow = new Adw.SwitchRow({
+                    title: _(extra.title),
+                    subtitle: _(extra.subtitle),
+                    active: editor.readBool(extraKey, true),
+                });
+                extraRow.connect('notify::active', () => {
+                    if (!setNotificationField(extraKey, extraRow.active))
+                        extraRow.active = editor.readBool(extraKey, true);
+                });
+                group.add(extraRow);
+            }
+
             for (const row of notifGroup.contentRows) {
                 const enabledKey = `${notifGroup.prefix}_on_${row.key}`;
                 const contentKey = `${enabledKey}_content`;
@@ -593,6 +627,19 @@ export default class BravoricPreferences extends ExtensionPreferences {
 
                 group.add(expander);
             }
+        }
+
+        const extSettings = this.getSettings();
+        const extGroup = new Adw.PreferencesGroup({ title: _('Extension notifications') });
+        page.add(extGroup);
+        for (const item of EXTENSION_NOTIFICATIONS) {
+            // Schema stantio (gschemas.compiled non ricompilato): niente bind,
+            // che con una chiave assente e' un'assertion fatale.
+            if (!extSettings.settings_schema.has_key(item.key))
+                continue;
+            const extRow = new Adw.SwitchRow({ title: _(item.title), subtitle: _(item.subtitle) });
+            extSettings.bind(item.key, extRow, 'active', Gio.SettingsBindFlags.DEFAULT);
+            extGroup.add(extRow);
         }
 
         this._buildShortcutsPage(window);

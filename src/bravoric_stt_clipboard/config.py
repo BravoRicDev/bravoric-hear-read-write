@@ -293,6 +293,13 @@ class ServiceNotifications:
     processing_start: bool
     raw_ready: NotificationEvent
     cleanup_ready: NotificationEvent
+    # Ogni notifica del backend ha il suo interruttore (GUI: pagina
+    # Notifiche). Default True = comportamento di sempre per chi non li
+    # ha nel config.toml. `recording_start` vale per stt, `session_end`
+    # per stream: per gli altri servizi restano inerti.
+    error: bool = True
+    recording_start: bool = True
+    session_end: bool = True
 
 
 @dataclass
@@ -597,6 +604,10 @@ def _build_config(raw: dict) -> Config:
                     enabled=notif_raw.get(f"{prefix}_on_cleanup_ready", True),
                     content=notif_raw.get(f"{prefix}_on_cleanup_ready_content", True),
                 ),
+                # _coerce_bool: la stringa "false" e' truthy in Python.
+                error=_coerce_bool(notif_raw.get(f"{prefix}_on_error", True)),
+                recording_start=_coerce_bool(notif_raw.get(f"{prefix}_on_recording_start", True)),
+                session_end=_coerce_bool(notif_raw.get(f"{prefix}_on_session_end", True)),
             )
 
         cfg = Config(

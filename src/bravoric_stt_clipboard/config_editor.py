@@ -117,7 +117,16 @@ NOTIFICATION_KEYS = frozenset(
     for suffix in ("", "_content")
     # `stream` non ha la notifica di cleanup: config.py non la legge.
     if not (prefix == "stream" and event == "cleanup_ready")
-)
+    # `processing_start` non ha contenuto ("nessun testo disponibile"):
+    # config.py non legge <servizio>_on_processing_start_content, e
+    # ammetterla darebbe una chiave che nessuna GUI ne' backend usa.
+    if not (event == "processing_start" and suffix == "_content")
+) | frozenset({
+    # Notifiche senza contenuto, solo on/off: errori di ogni servizio,
+    # registrazione STT avviata, sessione stream terminata.
+    "stt_on_error", "ocr_on_error", "stream_on_error",
+    "stt_on_recording_start", "stream_on_session_end",
+})
 
 
 class ConfigEditorError(RuntimeError):

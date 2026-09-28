@@ -29,6 +29,16 @@ stream_on_processing_start = true
 stream_on_raw_ready = true
 stream_on_raw_ready_content = true
 
+# Every backend notification has its own switch (all default to true).
+# STT — microphone started recording
+stt_on_recording_start = true
+# Streaming — session ended
+stream_on_session_end = true
+# Errors, per service (a config that cannot be read is always reported)
+stt_on_error = true
+ocr_on_error = true
+stream_on_error = true
+
 [audio]
 format = "ogg"
 codec = "libopus"

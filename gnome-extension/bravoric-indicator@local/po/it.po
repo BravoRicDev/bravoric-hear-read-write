@@ -1070,3 +1070,51 @@ msgstr "Worker paralleli massimi"
 #: gnome-extension/bravoric-indicator@local/prefs.js:724
 msgid "Upper bound of chunks pasted at the same time (auto mode; sequential always uses one)"
 msgstr "Tetto massimo di chunk incollati contemporaneamente (modalita' auto; sequenziale ne usa sempre uno)"
+
+#: gnome-extension/bravoric-indicator@local/prefs.js
+msgid "Recording started"
+msgstr "Registrazione avviata"
+
+#: gnome-extension/bravoric-indicator@local/prefs.js
+msgid "Errors"
+msgstr "Errori"
+
+#: gnome-extension/bravoric-indicator@local/prefs.js
+msgid "Notify when the microphone starts recording"
+msgstr "Notifica quando il microfono inizia a registrare"
+
+#: gnome-extension/bravoric-indicator@local/prefs.js
+msgid "Notify when transcription or clipboard writing fails"
+msgstr "Notifica quando la trascrizione o la scrittura negli appunti fallisce"
+
+#: gnome-extension/bravoric-indicator@local/prefs.js
+msgid "Notify when screenshot capture, text extraction or clipboard writing fails"
+msgstr "Notifica quando la cattura dello screenshot, l'estrazione del testo o la scrittura negli appunti fallisce"
+
+#: gnome-extension/bravoric-indicator@local/prefs.js
+msgid "Streaming session ended"
+msgstr "Sessione di streaming terminata"
+
+#: gnome-extension/bravoric-indicator@local/prefs.js
+msgid "Notify when the streaming session ends"
+msgstr "Notifica quando la sessione di streaming termina"
+
+#: gnome-extension/bravoric-indicator@local/prefs.js
+msgid "Notify about streaming errors, a busy microphone or a failed transcription"
+msgstr "Notifica errori dello streaming, microfono occupato o trascrizione fallita"
+
+#: gnome-extension/bravoric-indicator@local/prefs.js
+msgid "Extension notifications"
+msgstr "Notifiche dell'estensione"
+
+#: gnome-extension/bravoric-indicator@local/prefs.js
+msgid "Status messages"
+msgstr "Messaggi di stato"
+
+#: gnome-extension/bravoric-indicator@local/prefs.js
+msgid "Notify about streaming paste/typing failures, invalid voice commands, a missing backend and status file errors"
+msgstr "Notifica errori di incolla/digitazione dello streaming, comandi vocali non validi, backend mancante ed errori del file di stato"
+
+#: gnome-extension/bravoric-indicator@local/prefs.js
+msgid "Notify when the status file is restored or the backend times out"
+msgstr "Notifica quando il file di stato viene ripristinato o il backend va in timeout"

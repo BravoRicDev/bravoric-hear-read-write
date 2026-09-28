@@ -6599,6 +6599,115 @@ max_entries = 20
                 _pr.kill()
             _pr.wait()
 
+    # --- ogni notifica ha il suo interruttore (GUI: pagina Notifiche) ------------
+    import dataclasses as _dc_nt
+    _N = config.ServiceNotifications
+    _nt_default = config._build_config({}).notif_stt
+    check("notifiche: error/recording_start/session_end default True (comportamento di sempre)",
+          _nt_default.error and _nt_default.recording_start and _nt_default.session_end)
+    _nt_off = config._build_config({"notifications": {
+        "stt_on_error": False, "ocr_on_error": False, "stream_on_error": False,
+        "stt_on_recording_start": False, "stream_on_session_end": False}})
+    check("notifiche: le 5 chiavi nuove spente vengono lette",
+          not _nt_off.notif_stt.error and not _nt_off.notif_ocr.error and not _nt_off.notif_stream.error
+          and not _nt_off.notif_stt.recording_start and not _nt_off.notif_stream.session_end)
+    check("notifiche: la stringa \"false\" (truthy in Python) spegne davvero lo switch",
+          not config._build_config({"notifications": {"stt_on_error": "false"}}).notif_stt.error)
+    for _k_nt in ("stt_on_error", "ocr_on_error", "stream_on_error",
+                  "stt_on_recording_start", "stream_on_session_end"):
+        check(f"config_editor: chiave di notifica {_k_nt} accettata",
+              _k_nt in config_editor.NOTIFICATION_KEYS)
+
+    def _cfg_nt(**kw: Any) -> Any:
+        base = cfg_stream_min
+        return _dc_nt.replace(
+            base, notifications=True,
+            notif_stt=_dc_nt.replace(base.notif_stt, **kw.get("stt", {})),
+            notif_ocr=_dc_nt.replace(base.notif_ocr, **kw.get("ocr", {})),
+            notif_stream=_dc_nt.replace(base.notif_stream, **kw.get("stream", {})))
+
+    # stt: errore di trascrizione + registrazione avviata
+    for _label_nt, _on_nt in (("acceso", True), ("spento", False)):
+        with mock.patch.object(stt, "try_with_fallback", return_value="   "), \
+             mock.patch.object(stt, "clipboard"), mock.patch.object(stt, "status"), \
+             mock.patch.object(stt, "notify") as _nt_e, mock.patch.object(stt, "storage"), \
+             mock.patch.object(stt, "output_history"):
+            stt._process_recording(_cfg_nt(stt={"error": _on_nt}), Path("/tmp/x.ogg"))
+            _sent_e = _nt_e.send.call_count
+        check(f"stt: notifica d'errore con stt_on_error {_label_nt} -> {'inviata' if _on_nt else 'NON inviata'}",
+              (_sent_e >= 1) == _on_nt)
+        with mock.patch.object(stt, "audio"), mock.patch.object(stt, "status"), \
+             mock.patch.object(stt, "notify") as _nt_r, \
+             mock.patch.object(stt, "_is_stream_active", return_value=False):
+            stt._start(_cfg_nt(stt={"recording_start": _on_nt}))
+            _sent_r = _nt_r.send.call_count
+        check(f"stt: 'recording started' con stt_on_recording_start {_label_nt} -> {'inviata' if _on_nt else 'NON inviata'}",
+              (_sent_r >= 1) == _on_nt)
+    # ocr: strumento screenshot mancante (un errore qualunque dell'OCR)
+    for _label_nt, _on_nt in (("acceso", True), ("spento", False)):
+        with mock.patch.object(ocr, "screenshot") as _shot_nt, mock.patch.object(ocr, "status") as _st_nt, \
+             mock.patch.object(ocr, "notify") as _nt_o:
+            _shot_nt.is_available.return_value = False
+            _st_nt.read_status.return_value = {"state": "idle"}
+            ocr.handle_capture(_dc_nt.replace(_cfg_nt(ocr={"error": _on_nt}), ocr_capture_screenshot=True))
+            _sent_o = _nt_o.send.call_count
+        check(f"ocr: notifica d'errore con ocr_on_error {_label_nt} -> {'inviata' if _on_nt else 'NON inviata'}",
+              (_sent_o >= 1) == _on_nt)
+    # cli: "Unexpected error" segue l'interruttore del servizio; "Config error" NO
+    for _label_nt, _on_nt in (("acceso", True), ("spento", False)):
+        with mock.patch.object(cli, "load_config", return_value=_cfg_nt(stt={"error": _on_nt})), \
+             mock.patch.object(cli, "stt") as _stt_cli, mock.patch.object(cli, "status"), \
+             mock.patch.object(cli, "notify") as _nt_c:
+            _stt_cli.handle_toggle.side_effect = RuntimeError("boom (simulato)")
+            cli.stt_toggle_main()
+            _sent_c = _nt_c.send.call_count
+        check(f"cli: 'Unexpected error' con stt_on_error {_label_nt} -> {'inviata' if _on_nt else 'NON inviata'}",
+              (_sent_c >= 1) == _on_nt)
+    # stream: sessione terminata e avviso "occupato" (errore)
+    for _label_nt, _on_nt in (("acceso", True), ("spento", False)):
+        _sess_nt = stream_mod.StreamSession(_cfg_nt(stream={"session_end": _on_nt, "error": _on_nt}))
+        with mock.patch.object(stream_mod, "notify") as _nt_s:
+            _sess_nt._busy_notice("occupato")
+            _sent_busy = _nt_s.send.call_count
+        check(f"stream: avviso d'errore con stream_on_error {_label_nt} -> {'inviato' if _on_nt else 'NON inviato'}",
+              (_sent_busy >= 1) == _on_nt)
+        with mock.patch.object(stream_mod, "notify") as _nt_s2, \
+             mock.patch.object(stream_mod, "_read_lock", return_value=None), \
+             mock.patch.object(stream_mod, "_write_state"), \
+             mock.patch.object(stream_mod, "read_state", return_value={}):
+            _sess_nt._stop_per_chunk({"pid": dead_pid(), "session_id": "nt"})
+            _sent_end = _nt_s2.send.call_count
+        check(f"stream: 'Sessione terminata' con stream_on_session_end {_label_nt} -> {'inviata' if _on_nt else 'NON inviata'}",
+              (_sent_end >= 1) == _on_nt)
+
+    # --- anti-drift: OGNI notifica del backend ha la sua riga in GUI ---------
+    # Regola del progetto: nessuna notifica non configurabile da GUI. Le chiavi
+    # che prefs.js costruisce (processing_start + contentRows con _content +
+    # extraRows) devono coincidere ESATTAMENTE con NOTIFICATION_KEYS.
+    _prefs_nt = (ROOT / "gnome-extension" / "bravoric-indicator@local" / "prefs.js").read_text(encoding="utf-8")
+    _groups_nt = _prefs_nt[_prefs_nt.index("const NOTIFICATION_GROUPS = ["):]
+    _groups_nt = _groups_nt[:_groups_nt.index("\n];")]
+    _gui_keys: set[str] = set()
+    for _blk in re.split(r"\n    \{\n        prefix: ", _groups_nt)[1:]:
+        _pre = re.match(r"'(\w+)'", _blk).group(1)  # type: ignore[union-attr]
+        _gui_keys.add(f"{_pre}_on_processing_start")
+        _content_part = _blk.split("contentRows: [", 1)[1].split("],", 1)[0]
+        for _k in re.findall(r"key: '(\w+)'", _content_part):
+            _gui_keys.update({f"{_pre}_on_{_k}", f"{_pre}_on_{_k}_content"})
+        if "extraRows: [" in _blk:
+            _extra_part = _blk.split("extraRows: [", 1)[1].split("],", 1)[0]
+            for _k in re.findall(r"key: '(\w+)'", _extra_part):
+                _gui_keys.add(f"{_pre}_on_{_k}")
+    check("GUI: ogni chiave di notifica del backend ha una riga (nessuna notifica non configurabile)",
+          config_editor.NOTIFICATION_KEYS - _gui_keys == set())
+    check("GUI: nessuna riga di notifica punta a una chiave sconosciuta al backend",
+          _gui_keys - config_editor.NOTIFICATION_KEYS == set())
+    _schema_txt = (ROOT / "gnome-extension" / "bravoric-indicator@local" / "schemas"
+                   / "org.gnome.shell.extensions.bravoric-indicator.gschema.xml").read_text(encoding="utf-8")
+    _ext_keys = set(re.findall(r"key: '(notify-[a-z]+)'", _prefs_nt))
+    check("GUI: ogni interruttore di notifica dell'estensione e' nello schema GSettings",
+          bool(_ext_keys) and all(f'name="{_k}"' in _schema_txt for _k in _ext_keys))
+
     # --- 10. il percorso di default e' quello vero, non un doppione -------
     # (la verifica che il percorso reale non sia stato TOCCATO da nessun test
     # e' in fondo a main(): confronta mtime+size reali, non stringhe di path

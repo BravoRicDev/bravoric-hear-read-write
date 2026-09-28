@@ -13,5 +13,15 @@
       <default>['&lt;Alt&gt;&lt;Super&gt;s']</default>
       <summary>Streaming dictation toggle shortcut</summary>
     </key>
+    <key name="notify-errors" type="b">
+      <default>true</default>
+      <summary>Show extension error notifications</summary>
+      <description>Errors raised by the extension itself: streaming paste/typing failures, invalid voice commands, backend not installed, status file errors.</description>
+    </key>
+    <key name="notify-status" type="b">
+      <default>true</default>
+      <summary>Show extension status notifications</summary>
+      <description>Status messages from the extension: status file restored, or the backend timed out.</description>
+    </key>
   </schema>
 </schemalist>

@@ -7,6 +7,14 @@ const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 const { matchBrace } = require('./lib/brace-match.cjs');
 
+// I metodi estratti da extension.js notificano tramite notifyErrorIfEnabled /
+// notifyStatusIfEnabled (funzioni di modulo, controllate da GSettings). Nei
+// test i metodi restano quelli REALI e ricevono un `Main` finto: qui i due
+// helper inoltrano a quel Main. Il comportamento degli helper veri (interruttore
+// spento, chiave assente) e' provato a parte, estraendoli dal sorgente.
+const NOTIFY_PRELUDE = 'const notifyErrorIfEnabled = (t, b) => Main.notifyError(t, b);\n'
+    + 'const notifyStatusIfEnabled = (t, b) => Main.notify(t, b);\n';
+
 (async () => {
     const extensionPath = path.join(__dirname, '..', 'gnome-extension', 'bravoric-indicator@local', 'extension.js');
     const helperPath = path.join(__dirname, '..', 'gnome-extension', 'bravoric-indicator@local', 'stream-consumer.mjs');
@@ -412,7 +420,7 @@ const { matchBrace } = require('./lib/brace-match.cjs');
     // Il corpo usa Clutter (la keyMap), Main, logError, computeStreamDelete e
     // gli helper dell'istanza: si forniscono tutti come parametri.
     const realCommand = new Function(
-        'Clutter', 'Main', 'logError', 'computeStreamDelete', 'GLib', '_', 'item', cmdBody,
+        'Clutter', 'Main', 'logError', 'computeStreamDelete', 'GLib', '_', 'item', NOTIFY_PRELUDE + cmdBody,
     );
     const KEY = (name) => `KEY_${name}`;
     const ClutterStub = {
@@ -547,7 +555,7 @@ const { matchBrace } = require('./lib/brace-match.cjs');
         'TIMEOUT_CHECK_INTERVAL_SECONDS', 'STREAM_PACING_DEFAULT_MS', 'STREAM_SETTLE_MS',
         'STREAM_DEBOUNCE_MS', 'STREAM_END_TIMEOUT_MS',
         'consumeStreamSnapshot', 'classifyStreamItem', 'parseBlacklist', 'computeStreamDelete',
-        `return class extends PanelMenu.Button {
+        `${NOTIFY_PRELUDE}return class extends PanelMenu.Button {
             _init(extension) { super._init(0.0, 'Bravoric STT/OCR');${initBody}
             }
             _setAccessibleState(state) {${sibling('_setAccessibleState(state)')}}
@@ -750,7 +758,7 @@ const { matchBrace } = require('./lib/brace-match.cjs');
         // (il timer di pacing che rilancia il worker) risolvono come nel
         // sorgente, e non come in una ricostruzione.
         ind._startStreamPasteWorker = new Function('GLib', 'Main', 'St', 'Clutter', 'logError', '_', 'STREAM_SETTLE_MS',
-            `return function () {${workerBody}\n};`)(
+            `${NOTIFY_PRELUDE}return function () {${workerBody}\n};`)(
             GLib, { notifyError: title => notices.push(title) }, StRun, ClutterRun,
             collectError, s => s, 30);
         ind._requestStreamEnd = new Function('GLib', 'spawnBackground', 'logError', 'TextDecoder', 'JSON',
@@ -827,7 +835,7 @@ const { matchBrace } = require('./lib/brace-match.cjs');
     typeRun.ind._pasteChannel = 'type';
     typeRun.ind._streamQueue.push({ action: 'paste', sessionId: 's1', index: 0, text: 'ab' });
     typeRun.ind._typeStreamItem = new Function('GLib', 'Main', 'Clutter', 'logError', '_', 'TYPE_KEY_INTERVAL_MS',
-        `return function (item) {${typeBody}\n};`)(
+        `${NOTIFY_PRELUDE}return function (item) {${typeBody}\n};`)(
         // Lo stesso GLib del teardown, non una copia: i timer armati qui
         // devono finire nello stesso registro che il teardown ripulisce.
         typeRun.GLib, { notifyError: title => typeRun.notices.push(title) },
@@ -1347,6 +1355,79 @@ const { matchBrace } = require('./lib/brace-match.cjs');
     makeDestroy(id => removedBlink.push(id)).prototype.destroy.call(tInd);
     check('S4: destroy() (metodo reale) rimuove il timer del lampeggio armato dal modulo',
         blinkId === 1 && removedBlink.includes(1) && tInd._blinkTimeoutId === null);
+
+    // ====================================================================
+    // Notifiche dell'estensione: ogni notifica ha il suo interruttore
+    // GSettings (notify-errors / notify-status). Gli helper VERI sono estratti
+    // dal sorgente ed eseguiti con un Main e un GSettings finti.
+    // ====================================================================
+    console.log('== notifiche estensione: interruttori GSettings (helper reali) ==');
+    const helpersStart = source.indexOf('let notificationSettings = null;');
+    const helpersEndMarker = 'function notifyStatusIfEnabled(title, body) {';
+    const helpersEndAt = source.indexOf(helpersEndMarker);
+    check('helper notifiche presenti nel sorgente', helpersStart !== -1 && helpersEndAt > helpersStart);
+    const helpersEnd = matchBrace(source, source.indexOf('{', helpersEndAt)) + 1;
+    const helpersSrc = source.slice(helpersStart, helpersEnd);
+    const makeHelpers = (Main, logged) => new Function('Main', 'logError',
+        `${helpersSrc}\nreturn { setSettings: v => { notificationSettings = v; }, notifyErrorIfEnabled, notifyStatusIfEnabled };`)(
+        Main, (e, m) => logged.push(m));
+    const mkSettings = (values, keys = Object.keys(values)) => ({
+        settings_schema: { has_key: k => keys.includes(k) },
+        get_boolean: k => values[k],
+    });
+    const sent = [];
+    const Main = { notifyError: (t, b) => sent.push(['err', t, b]), notify: (t, b) => sent.push(['st', t, b]) };
+    const logged = [];
+    const H = makeHelpers(Main, logged);
+
+    H.setSettings(mkSettings({ 'notify-errors': true, 'notify-status': true }));
+    H.notifyErrorIfEnabled('E', 'b'); H.notifyStatusIfEnabled('S', 'b');
+    check('notifiche: con entrambi gli interruttori accesi arrivano errore e stato',
+        sent.length === 2 && sent[0][0] === 'err' && sent[1][0] === 'st');
+
+    sent.length = 0;
+    H.setSettings(mkSettings({ 'notify-errors': false, 'notify-status': true }));
+    H.notifyErrorIfEnabled('E', 'b'); H.notifyStatusIfEnabled('S', 'b');
+    check('notifiche: notify-errors spento -> l\'errore NON arriva, lo stato si',
+        sent.length === 1 && sent[0][0] === 'st');
+
+    sent.length = 0;
+    H.setSettings(mkSettings({ 'notify-errors': true, 'notify-status': false }));
+    H.notifyErrorIfEnabled('E', 'b'); H.notifyStatusIfEnabled('S', 'b');
+    check('notifiche: notify-status spento -> lo stato NON arriva, l\'errore si',
+        sent.length === 1 && sent[0][0] === 'err');
+
+    sent.length = 0;
+    H.setSettings(mkSettings({}, []));
+    H.notifyErrorIfEnabled('E', 'b'); H.notifyStatusIfEnabled('S', 'b');
+    check('notifiche: schema STANTIO (chiave assente) non spegne nulla e non solleva',
+        sent.length === 2);
+
+    sent.length = 0;
+    H.setSettings(null);
+    H.notifyErrorIfEnabled('E', 'b'); H.notifyStatusIfEnabled('S', 'b');
+    check('notifiche: impostazioni non ancora impostate (prima di enable / dopo disable) -> acceso',
+        sent.length === 2);
+
+    sent.length = 0;
+    H.setSettings({ settings_schema: { has_key: () => true }, get_boolean: () => { throw new Error('boom'); } });
+    H.notifyErrorIfEnabled('E', 'b');
+    check('notifiche: lettura che solleva -> notifica comunque inviata e errore loggato',
+        sent.length === 1 && logged.length === 1);
+
+    // enable/disable: le impostazioni vengono passate agli helper PRIMA
+    // dell'indicatore (la sua costruzione puo' notificare) e azzerate dopo.
+    const enableAt = source.indexOf('    enable() {');
+    const enableBody = source.slice(enableAt, source.indexOf('    disable() {', enableAt));
+    check('enable(): notificationSettings impostato PRIMA di creare l\'indicatore',
+        enableBody.indexOf('notificationSettings = this._settings') !== -1
+        && enableBody.indexOf('notificationSettings = this._settings') < enableBody.indexOf('new BravoricIndicator'));
+    const disableAt = source.indexOf('    disable() {');
+    check('disable(): notificationSettings azzerato',
+        source.slice(disableAt, disableAt + 700).includes('notificationSettings = null'));
+    const rawCalls = (source.match(/Main\.notify(Error)?\(/g) || []).length;
+    check('extension.js: nessuna notifica diretta fuori dagli helper (2 sole chiamate Main.notify*)',
+        rawCalls === 2);
 
     console.log(`\n${pass} PASS / 0 FAIL`);
 })().catch(error => { console.error(error); process.exitCode = 1; });

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import logging
 import sys
+from typing import Any
 
 from . import notify, ocr, status, stt
 from .config import ConfigError, load_config
@@ -63,7 +64,7 @@ def stt_toggle_main() -> int:
             status.write_status(status.STATE_ERROR, service="stt")
         except Exception:
             logger.debug("impossibile aggiornare lo status su ERROR", exc_info=True)
-        _report_unexpected_error()
+        _report_unexpected_error(_errors_enabled(cfg, "notif_stt"))
         return 1
     return 0
 
@@ -86,7 +87,7 @@ def ocr_capture_main() -> int:
             status.write_status(status.STATE_ERROR)
         except Exception:
             logger.debug("impossibile aggiornare lo status su ERROR", exc_info=True)
-        _report_unexpected_error()
+        _report_unexpected_error(_errors_enabled(cfg, "notif_ocr"))
         return 1
     return 0
 
@@ -157,7 +158,7 @@ def stream_toggle_main(argv: list[str] | None = None) -> int:
         # sollevato in questo punto (l'ultimo except della funzione) sarebbe
         # risalito senza rete, facendo crashare l'intero processo CLI invece
         # di tornare 1.
-        _report_unexpected_error()
+        _report_unexpected_error(_errors_enabled(cfg, "notif_stream"))
         return 1
     return 0
 
@@ -176,7 +177,22 @@ def chunk_log_main(argv: list[str] | None = None) -> int:
     return chunk_log.main(argv)
 
 
-def _report_unexpected_error() -> None:
+def _errors_enabled(cfg: Any, service_attr: str) -> bool:
+    """Notifiche master + interruttore d'errore del servizio. Difensivo: e'
+    chiamato DENTRO un except, deve restare acceso (True) se la config e'
+    incompleta, mai sollevare a sua volta."""
+    try:
+        return bool(cfg.notifications and getattr(cfg, service_attr).error)
+    except AttributeError:
+        return True
+
+
+def _report_unexpected_error(enabled: bool = True) -> None:
+    """`enabled`: interruttore del servizio ([notifications] <servizio>_on_error,
+    GUI: pagina Notifiche). Non si applica a "Config error", che resta sempre
+    attivo: con la config illeggibile non c'e' nessuno switch da leggere."""
+    if not enabled:
+        return
     try:
         notify.send(
             _("Unexpected error"), _("Check the system log for details"),

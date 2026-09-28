@@ -1633,7 +1633,7 @@ class StreamSession:
         una regex e qui non deve comparire nessuna copia. Qui vivono solo
         titolo e icona, identici nei tre casi.
         """
-        if self._cfg.notifications:
+        if self._cfg.notifications and self._cfg.notif_stream.error:
             notify.send(_("Streaming dictation"), message,
                         icon=notify.resolve_icon("error_general", self._cfg.icons.error_general))
 
@@ -1654,7 +1654,7 @@ class StreamSession:
             else:
                 self._start_per_chunk()
         except RuntimeError as exc:
-            if self._cfg.notifications:
+            if self._cfg.notifications and self._cfg.notif_stream.error:
                 notify.send(_("Streaming dictation"), str(exc), icon=notify.resolve_icon("error_general", self._cfg.icons.error_general))
             return False
         return True
@@ -1735,7 +1735,7 @@ class StreamSession:
                 )
             except AllLevelsFailedError as exc:
                 logger.warning("stream transcription failed: %s", exc)
-                if self._cfg.notifications:
+                if self._cfg.notifications and self._cfg.notif_stream.error:
                     notify.send(_("Streaming dictation"),
                                 _("Transcription failed"), icon=notify.resolve_icon("error_general", self._cfg.icons.error_general))
         # nessun cleanup LLM (D1)
@@ -1855,7 +1855,7 @@ class StreamSession:
         state["active"] = False
         state.update(_paste_state(self._stream))
         _write_state(state)
-        if self._cfg.notifications:
+        if self._cfg.notifications and self._cfg.notif_stream.session_end:
             notify.send(_("Streaming dictation"), _("Session ended"),
                         icon=notify.resolve_icon("stream_session_end", self._cfg.icons.stream_session_end))
         return True

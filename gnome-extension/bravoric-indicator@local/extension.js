@@ -99,6 +99,35 @@ const PROCESSING_TIMEOUT_SECONDS = {
     ocr: 120 * 60,
 };
 
+// Ogni notifica generata dall'estensione ha il suo interruttore GSettings
+// (GUI: pagina Notifiche > Extension notifications): `notify-errors` per gli
+// errori (streaming, backend, file di stato), `notify-status` per i messaggi
+// di stato (file di stato ripristinato, timeout). Impostato in enable(),
+// azzerato in disable(). Un gschemas.compiled stantio senza la chiave (o una
+// lettura che fallisce) NON deve mai spegnere una notifica ne' sollevare:
+// resta acceso, come prima dell'introduzione dell'interruttore.
+let notificationSettings = null;
+
+function notificationEnabled(key) {
+    try {
+        if (notificationSettings?.settings_schema?.has_key(key))
+            return notificationSettings.get_boolean(key);
+    } catch (e) {
+        logError(e, `bravoric-indicator: lettura di ${key} fallita`);
+    }
+    return true;
+}
+
+function notifyErrorIfEnabled(title, body) {
+    if (notificationEnabled('notify-errors'))
+        Main.notifyError(title, body);
+}
+
+function notifyStatusIfEnabled(title, body) {
+    if (notificationEnabled('notify-status'))
+        Main.notify(title, body);
+}
+
 // Unico punto di avvio dei binari del venv. Gli due nomi pubblici sotto sono
 // wrapper di una riga: chiamarli non cambia nulla di come vengono costruiti
 // e notificati, ma il codice (build del path, test di esistenza, avviso
@@ -107,7 +136,7 @@ const PROCESSING_TIMEOUT_SECONDS = {
 function spawnVenvBinary(binName, args, logPrefix) {
     const path = GLib.build_filenamev([VENV_BIN, binName]);
     if (!GLib.file_test(path, GLib.FileTest.EXISTS)) {
-        Main.notifyError(
+        notifyErrorIfEnabled(
             _('Bravoric backend not installed'),
             _('Run scripts/install.sh from the project repo first.'),
         );
@@ -117,7 +146,7 @@ function spawnVenvBinary(binName, args, logPrefix) {
         Gio.Subprocess.new([path, ...args], Gio.SubprocessFlags.NONE);
     } catch (e) {
         logError(e, logPrefix);
-        Main.notifyError(_('Bravoric error'), e.message);
+        notifyErrorIfEnabled(_('Bravoric error'), e.message);
     }
 }
 // Dipendenze iniettate ai moduli puri: i test eseguono watch-cache.mjs
@@ -554,7 +583,7 @@ class BravoricIndicator extends PanelMenu.Button {
         if (!this._virtualDevice) {
             if (!this._streamPasteDeviceWarned) {
                 this._streamPasteDeviceWarned = true;
-                Main.notifyError(_('Streaming paste unavailable'),
+                notifyErrorIfEnabled(_('Streaming paste unavailable'),
                     _('The virtual keyboard is unavailable; pending chunks were kept in memory.'));
                 logError(new Error('tastiera virtuale non disponibile; chunk stream mantenuti in coda'),
                     'bravoric-indicator: paste stream sospeso');
@@ -618,7 +647,7 @@ class BravoricIndicator extends PanelMenu.Button {
             } else {
                 // I tasti effettivamente premuti sono già stati rilasciati nel finally;
                 // il risultato dell'incolla resta ambiguo.
-                Main.notifyError(_('Streaming paste incomplete'),
+                notifyErrorIfEnabled(_('Streaming paste incomplete'),
                     _('A chunk could not be sent. Check the focused field before restarting to avoid duplicates.'));
                 logError(new Error(
                     `invio Ctrl+V fallito per ${item.sessionId} chunk ${item.index}; `
@@ -644,7 +673,7 @@ class BravoricIndicator extends PanelMenu.Button {
             this._streamWorkerActive = false;
             if (!this._streamPasteDeviceWarned) {
                 this._streamPasteDeviceWarned = true;
-                Main.notifyError(_('Streaming typing unavailable'), _('Unicode key conversion or the virtual keyboard is unavailable; pending chunks were kept in memory.'));
+                notifyErrorIfEnabled(_('Streaming typing unavailable'), _('Unicode key conversion or the virtual keyboard is unavailable; pending chunks were kept in memory.'));
             }
             return;
         }
@@ -685,7 +714,7 @@ class BravoricIndicator extends PanelMenu.Button {
             if (failed) {
                 this._streamPasteBlocked = true;
                 this._streamWorkerActive = false;
-                Main.notifyError(_('Streaming typing incomplete'), _('A keystroke could not be sent. Check the focused field before restarting to avoid duplicates.'));
+                notifyErrorIfEnabled(_('Streaming typing incomplete'), _('A keystroke could not be sent. Check the focused field before restarting to avoid duplicates.'));
                 return GLib.SOURCE_REMOVE;
             }
             if (index < characters.length) {
@@ -746,7 +775,7 @@ class BravoricIndicator extends PanelMenu.Button {
             if (!down || !up) {
                 this._streamPasteBlocked = true;
                 this._streamWorkerActive = false;
-                Main.notifyError(_('Streaming command failed'),
+                notifyErrorIfEnabled(_('Streaming command failed'),
                     _('The key command could not be completed; the queue is blocked.'));
                 return;
             }
@@ -774,7 +803,7 @@ class BravoricIndicator extends PanelMenu.Button {
             if (result.count === -1) {
                 this._streamPasteBlocked = true;
                 this._streamWorkerActive = false;
-                Main.notifyError(_('Invalid streaming command'), _('The configured key or delete scope is invalid; the queue is blocked.'));
+                notifyErrorIfEnabled(_('Invalid streaming command'), _('The configured key or delete scope is invalid; the queue is blocked.'));
                 return;
             }
             if (result.count > 0) {
@@ -785,7 +814,7 @@ class BravoricIndicator extends PanelMenu.Button {
                         this._streamSegments = null;
                         this._streamPasteBlocked = true;
                         this._streamWorkerActive = false;
-                        Main.notifyError(_('Streaming delete failed'), _('Deletion was partial; restart the extension to avoid deleting the wrong text.'));
+                        notifyErrorIfEnabled(_('Streaming delete failed'), _('Deletion was partial; restart the extension to avoid deleting the wrong text.'));
                         return;
                     }
                 }
@@ -795,7 +824,7 @@ class BravoricIndicator extends PanelMenu.Button {
         } else {
             this._streamPasteBlocked = true;
             this._streamWorkerActive = false;
-            Main.notifyError(_('Invalid streaming command'), _('The configured key or delete scope is invalid; the queue is blocked.'));
+            notifyErrorIfEnabled(_('Invalid streaming command'), _('The configured key or delete scope is invalid; the queue is blocked.'));
             return;
         }
         this._streamQueue.shift();
@@ -1015,7 +1044,7 @@ class BravoricIndicator extends PanelMenu.Button {
                 if (!data || typeof data !== 'object' || Array.isArray(data))
                     throw new Error('status.json: forma inattesa');
                 if (this._statusParseErrors >= 3)
-                    Main.notify(_('Status file restored'), _('OK'));
+                    notifyStatusIfEnabled(_('Status file restored'), _('OK'));
                 this._statusParseErrors = 0;
 
                 const reportedState = data.state && THEME_ICONS[data.state] ? data.state : 'idle';
@@ -1027,7 +1056,7 @@ class BravoricIndicator extends PanelMenu.Button {
                         state = 'idle';
                         if (!this._timeoutWarned) {
                             this._timeoutWarned = true;
-                            Main.notify(this._timeoutMessage(reportedState), _('Check the backend'));
+                            notifyStatusIfEnabled(this._timeoutMessage(reportedState), _('Check the backend'));
                         }
                     } else {
                         // stato attivo e recente: pronto a riavvisare se si
@@ -1079,7 +1108,7 @@ class BravoricIndicator extends PanelMenu.Button {
                 logError(e, 'bravoric-indicator: status.json malformato');
                 this._statusParseErrors = (this._statusParseErrors || 0) + 1;
                 if (this._statusParseErrors === 3) {
-                    Main.notifyError(_('Status file error'), _('Check config.toml'));
+                    notifyErrorIfEnabled(_('Status file error'), _('Check config.toml'));
                 }
             }
         });
@@ -1147,10 +1176,13 @@ class BravoricIndicator extends PanelMenu.Button {
 
 export default class BravoricIndicatorExtension extends Extension {
     enable() {
+        // Prima dell'indicatore: gia' la sua costruzione puo' notificare.
+        this._settings = this.getSettings();
+        notificationSettings = this._settings;
+
         this._indicator = new BravoricIndicator(this);
         Main.panel.addToStatusArea(this.uuid, this._indicator);
 
-        this._settings = this.getSettings();
         this._registeredKeybindings = new Set();
 
         // Un gschemas.compiled stantio non deve mai arrivare a
@@ -1182,6 +1214,7 @@ export default class BravoricIndicatorExtension extends Extension {
             Main.wm.removeKeybinding(name);
         this._registeredKeybindings = null;
         this._settings = null;
+        notificationSettings = null;
 
         // Cancellable/monitor/timer vivono su BravoricIndicator (this._indicator),
         // non su questa classe Extension: BravoricIndicator.destroy() li ripulisce

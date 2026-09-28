@@ -56,7 +56,7 @@ def _start(cfg: Config) -> None:
         status.write_status(status.STATE_RECORDING, service="stt")
     except Exception:
         logger.debug("impossibile aggiornare lo status su RECORDING", exc_info=True)
-    if cfg.notifications:
+    if cfg.notifications and cfg.notif_stt.recording_start:
         notify.send(_("STT: recording started"), icon=notify.resolve_icon("stt_recording_start", cfg.icons.stt_recording_start))
 
 
@@ -156,7 +156,7 @@ def _process_recording(cfg: Config, audio_path: Path) -> None:
                 "transcription matches the blacklist" if hallucinated
                 else "empty transcription")
         status.write_status(status.STATE_ERROR, service="stt")
-        if cfg.notifications:
+        if cfg.notifications and cfg.notif_stt.error:
             notify.send(_("STT: transcription error"), str(last_error), icon=notify.resolve_icon("error_general", cfg.icons.error_general))
         return
 
@@ -208,7 +208,7 @@ def _process_recording(cfg: Config, audio_path: Path) -> None:
         # dell'estensione (30 min), con l'icona ferma su content-loading.
         logger.error("impossibile scrivere negli appunti: %s", exc)
         status.write_status(status.STATE_ERROR, service="stt")
-        if cfg.notifications:
+        if cfg.notifications and cfg.notif_stt.error:
             notify.send(_("STT: clipboard error"), str(exc), icon=notify.resolve_icon("error_general", cfg.icons.error_general))
         return
 

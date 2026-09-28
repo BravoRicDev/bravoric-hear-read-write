@@ -46,7 +46,7 @@ def handle_capture(cfg: Config) -> None:
         # l'utente non avrebbe alcun segnale del perche' non succede nulla.
         if not screenshot.is_available():
             status.write_status(status.STATE_ERROR)
-            if cfg.notifications:
+            if cfg.notifications and cfg.notif_ocr.error:
                 notify.send(_("OCR: screenshot tool missing"), _("Install gnome-screenshot to use this feature"), icon=notify.resolve_icon("error_general", cfg.icons.error_general))
             return
     try:
@@ -74,7 +74,7 @@ def handle_capture(cfg: Config) -> None:
             image_bytes = clipboard.read_image_png(cfg.clipboard_paste_tool)
         except Exception as exc:  # noqa: BLE001 - fail fast con notifica utente
             status.write_status(status.STATE_ERROR)
-            if cfg.notifications:
+            if cfg.notifications and cfg.notif_ocr.error:
                 notify.send(_("OCR: no image in clipboard"), str(exc), icon=notify.resolve_icon("error_general", cfg.icons.error_general))
             return
 
@@ -90,7 +90,7 @@ def handle_capture(cfg: Config) -> None:
         )
     except AllLevelsFailedError as exc:
         status.write_status(status.STATE_ERROR)
-        if cfg.notifications:
+        if cfg.notifications and cfg.notif_ocr.error:
             notify.send(_("OCR: extraction error"), str(exc), icon=notify.resolve_icon("error_general", cfg.icons.error_general))
         return
 
@@ -101,7 +101,7 @@ def handle_capture(cfg: Config) -> None:
     # l'errore invece di scrivere una stringa vuota negli appunti.
     if not raw_text or not raw_text.strip():
         status.write_status(status.STATE_ERROR, service="ocr")
-        if cfg.notifications:
+        if cfg.notifications and cfg.notif_ocr.error:
             notify.send(_("OCR: extraction error"), _("Empty extraction"), icon=notify.resolve_icon("error_general", cfg.icons.error_general))
         return
 
@@ -145,7 +145,7 @@ def handle_capture(cfg: Config) -> None:
         # dell'estensione (120 min), con l'icona ferma su content-loading.
         logger.error("impossibile scrivere negli appunti: %s", exc)
         status.write_status(status.STATE_ERROR)
-        if cfg.notifications:
+        if cfg.notifications and cfg.notif_ocr.error:
             notify.send(_("OCR: clipboard error"), str(exc), icon=notify.resolve_icon("error_general", cfg.icons.error_general))
         return
 

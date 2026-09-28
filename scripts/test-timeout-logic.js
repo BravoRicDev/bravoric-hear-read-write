@@ -506,6 +506,9 @@ const sandbox = {
     Clutter: new Proxy({ KeyState: { PRESSED: 1, RELEASED: 0 } },
         { get: (t, k) => (k in t ? t[k] : 'KEY_' + String(k)) }),
     Main: { notifyError: (a, b) => notifications.push([a, b]) },
+    // helper di modulo di extension.js: qui inoltrano al Main finto
+    notifyErrorIfEnabled: (a, b) => notifications.push([a, b]),
+    notifyStatusIfEnabled: () => {},
     GLib: { SOURCE_REMOVE: false },
     logError: () => {},
     _: s => s,

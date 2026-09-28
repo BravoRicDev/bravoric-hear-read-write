@@ -1012,3 +1012,51 @@ msgstr ""
 #: gnome-extension/bravoric-indicator@local/prefs.js:724
 msgid "Upper bound of chunks pasted at the same time (auto mode; sequential always uses one)"
 msgstr ""
+
+#: gnome-extension/bravoric-indicator@local/prefs.js
+msgid "Recording started"
+msgstr ""
+
+#: gnome-extension/bravoric-indicator@local/prefs.js
+msgid "Errors"
+msgstr ""
+
+#: gnome-extension/bravoric-indicator@local/prefs.js
+msgid "Notify when the microphone starts recording"
+msgstr ""
+
+#: gnome-extension/bravoric-indicator@local/prefs.js
+msgid "Notify when transcription or clipboard writing fails"
+msgstr ""
+
+#: gnome-extension/bravoric-indicator@local/prefs.js
+msgid "Notify when screenshot capture, text extraction or clipboard writing fails"
+msgstr ""
+
+#: gnome-extension/bravoric-indicator@local/prefs.js
+msgid "Streaming session ended"
+msgstr ""
+
+#: gnome-extension/bravoric-indicator@local/prefs.js
+msgid "Notify when the streaming session ends"
+msgstr ""
+
+#: gnome-extension/bravoric-indicator@local/prefs.js
+msgid "Notify about streaming errors, a busy microphone or a failed transcription"
+msgstr ""
+
+#: gnome-extension/bravoric-indicator@local/prefs.js
+msgid "Extension notifications"
+msgstr ""
+
+#: gnome-extension/bravoric-indicator@local/prefs.js
+msgid "Status messages"
+msgstr ""
+
+#: gnome-extension/bravoric-indicator@local/prefs.js
+msgid "Notify about streaming paste/typing failures, invalid voice commands, a missing backend and status file errors"
+msgstr ""
+
+#: gnome-extension/bravoric-indicator@local/prefs.js
+msgid "Notify when the status file is restored or the backend times out"
+msgstr ""
