@@ -5230,6 +5230,14 @@ def main() -> int:
     def _fake_run_timeout(args: list[str], **_kw: Any) -> subprocess.CompletedProcess:
         raise subprocess.TimeoutExpired(args, screenshot.SELECTION_TIMEOUT_SECONDS)
 
+    def _fake_run_oserror(args: list[str], **_kw: Any) -> subprocess.CompletedProcess:
+        # Non FileNotFoundError: un OSError generico (permessi, risorse
+        # esaurite, ...) che avviare il processo puo' sollevare. Senza il
+        # ramo `except OSError` in screenshot.py, questo risalirebbe fino a
+        # cli.ocr_capture_main() come "Unexpected error", non come
+        # annullamento silenzioso.
+        raise PermissionError("simulato: permesso negato")
+
     _orig_ss_run = screenshot.subprocess.run
     try:
         screenshot.subprocess.run = _fake_run_success
@@ -5246,6 +5254,10 @@ def main() -> int:
 
         screenshot.subprocess.run = _fake_run_timeout
         check("screenshot: timeout selezione -> None",
+              screenshot.capture_area_png() is None)
+
+        screenshot.subprocess.run = _fake_run_oserror
+        check("screenshot: OSError generico all'avvio -> None, non solleva",
               screenshot.capture_area_png() is None)
     finally:
         screenshot.subprocess.run = _orig_ss_run

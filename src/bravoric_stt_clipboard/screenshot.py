@@ -38,6 +38,14 @@ def capture_area_png() -> bytes | None:
         except subprocess.TimeoutExpired:
             logger.info("selezione area schermata scaduta dopo %ds senza risposta", SELECTION_TIMEOUT_SECONDS)
             return None
+        except OSError as exc:
+            # Altri modi in cui avviare il processo puo' fallire (permessi,
+            # risorse esaurite, ...): stesso trattamento di FileNotFoundError,
+            # non un errore di OCR da notificare come "Unexpected error" —
+            # senza questa guardia l'eccezione risalirebbe fino a
+            # cli.ocr_capture_main(), che la tratterebbe come un difetto vero.
+            logger.warning("impossibile avviare gnome-screenshot: %s", exc)
+            return None
         if result.returncode != 0 or not out_path.is_file():
             # Annullamento (Esc) o area vuota: gnome-screenshot esce con un
             # codice non-zero e non scrive il file. Niente da segnalare.
