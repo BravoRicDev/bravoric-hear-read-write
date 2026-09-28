@@ -53,11 +53,29 @@ export default class ShellProbe extends Extension {
         this._id = GLib.timeout_add(GLib.PRIORITY_DEFAULT, 500, () => {
             try {
                 GLib.file_set_contents(`${this._dir}/dump.json`, JSON.stringify(snapshot()));
+                // Cartella home vista dall'estensione: serve al test per essere sicuro
+                // che legga e scriva SOLO dentro la sua HOME temporanea.
+                // Home directory seen by the extension: the test needs it to be sure it
+                // reads and writes ONLY inside its temporary HOME.
+                GLib.file_set_contents(`${this._dir}/home.txt`, GLib.get_home_dir());
                 const cmdPath = `${this._dir}/cmd`;
                 if (GLib.file_test(cmdPath, GLib.FileTest.EXISTS)) {
                     const cmd = new TextDecoder().decode(GLib.file_get_contents(cmdPath)[1]).trim();
                     GLib.unlink(cmdPath);
                     let result = 'unknown command';
+                    if (cmd === 'monitor-info') {
+                        const ind = Main.panel.statusArea['bravoric-indicator@local'];
+                        if (ind._monitor && !this._counting) {
+                            this._counting = true;
+                            this._events = 0;
+                            ind._monitor.connect('changed', () => { this._events++; });
+                        }
+                        result = JSON.stringify({ hasMonitor: !!ind._monitor, id: ind._monitorId, events: this._events ?? -1, cancelled: ind._monitor?.is_cancelled?.() });
+                    }
+                    if (cmd === 'refresh') {
+                        Main.panel.statusArea['bravoric-indicator@local']._refreshStatus();
+                        result = 'refreshed';
+                    }
                     const m = cmd.match(/^click (\w+)$/);
                     if (m) {
                         const entry = Object.entries(Main.panel.statusArea).find(([role]) => role.endsWith(`-quick-${m[1]}`));

@@ -193,6 +193,75 @@ calls = open(sys.argv[1]).read().split()
 sys.exit(0 if sorted(calls) == ['bravoric-ocr-capture', 'bravoric-stream-toggle', 'bravoric-stt-toggle'] else 1)
 PY
 
+echo "== stato dal backend: i bottoni seguono status.json / state from the backend =="
+# Scrive status.json come fa il backend (tmp + rename) nella HOME temporanea.
+# Writes status.json the way the backend does (tmp + rename) in the temporary HOME.
+write_status() {  # write_status <state> [service]
+    python3 - "$T/home/.cache/bravoric-stt-clipboard" "$1" "${2:-}" <<'PY'
+import json, os, sys, time
+directory, state, service = sys.argv[1:4]
+os.makedirs(directory, exist_ok=True)
+payload = {"state": state, "timestamp": time.time()}
+if service:
+    payload["service"] = service
+tmp = os.path.join(directory, "status.json.tmp")
+with open(tmp, "w") as fh:
+    json.dump(payload, fh)
+os.replace(tmp, os.path.join(directory, "status.json"))
+PY
+}
+# Gli eventi inotify di Gio possono non funzionare in certi ambienti (es. sandbox che
+# blocca inotify): un controllo indipendente, con un monitor Gio minimo, lo distingue
+# da un difetto dell'estensione. Se gli eventi non arrivano nemmeno li', lo stato si
+# applica con un refresh esplicito (comando della sonda) e il test lo dichiara.
+# Gio's inotify events may not work in some environments (e.g. a sandbox blocking
+# inotify): an independent check, with a minimal Gio monitor, tells it apart from a
+# defect of the extension. If events do not arrive there either, the state is applied
+# with an explicit refresh (probe command) and the test says so.
+cat > "$T/monitor-check.mjs" <<'JS'
+import Gio from 'gi://Gio';
+import GLib from 'gi://GLib';
+const dir = GLib.dir_make_tmp('brv-mon-XXXXXX');
+const monitor = Gio.File.new_for_path(dir).monitor_directory(Gio.FileMonitorFlags.NONE, null);
+let events = 0;
+monitor.connect('changed', () => { events++; });
+const loop = GLib.MainLoop.new(null, false);
+GLib.timeout_add(GLib.PRIORITY_DEFAULT, 300, () => {
+    GLib.file_set_contents(`${dir}/a.tmp`, '{}');
+    Gio.File.new_for_path(`${dir}/a.tmp`).move(Gio.File.new_for_path(`${dir}/a`), Gio.FileCopyFlags.OVERWRITE, null, null);
+    return GLib.SOURCE_REMOVE;
+});
+GLib.timeout_add(GLib.PRIORITY_DEFAULT, 1500, () => { loop.quit(); return GLib.SOURCE_REMOVE; });
+loop.run();
+print(events > 0 ? 'yes' : 'no');
+JS
+if [ "$(gjs -m "$T/monitor-check.mjs" 2>/dev/null | tail -1)" = yes ]; then INOTIFY=1; else INOTIFY=0; fi
+if [ "$INOTIFY" = 0 ]; then
+    echo "  SKIP  eventi inotify non disponibili in questo ambiente: lo stato e' applicato con un refresh esplicito / inotify events unavailable here: state applied with an explicit refresh"
+fi
+apply_state() {  # apply_state <state> [service]
+    write_status "$1" "${2:-}"
+    if [ "$INOTIFY" = 0 ]; then
+        sleep 0.5
+        probe_cmd refresh >/dev/null
+    fi
+}
+by_key="{i['role'].rsplit('-',1)[-1]: i for i in items if i['quick']}"
+apply_state recording stt
+wait_dump "(lambda b: b['dictation']['reactive'] and b['dictation']['accessible_name']=='Stop dictation' and not b['ocr']['reactive'] and not b['stream']['reactive'])($by_key)" \
+    && pass "in registrazione (stt): la dettatura e' cliccabile e diventa 'Stop dictation', OCR e streaming disabilitati" \
+    || fail "stato recording/stt non rispecchiato dai bottoni: $(dump)"
+apply_state processing stt
+wait_dump "(lambda b: not any(x['reactive'] for x in b.values()))($by_key)" \
+    && pass "in elaborazione nessun bottone e' cliccabile" || fail "in elaborazione i bottoni restano cliccabili: $(dump)"
+apply_state recording stream
+wait_dump "(lambda b: b['stream']['reactive'] and b['stream']['accessible_name']=='Stop streaming dictation' and not b['dictation']['reactive'])($by_key)" \
+    && pass "in registrazione (stream): lo streaming diventa 'Stop', la dettatura e' disabilitata" \
+    || fail "stato recording/stream non rispecchiato dai bottoni: $(dump)"
+apply_state idle
+wait_dump "(lambda b: all(x['reactive'] for x in b.values()) and b['dictation']['accessible_name']=='Start dictation')($by_key)" \
+    && pass "tornati a idle tutti cliccabili e con il nome 'Start ...'" || fail "ritorno a idle non rispecchiato: $(dump)"
+
 echo "== spegnere un bottone / turning one off =="
 setkey show-ocr-button false
 wait_dump "[i['role'].rsplit('-',1)[-1] for i in items if i['quick']]==['dictation','stream']" \
