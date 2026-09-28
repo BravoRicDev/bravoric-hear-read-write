@@ -370,7 +370,7 @@ def main() -> int:
     print("== notification icon slots ==")
     check("omitted icon keys default to empty", config.IconsConfig().error_general == "")
     legacy_raw = config._example_config_path().read_text()
-    legacy_raw = legacy_raw.replace('stt_recording_start = ""\\n', "").replace('stream_session_start = ""\\n', "").replace('stream_session_end = ""\\n', "").replace('stream_chunk_delivered = ""\\n', "").replace('error_general = ""\\n', "")
+    legacy_raw = legacy_raw.replace('stt_recording_start = ""\\n', "").replace('stream_session_start = ""\\n', "").replace('stream_processing_start = ""\\n', "").replace('stream_session_end = ""\\n', "").replace('stream_chunk_delivered = ""\\n', "").replace('error_general = ""\\n', "")
     legacy_cfg = config._build_config(__import__("tomllib").loads(legacy_raw))
     check("omitted new icon keys parse as empty overrides", all(getattr(legacy_cfg.icons, key) == "" for key in config.ICON_SLOT_KEYS))
     check("resolver preserves all registered slots", len(config.ICON_SLOT_REGISTRY) == len(config.ICON_SLOT_KEYS))
@@ -6707,6 +6707,36 @@ max_entries = 20
     _ext_keys = set(re.findall(r"key: '(notify-[a-z]+)'", _prefs_nt))
     check("GUI: ogni interruttore di notifica dell'estensione e' nello schema GSettings",
           bool(_ext_keys) and all(f'name="{_k}"' in _schema_txt for _k in _ext_keys))
+
+    # --- "Transcribing..." (stream at_end) passa da uno slot icona ----------
+    # Usava notify.ICON_PROCESSING fisso: non personalizzabile da GUI. Ora e'
+    # lo slot stream_processing_start (Icone > "Stream — Transcribing").
+    check("icone: lo slot stream_processing_start e' registrato",
+          "stream_processing_start" in config.ICON_SLOT_KEYS)
+    check("icone: IconsConfig ha il campo stream_processing_start",
+          config.IconsConfig().stream_processing_start == "")
+    _ico_dir = Path(tempfile.mkdtemp(prefix="brv-ico-"))
+    _ico_custom = _ico_dir / "custom.png"
+    _ico_custom.write_bytes(b"png")
+    _wav_ico = _ico_dir / "a.ogg"
+    _wav_ico.write_bytes(b"dati")
+    for _label_ico, _override_ico, _expect_ico in (
+            ("con override utente", str(_ico_custom), str(_ico_custom)),
+            ("senza override (fallback tema)", "", "content-loading-symbolic")):
+        _cfg_ico = _dc_nt.replace(
+            cfg_stream_min, notifications=True,
+            icons=_dc_nt.replace(cfg_stream_min.icons, stream_processing_start=_override_ico))
+        _sess_ico = stream_mod.StreamSession(_cfg_ico)
+        with mock.patch.object(stream_mod.notify, "maybe_send_simple") as _mss_ico, \
+             mock.patch.object(stream_mod, "try_with_fallback", return_value="ciao"), \
+             mock.patch.object(stream_mod.status, "write_status"), \
+             mock.patch.object(stream_mod, "_write_state"), \
+             mock.patch.object(stream_mod.notify, "maybe_send"), \
+             mock.patch.object(_sess_ico, "_record_history"):
+            _sess_ico._stop_at_end_transcribe(_wav_ico, "s-ico", "")
+        _icons_used = [c.kwargs.get("icon") for c in _mss_ico.call_args_list]
+        check(f"stream at_end 'Transcribing...': icona dallo slot ({_label_ico})",
+              _expect_ico in _icons_used)
 
     # --- 10. il percorso di default e' quello vero, non un doppione -------
     # (la verifica che il percorso reale non sia stato TOCCATO da nessun test

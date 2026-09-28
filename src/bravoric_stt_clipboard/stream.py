@@ -1721,7 +1721,7 @@ class StreamSession:
             notify.maybe_send_simple(
                 self._cfg.notifications, self._cfg.notif_stream.processing_start,
                 _("Streaming dictation"), _("Transcribing..."),
-                icon=notify.ICON_PROCESSING,
+                icon=notify.resolve_icon("stream_processing_start", self._cfg.icons.stream_processing_start),
             )
             try:
                 text = try_with_fallback(

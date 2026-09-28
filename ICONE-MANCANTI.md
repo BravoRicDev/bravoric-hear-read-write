@@ -13,18 +13,14 @@ sceglie una.
 | `stt_recording_start` | "STT: Registrazione avviata" (microfono aperto) | `media-record-symbolic` | `stt-recording-start.png` |
 | `stream_session_end` | "Streaming dictation — Sessione terminata" | `edit-copy-symbolic` | `stream-session-end.png` |
 | `stream_chunk_delivered` | "Streaming dictation" con il testo trascritto consegnato | `edit-copy-symbolic` | `stream-chunk-delivered.png` |
+| `stream_processing_start` | "Streaming dictation — Trascrizione in corso…" (modalità *at end*) | `content-loading-symbolic` | `stream-processing-start.png` |
+
+Tutti gli slot sono personalizzabili da GUI (*Icone*). "Trascrizione in corso…"
+dello streaming *at end* ha ora il suo slot (`stream_processing_start`,
+"Stream — Transcribing").
 
 Slot già coperti (nessuna azione): `stt_start`, `stt_raw`, `stt_clean`,
 `ocr_start`, `ocr_raw`, `ocr_clean`, `stream_session_start`, `error_general`.
-
-## Caso a parte: "Trascrizione in corso…" (streaming, modalità *at end*)
-
-Usa direttamente `notify.ICON_PROCESSING` (icona tema fissa), **non passa da
-nessuno slot**: non è personalizzabile da GUI. Serve una decisione: riusare
-uno slot esistente (es. `stream_session_start`) oppure aggiungerne uno nuovo
-(`stream_processing_start`), che richiede modifiche a `ICON_SLOT_REGISTRY`,
-`IconsConfig`, alla riga in `prefs.js` (`ICON_SLOTS`) e ai due config di
-esempio (il test `scripts/test-icon-completeness.py` li tiene allineati).
 
 ## Specifiche dei file esistenti (da imitare)
 

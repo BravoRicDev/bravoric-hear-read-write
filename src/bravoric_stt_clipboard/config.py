@@ -337,6 +337,7 @@ ICON_SLOT_REGISTRY = (
     IconSlot("ocr_clean", "OCR — Cleaned text ready", "OCR cleaned extraction ready", "backend", "ready"),
     IconSlot("stt_recording_start", "STT — Recording started", "STT recording began", "backend", "recording"),
     IconSlot("stream_session_start", "Stream — Session started", "Stream listening session began", "backend", "recording"),
+    IconSlot("stream_processing_start", "Stream — Transcribing", "Stream transcription in progress (at-end mode)", "backend", "processing"),
     IconSlot("stream_session_end", "Stream — Session ended", "Stream session ended", "backend", "ready"),
     IconSlot("stream_chunk_delivered", "Stream — Text delivered", "Stream transcription text delivered", "backend", "ready"),
     IconSlot("error_general", "General — Error", "Backend error without reliable narrower classification", "backend", "error"),
@@ -354,6 +355,7 @@ class IconsConfig:
     ocr_clean: str = ""
     stt_recording_start: str = ""
     stream_session_start: str = ""
+    stream_processing_start: str = ""
     stream_session_end: str = ""
     stream_chunk_delivered: str = ""
     error_general: str = ""

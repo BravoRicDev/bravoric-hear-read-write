@@ -183,3 +183,7 @@ msgstr "Stream — Testo consegnato"
 #: src/bravoric_stt_clipboard/config.py:ICON_SLOT_REGISTRY
 msgid "General — Error"
 msgstr "Generale — Errore"
+
+#: src/bravoric_stt_clipboard/config.py:ICON_SLOT_REGISTRY
+msgid "Stream — Transcribing"
+msgstr "Stream — Trascrizione in corso"

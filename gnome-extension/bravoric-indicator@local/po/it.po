@@ -1118,3 +1118,7 @@ msgstr "Notifica errori di incolla/digitazione dello streaming, comandi vocali n
 #: gnome-extension/bravoric-indicator@local/prefs.js
 msgid "Notify when the status file is restored or the backend times out"
 msgstr "Notifica quando il file di stato viene ripristinato o il backend va in timeout"
+
+#: gnome-extension/bravoric-indicator@local/prefs.js
+msgid "Stream — Transcribing"
+msgstr "Stream — Trascrizione in corso"

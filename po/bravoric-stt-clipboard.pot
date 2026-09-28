@@ -162,3 +162,7 @@ msgstr ""
 #: src/bravoric_stt_clipboard/stt.py:150
 msgid "STT: cleaned text ready"
 msgstr ""
+
+#: src/bravoric_stt_clipboard/config.py:ICON_SLOT_REGISTRY
+msgid "Stream — Transcribing"
+msgstr ""

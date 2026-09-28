@@ -197,6 +197,7 @@ const ICON_SLOTS = [
     { slot: 'ocr_clean', label: N_('OCR — Cleaned text ready') },
     { slot: 'stt_recording_start', label: N_('STT — Recording started') },
     { slot: 'stream_session_start', label: N_('Stream — Session started') },
+    { slot: 'stream_processing_start', label: N_('Stream — Transcribing') },
     { slot: 'stream_session_end', label: N_('Stream — Session ended') },
     { slot: 'stream_chunk_delivered', label: N_('Stream — Text delivered') },
     { slot: 'error_general', label: N_('General — Error') },

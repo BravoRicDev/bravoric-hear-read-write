@@ -1060,3 +1060,7 @@ msgstr ""
 #: gnome-extension/bravoric-indicator@local/prefs.js
 msgid "Notify when the status file is restored or the backend times out"
 msgstr ""
+
+#: gnome-extension/bravoric-indicator@local/prefs.js
+msgid "Stream — Transcribing"
+msgstr ""
