@@ -60,7 +60,7 @@ msgstr "OCR: elaborazione in corso"
 
 #: src/bravoric_stt_clipboard/ocr.py:31
 msgid "OCR: no image in clipboard"
-msgstr "OCR: nessuna immagine in clipboard"
+msgstr "OCR: nessuna immagine negli appunti"
 
 #: src/bravoric_stt_clipboard/ocr.py:37
 msgid "OCR: screenshot tool missing"

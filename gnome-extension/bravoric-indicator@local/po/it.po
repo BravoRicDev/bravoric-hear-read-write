@@ -327,7 +327,7 @@ msgstr "Canale di inserimento"
 
 #: gnome-extension/bravoric-indicator@local/prefs.js:653
 msgid "Choose clipboard insertion or simulated keystrokes."
-msgstr "Scegli l’inserimento dagli appunti o tramite tasti simulati."
+msgstr "Scegli l'inserimento dagli appunti o tramite tasti simulati."
 
 #: gnome-extension/bravoric-indicator@local/prefs.js:654
 msgid "Clipboard"
