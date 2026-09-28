@@ -94,6 +94,9 @@ STREAM_FIELDS = {
     "chunk_log_max_lines": "int",
     # Ex costanti di modulo, ora regolabili (clamp in config.py/_coerce_int).
     # Former module constants, now tunable (clamped in config.py/_coerce_int).
+    # Pausa di un endpoint dopo errori ripetuti (0 = disattivata).
+    # Pause of an endpoint after repeated failures (0 = disabled).
+    "endpoint_cooldown_seconds": "float",
     "prompt_max_chars": "int",
     "vad_floor_window_frames": "int",
     "vad_min_floor_frames": "int",
@@ -103,6 +106,7 @@ STREAM_FIELDS = {
 # range viene clampato, un valore invalido/non finito viene rifiutato.
 STREAM_FLOAT_CLAMPS = {
     "vad_margin_db": (0.0, 20.0),
+    "endpoint_cooldown_seconds": (0.0, 86400.0),
 }
 
 STORAGE_SECTIONS = {
@@ -810,6 +814,8 @@ def get_state() -> dict:
             # scrive il file, non un secondo criterio qui.
             "chunk_log_max_lines": _coerce_int(
                 raw.get("stream", {}).get("chunk_log_max_lines"), 0, 0, 1_000_000),
+            "endpoint_cooldown_seconds": _coerce_float_clamped(
+                raw.get("stream", {}).get("endpoint_cooldown_seconds"), 3600.0, 0.0, 86400.0),
             "prompt_max_chars": _coerce_int(raw.get("stream", {}).get("prompt_max_chars"), 800, 100, 4000),
             "vad_floor_window_frames": _coerce_int(
                 raw.get("stream", {}).get("vad_floor_window_frames"), 100, 20, 1000),

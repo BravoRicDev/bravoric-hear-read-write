@@ -1592,6 +1592,7 @@ def main() -> int:
             "chunk_log_max_lines",
             # Ex costanti di modulo ora regolabili / former module constants.
             "prompt_max_chars", "vad_floor_window_frames", "vad_min_floor_frames",
+            "endpoint_cooldown_seconds",
         }
         == set(state_pool.get("stream", {}).keys()),
     )
@@ -7042,6 +7043,38 @@ max_entries = 20
                               (ROOT / "gnome-extension" / "bravoric-indicator@local" / "prefs.js").read_text(encoding="utf-8"))
     check("GUI: i preset di formato == AUDIO_FORMATS del backend (stesso ordine di importanza)",
           set(_gui_presets) == set(config_editor.AUDIO_FORMATS) and _gui_presets[0] == "ogg-opus")
+
+    # endpoint_cooldown_seconds: prima solo in config.py, senza GUI ne' esempio.
+    # endpoint_cooldown_seconds: used to live only in config.py, no GUI or example.
+    _cd_toml = Path(tempfile.mkdtemp(prefix="bravoric-cooldown-")) / "config.toml"
+    _saved_cd = config_editor.CONFIG_PATH
+    try:
+        config_editor.CONFIG_PATH = _cd_toml
+        _cd_toml.write_text('[general]\nnotifications = true\n[[stt.fallback]]\nname = "a"\nendpoint = "http://x/v1"\nmodel = "m"\n[stream]\nmode = "per_chunk"\n')
+        config_editor.set_stream_field("endpoint_cooldown_seconds", "120")
+        check("cooldown: l'editor scrive il valore e get_state lo espone",
+              config_editor.get_state()["stream"]["endpoint_cooldown_seconds"] == 120.0)
+        check("cooldown: il backend rilegge il valore scritto",
+              config.load_config(_cd_toml).stream.endpoint_cooldown_seconds == 120.0)
+        config_editor.set_stream_field("endpoint_cooldown_seconds", "0")
+        check("cooldown: 0 (disattivato) e' un valore valido",
+              config.load_config(_cd_toml).stream.endpoint_cooldown_seconds == 0.0)
+        _cd_rej = 0
+        for _bad in ("nan", "abc", "inf"):
+            try:
+                config_editor.set_stream_field("endpoint_cooldown_seconds", _bad)
+            except config_editor.ConfigEditorError:
+                _cd_rej += 1
+        check("cooldown: valori non numerici o non finiti rifiutati", _cd_rej == 3)
+        # Un valore finito fuori range viene clampato (regola di STREAM_FLOAT_CLAMPS).
+        # A finite out-of-range value is clamped (STREAM_FLOAT_CLAMPS rule).
+        config_editor.set_stream_field("endpoint_cooldown_seconds", "-5")
+        _cd_lo = config_editor.get_state()["stream"]["endpoint_cooldown_seconds"]
+        config_editor.set_stream_field("endpoint_cooldown_seconds", "99999999")
+        _cd_hi = config_editor.get_state()["stream"]["endpoint_cooldown_seconds"]
+        check("cooldown: valori finiti fuori range clampati a 0 e 86400", (_cd_lo, _cd_hi) == (0.0, 86400.0))
+    finally:
+        config_editor.CONFIG_PATH = _saved_cd
 
     # --- 10. il percorso di default e' quello vero, non un doppione -------
     # (la verifica che il percorso reale non sia stato TOCCATO da nessun test

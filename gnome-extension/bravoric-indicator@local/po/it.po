@@ -1380,3 +1380,15 @@ msgstr "Formato di registrazione"
 #: gnome-extension/bravoric-indicator@local/prefs.js
 msgid "The ffmpeg encoder for the chosen format must be installed; it applies from the next recording"
 msgstr "L'encoder ffmpeg del formato scelto deve essere installato; vale dalla prossima registrazione"
+
+#: gnome-extension/bravoric-indicator@local/prefs.js
+msgid "Streaming reliability"
+msgstr "Affidabilità dello streaming"
+
+#: gnome-extension/bravoric-indicator@local/prefs.js
+msgid "Endpoint cooldown (seconds)"
+msgstr "Pausa endpoint (secondi)"
+
+#: gnome-extension/bravoric-indicator@local/prefs.js
+msgid "How long an endpoint stays out of the pool after repeated failures; 0 never pauses one. Applies from the next session"
+msgstr "Per quanto tempo un endpoint resta fuori dal pool dopo errori ripetuti; 0 non ne sospende mai. Vale dalla sessione successiva"

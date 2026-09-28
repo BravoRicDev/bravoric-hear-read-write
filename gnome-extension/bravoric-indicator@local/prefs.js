@@ -1594,6 +1594,15 @@ export default class BravoricPreferences extends ExtensionPreferences {
             indicatorGroup.add(row);
         }
 
+        const reliabilityGroup = new Adw.PreferencesGroup({ title: _('Streaming reliability') });
+        page.add(reliabilityGroup);
+        spin(reliabilityGroup, {
+            title: N_('Endpoint cooldown (seconds)'),
+            subtitle: N_('How long an endpoint stays out of the pool after repeated failures; 0 never pauses one. Applies from the next session'),
+            lower: 0, upper: 86400, step: 60, value: state.stream?.endpoint_cooldown_seconds ?? 3600,
+            save: v => runConfigEditor(['set-stream', 'endpoint_cooldown_seconds', v]).success,
+        });
+
         const diagGroup = new Adw.PreferencesGroup({ title: _('Diagnostics') });
         page.add(diagGroup);
         spin(diagGroup, {

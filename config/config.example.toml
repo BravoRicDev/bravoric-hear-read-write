@@ -302,6 +302,9 @@ max_concurrent_chunks = 3         # concurrent STT requests (1-8); 0 or missing 
 # max_concurrent_chunks: the per-endpoint gate LIMITS, it does not authorize.
 # NOT hot-reloaded: it applies from the next session.
 dispatch_mode = "auto"             # "auto" | "sequential"
+# Seconds an endpoint is left out of the pool after repeated failures
+# (0 = never pause an endpoint). Range 0-86400.
+endpoint_cooldown_seconds = 3600
 chunk_timeout_seconds = 30.0      # DEPRECATED, ignored: each level's timeout_seconds decides
 # JSONL chunk log: one line per chunk in
 # ~/.cache/bravoric-stt-clipboard/chunk_log.jsonl, with provenance and timing
