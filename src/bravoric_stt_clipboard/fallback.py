@@ -6,6 +6,7 @@ from collections.abc import Callable
 from typing import TypeVar
 
 from .api_client import ApiError, chat_cleanup
+from .chunk_log import redact
 from .config import FallbackLevel
 
 logger = logging.getLogger(__name__)
@@ -27,8 +28,12 @@ def try_with_fallback(levels: list[FallbackLevel], call: Callable[[FallbackLevel
         try:
             return call(level)
         except (ApiError, OSError, TimeoutError) as exc:
-            logger.warning("Level %s failed: %s", level.name, exc)
-            errors.append(f"{level.name}: {exc}")
+            # redact(): un errore requests include l'URL, e con un endpoint
+            # del tipo ...?api_key=XXX la chiave finiva nel journal e, via
+            # AllLevelsFailedError, in una notifica desktop (misurato).
+            message = redact(str(exc))
+            logger.warning("Level %s failed: %s", level.name, message)
+            errors.append(f"{level.name}: {message}")
 
     raise AllLevelsFailedError("All levels failed: " + " | ".join(errors))
 

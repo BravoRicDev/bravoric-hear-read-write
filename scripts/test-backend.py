@@ -5636,6 +5636,26 @@ def main() -> int:
         check(f"api_client.{_name_err}: il corpo d'errore e' troncato (non 5000 caratteri in una notifica)",
               0 < len(_msg_err) < api_client.MAX_ERROR_BODY_CHARS + 120)
 
+    # fallback: un errore requests/OSError include l'URL; con un endpoint
+    # ...?api_key=XXX la chiave finiva in journal e notifica (misurato).
+    from bravoric_stt_clipboard import fallback as _fb_mod
+    _lv_fb = config.FallbackLevel(
+        name="L", endpoint="http://h/v1", model="m", api_key_env="", api_key="",
+        ca_cert="", timeout_seconds=5)
+
+    def _boom_fb(_level: Any) -> str:
+        raise OSError("Max retries with url: /v1/audio?api_key=TOPSECRET99 (Caused by X)")
+
+    try:
+        _fb_mod.try_with_fallback([_lv_fb], _boom_fb)
+        _fb_msg = ""
+    except _fb_mod.AllLevelsFailedError as exc:
+        _fb_msg = str(exc)
+    check("fallback: la chiave in un URL d'errore NON compare in AllLevelsFailedError (-> notifica)",
+          bool(_fb_msg) and "TOPSECRET99" not in _fb_msg)
+    check("fallback: il nome del livello e il resto dell'errore restano leggibili",
+          "L:" in _fb_msg and "Max retries" in _fb_msg and "api_key=" in _fb_msg)
+
     # api_client._keep_leading_words: pura, mai testata direttamente.
     _klw = api_client._keep_leading_words
     check("keep_leading_words: budget esatto tiene tutte le parole ('ab cd' = 5)",
