@@ -7002,6 +7002,47 @@ max_entries = 20
     check("indicatore: default dello schema == valori storici delle ex costanti",
           all(_schema_ints[k][0] == v for k, v in _expected_defaults.items()))
 
+    # Formato di registrazione: format e codec si scrivono insieme (preset).
+    # Recording format: format and codec are written together (preset).
+    _af_dir = Path(tempfile.mkdtemp(prefix="bravoric-audioformat-"))
+    _af_toml = _af_dir / "config.toml"
+    _saved_af = config_editor.CONFIG_PATH
+    try:
+        config_editor.CONFIG_PATH = _af_toml
+        _af_toml.write_text('[general]\nnotifications = true\n[stt]\nlanguage = "it"\n')
+        config_editor.set_audio_format("mp3")
+        _af = tomllib.loads(_af_toml.read_text(encoding="utf-8"))
+        check("set_audio_format: crea [audio] e scrive format+codec insieme",
+              _af["audio"] == {"format": "mp3", "codec": "libmp3lame"} and _af["stt"]["language"] == "it")
+        check("set_audio_format: get_state espone il preset",
+              config_editor.get_state()["general"]["audio_format"] == "mp3")
+        config_editor.set_audio_format("ogg-opus")
+        _af = tomllib.loads(_af_toml.read_text(encoding="utf-8"))
+        check("set_audio_format: il cambio sostituisce entrambe le chiavi senza duplicarle",
+              _af["audio"] == {"format": "ogg", "codec": "libopus"}
+              and _af_toml.read_text(encoding="utf-8").count("codec =") == 1)
+        _af_toml.write_text('[audio]\nformat = "wav"\ncodec = "pcm_s16le"\n')
+        check("set_audio_format: coppia non standard -> preset vuoto (voce 'personalizzato')",
+              config_editor.get_state()["general"]["audio_format"] == "")
+        _af_rejected = False
+        try:
+            config_editor.set_audio_format("wav")
+        except config_editor.ConfigEditorError:
+            _af_rejected = True
+        check("set_audio_format: preset sconosciuto rifiutato e file intatto",
+              _af_rejected and 'format = "wav"' in _af_toml.read_text(encoding="utf-8"))
+        check("set_audio_format: ogni preset scrive una coppia che config.py rilegge",
+              all((config_editor.set_audio_format(_n), True)[1]
+                  and tomllib.loads(_af_toml.read_text(encoding="utf-8"))["audio"]
+                  == {"format": _f, "codec": _c}
+                  for _n, (_f, _c) in config_editor.AUDIO_FORMATS.items()))
+    finally:
+        config_editor.CONFIG_PATH = _saved_af
+    _gui_presets = re.findall(r"\{ preset: '([\w-]+)', label: '[^']+' \}",
+                              (ROOT / "gnome-extension" / "bravoric-indicator@local" / "prefs.js").read_text(encoding="utf-8"))
+    check("GUI: i preset di formato == AUDIO_FORMATS del backend (stesso ordine di importanza)",
+          set(_gui_presets) == set(config_editor.AUDIO_FORMATS) and _gui_presets[0] == "ogg-opus")
+
     # --- 10. il percorso di default e' quello vero, non un doppione -------
     # (la verifica che il percorso reale non sia stato TOCCATO da nessun test
     # e' in fondo a main(): confronta mtime+size reali, non stringhe di path

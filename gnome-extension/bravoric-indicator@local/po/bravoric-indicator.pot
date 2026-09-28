@@ -1312,3 +1312,20 @@ msgstr ""
 #: gnome-extension/bravoric-indicator@local/prefs.js
 msgid "Whisper prompt limit (characters)"
 msgstr ""
+
+#: gnome-extension/bravoric-indicator@local/prefs.js
+#, javascript-format
+msgid "%s (recommended)"
+msgstr ""
+
+#: gnome-extension/bravoric-indicator@local/prefs.js
+msgid "Custom (set in config.toml)"
+msgstr ""
+
+#: gnome-extension/bravoric-indicator@local/prefs.js
+msgid "Recording format"
+msgstr ""
+
+#: gnome-extension/bravoric-indicator@local/prefs.js
+msgid "The ffmpeg encoder for the chosen format must be installed; it applies from the next recording"
+msgstr ""

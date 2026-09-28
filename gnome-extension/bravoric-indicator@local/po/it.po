@@ -1363,3 +1363,20 @@ msgstr "Intervallo controllo watchdog (secondi)"
 #: gnome-extension/bravoric-indicator@local/prefs.js
 msgid "Whisper prompt limit (characters)"
 msgstr "Limite del prompt Whisper (caratteri)"
+
+#: gnome-extension/bravoric-indicator@local/prefs.js
+#, javascript-format
+msgid "%s (recommended)"
+msgstr "%s (consigliato)"
+
+#: gnome-extension/bravoric-indicator@local/prefs.js
+msgid "Custom (set in config.toml)"
+msgstr "Personalizzato (impostato in config.toml)"
+
+#: gnome-extension/bravoric-indicator@local/prefs.js
+msgid "Recording format"
+msgstr "Formato di registrazione"
+
+#: gnome-extension/bravoric-indicator@local/prefs.js
+msgid "The ffmpeg encoder for the chosen format must be installed; it applies from the next recording"
+msgstr "L'encoder ffmpeg del formato scelto deve essere installato; vale dalla prossima registrazione"

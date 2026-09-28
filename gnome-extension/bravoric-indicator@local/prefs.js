@@ -354,6 +354,17 @@ function setGeneralField(section, field, value) {
 // altre, es. 44100): stesso elenco di config_editor.GENERAL_FIELDS.
 const SAMPLE_RATES = [8000, 12000, 16000, 24000, 48000];
 
+// Preset di formato di registrazione: nome (chiave di AUDIO_FORMATS nel
+// backend) e etichetta. Nomi propri: non si traducono.
+// Recording format presets: name (key of AUDIO_FORMATS in the backend) and
+// label. Proper names: not translated.
+const AUDIO_FORMAT_PRESETS = [
+    { preset: 'ogg-opus', label: 'Ogg Opus' },
+    { preset: 'ogg-vorbis', label: 'Ogg Vorbis' },
+    { preset: 'mp3', label: 'MP3' },
+    { preset: 'flac', label: 'FLAC' },
+];
+
 // Valori dell'indicatore in GSettings (schema): chiave, limiti e testi. Le
 // chiavi sono lette da extension.js con settingInt(); un'anti-deriva nei test
 // verifica che schema, estensione e questa lista coincidano.
@@ -1468,6 +1479,36 @@ export default class BravoricPreferences extends ExtensionPreferences {
                 rateRow.selected = Math.max(0, SAMPLE_RATES.indexOf(getServicesState()?.general?.sample_rate));
         });
         audioGroup.add(rateRow);
+
+        // Formato di registrazione: format e codec cambiano insieme (preset).
+        // Se la config ha una coppia non standard si aggiunge una voce
+        // "personalizzato" selezionata, che non scrive nulla finche' non si
+        // sceglie un preset.
+        // Recording format: format and codec change together (preset). If the
+        // config holds a non-standard pair a selected "custom" entry is added,
+        // which writes nothing until a preset is chosen.
+        const formatLabels = AUDIO_FORMAT_PRESETS.map((p, i) => (
+            i === 0 ? _('%s (recommended)').replace('%s', p.label) : p.label));
+        const currentPreset = AUDIO_FORMAT_PRESETS.findIndex(p => p.preset === general.audio_format);
+        if (currentPreset === -1)
+            formatLabels.push(_('Custom (set in config.toml)'));
+        const formatRow = new Adw.ComboRow({
+            title: _('Recording format'),
+            subtitle: _('The ffmpeg encoder for the chosen format must be installed; it applies from the next recording'),
+            model: new Gtk.StringList({ strings: formatLabels }),
+            selected: currentPreset === -1 ? formatLabels.length - 1 : currentPreset,
+        });
+        formatRow.connect('notify::selected', () => {
+            const picked = AUDIO_FORMAT_PRESETS[formatRow.selected];
+            if (!picked)
+                return;   // voce "personalizzato": nessuna scrittura / custom entry: no write
+            if (!runConfigEditor(['set-audio-format', picked.preset]).success) {
+                const back = AUDIO_FORMAT_PRESETS.findIndex(
+                    p => p.preset === getServicesState()?.general?.audio_format);
+                formatRow.selected = back === -1 ? formatLabels.length - 1 : back;
+            }
+        });
+        audioGroup.add(formatRow);
 
         const clipGroup = new Adw.PreferencesGroup({ title: _('Clipboard') });
         page.add(clipGroup);

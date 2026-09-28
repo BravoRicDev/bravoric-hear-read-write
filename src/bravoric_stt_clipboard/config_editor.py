@@ -569,6 +569,26 @@ GENERAL_FIELDS: dict[tuple[str, str], tuple] = {
 }
 
 
+# Formato di registrazione: `format` (estensione del file, quindi contenitore
+# scelto da ffmpeg) e `codec` vanno cambiati INSIEME, altrimenti si otterrebbe
+# una coppia invalida (es. opus dentro mp3) e ogni registrazione fallirebbe.
+# Per questo la GUI sceglie un preset e set_audio_format scrive le due chiavi
+# in una sola scrittura atomica. Tutti i preset accettano le frequenze di
+# GENERAL_FIELDS["audio.sample_rate"] (il sottoinsieme sicuro anche per opus).
+# Recording format: `format` (file extension, hence the container ffmpeg
+# picks) and `codec` must change TOGETHER, otherwise the pair would be invalid
+# (e.g. opus inside mp3) and every recording would fail. The GUI therefore
+# picks a preset and set_audio_format writes both keys in one atomic write.
+# Every preset accepts the sample rates of GENERAL_FIELDS["audio.sample_rate"]
+# (the subset that is safe for opus too).
+AUDIO_FORMATS = {
+    "ogg-opus": ("ogg", "libopus"),
+    "ogg-vorbis": ("ogg", "libvorbis"),
+    "mp3": ("mp3", "libmp3lame"),
+    "flac": ("flac", "flac"),
+}
+
+
 def _general_toml_value(section: str, field: str, value: str) -> str:
     kind = GENERAL_FIELDS[(section, field)]
     label = f"{section}.{field}"
@@ -619,6 +639,24 @@ def set_general_field(section: str, field: str, value: str) -> None:
             return
         start, end = _find_block_bounds(lines, header, 0)
         _find_or_insert_key_in_block(lines, start, end, field, toml_value)
+        _write_validated(lines)
+
+
+def set_audio_format(preset: str) -> None:
+    """Scrive [audio] format e codec insieme, da un preset di AUDIO_FORMATS.
+
+    Writes [audio] format and codec together, from an AUDIO_FORMATS preset.
+    """
+    if preset not in AUDIO_FORMATS:
+        raise ConfigEditorError(f"audio format must be one of {sorted(AUDIO_FORMATS)}, got {preset!r}")
+    fmt, codec = AUDIO_FORMATS[preset]
+    with _locked():
+        lines = CONFIG_PATH.read_text().split("\n")
+        if not any(line.strip() == "[audio]" for line in lines):
+            lines.extend(["", "[audio]"])
+        for key, value in (("format", fmt), ("codec", codec)):
+            start, end = _find_block_bounds(lines, "[audio]", 0)
+            _find_or_insert_key_in_block(lines, start, end, key, _toml_line_value("tool", value))
         _write_validated(lines)
 
 
@@ -719,6 +757,13 @@ def get_state() -> dict:
             "bitrate_kbps": _coerce_int(raw.get("audio", {}).get("bitrate_kbps"), 16, 8, 320),
             "sample_rate": _coerce_int(raw.get("audio", {}).get("sample_rate"), 16000, 8000, 48000),
             "double_injection": _coerce_bool(raw.get("clipboard", {}).get("double_injection", True)),
+            # Preset di formato: "" se la coppia format/codec non ne e' uno.
+            # Format preset: "" when the format/codec pair is not one of them.
+            "audio_format": next(
+                (name for name, pair in AUDIO_FORMATS.items()
+                 if pair == (str(raw.get("audio", {}).get("format", "ogg")),
+                             str(raw.get("audio", {}).get("codec", "libopus")))),
+                ""),
             "clipboard_timeout_seconds": _coerce_float_clamped(
                 raw.get("general", {}).get("clipboard_timeout_seconds"), 5.0, 1.0, 60.0),
             "notify_timeout_seconds": _coerce_float_clamped(
@@ -795,7 +840,7 @@ def main(argv: list[str] | None = None) -> int:
     if not args:
         print("usage: config_editor.py get | set-level <service> <idx> <field> <value> "
               "| set-section <service> <field> <value> | set-storage <section> <field> <value> "
-              "| set-stream <field> <value> | set-stream-commands <json> | set-general <section> <field> <value> | set-history-max <value> | clear-history "
+              "| set-stream <field> <value> | set-stream-commands <json> | set-general <section> <field> <value> | set-audio-format <preset> | set-history-max <value> | clear-history "
               "| set-notification <key> <value> | set-icon <slot> <value> | reset",
               file=sys.stderr)
         return 1
@@ -822,6 +867,10 @@ def main(argv: list[str] | None = None) -> int:
         elif args[0] == "set-stream":
             _, field, value = args
             set_stream_field(field, value)
+            print("ok")
+        elif args[0] == "set-audio-format":
+            _, preset = args
+            set_audio_format(preset)
             print("ok")
         elif args[0] == "set-stream-commands":
             set_stream_commands(json.loads(args[1]))

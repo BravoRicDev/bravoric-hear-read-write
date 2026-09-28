@@ -44,8 +44,12 @@ ocr_on_error = true
 stream_on_error = true
 
 [audio]
+# format e codec devono essere una coppia valida (ffmpeg sceglie il contenitore
+# dal formato): ogg + libopus (consigliata), ogg + libvorbis, mp3 + libmp3lame,
+# flac + flac. La finestra delle preferenze cambia i due valori insieme.
 format = "ogg"
 codec = "libopus"
+# sample_rate: 8000, 12000, 16000, 24000 o 48000 (libopus non accetta altro).
 sample_rate = 16000
 bitrate_kbps = 16
 toggle_debounce_seconds = 1

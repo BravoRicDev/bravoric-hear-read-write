@@ -644,6 +644,9 @@ console.log('Smoke test GTK4/Adw PASS: riga, segnali, visibilità, cattura tasto
     const rateMatch = prefsSrc.match(/const SAMPLE_RATES = \[[^\]]*\];/);
     if (!rateMatch)
         throw new Error('SAMPLE_RATES non trovato in prefs.js');
+    const fmtMatch = prefsSrc.match(/const AUDIO_FORMAT_PRESETS = \[[\s\S]*?\n\];/);
+    if (!fmtMatch)
+        throw new Error('AUDIO_FORMAT_PRESETS non trovato in prefs.js');
     const indMatch = prefsSrc.match(/const INDICATOR_SETTINGS = \[[\s\S]*?\n\];/);
     if (!indMatch)
         throw new Error('INDICATOR_SETTINGS non trovato in prefs.js');
@@ -676,8 +679,10 @@ console.log('Smoke test GTK4/Adw PASS: riga, segnali, visibilità, cattura tasto
         return accept;
     };
     const streamWrites = [];
-    const runConfigEditor = args => { streamWrites.push(args); return { success: true }; };
+    let editorAccepts = true;
+    const runConfigEditor = args => { streamWrites.push(args); return { success: editorAccepts }; };
     const general = {
+        audio_format: 'ogg-opus',
         toggle_debounce_seconds: 1.5, retry_on_error: true, retry_count: 3,
         bitrate_kbps: 24, sample_rate: 24000, double_injection: false,
         clipboard_tool: 'wl-copy', clipboard_paste_tool: 'wl-paste',
@@ -687,7 +692,7 @@ console.log('Smoke test GTK4/Adw PASS: riga, segnali, visibilità, cattura tasto
 
     const make = new Function('Adw', 'Gtk', 'Gio', 'GLib', '_', 'N_', 'debounce',
         'getServicesState', 'runConfigEditor', 'setGeneralField',
-        `${rateMatch[0]}\n${indMatch[0]}\nreturn { build: function (window) {${body}}, INDICATOR_SETTINGS };`);
+        `${rateMatch[0]}\n${fmtMatch[0]}\n${indMatch[0]}\nreturn { build: function (window) {${body}}, INDICATOR_SETTINGS };`);
     const built2 = make(AdwRec, Gtk, { SettingsBindFlags: { DEFAULT: 0 } }, GLibFake,
         t => t, t => t, debounce, () => state, runConfigEditor, setGeneralField);
     const method = built2.build;
@@ -801,6 +806,32 @@ console.log('Smoke test GTK4/Adw PASS: riga, segnali, visibilità, cattura tasto
     if (JSON.stringify(streamWrites.map(a => a.slice(1).join('='))) !== JSON.stringify(
         ['prompt_max_chars=900', 'vad_floor_window_frames=80', 'vad_min_floor_frames=15']))
         throw new Error(`scritture stream inattese: ${JSON.stringify(streamWrites)}`);
+
+    // Formato di registrazione: preset dallo stato, scrittura atomica, revert.
+    // Recording format: preset from the state, atomic write, revert.
+    const fmt = byTitle(Adw.ComboRow, 'Recording format');
+    if (fmt.selected !== 0)
+        throw new Error('audio_format ogg-opus non selezionato (indice 0)');
+    streamWrites.length = 0;
+    fmt.selected = 2;
+    if (JSON.stringify(streamWrites.at(-1)) !== JSON.stringify(['set-audio-format', 'mp3']))
+        throw new Error(`preset scritto male: ${JSON.stringify(streamWrites)}`);
+    editorAccepts = false;
+    fmt.selected = 3;
+    if (fmt.selected !== 0)
+        throw new Error('rifiuto del backend: il formato non e tornato al valore dello stato');
+    editorAccepts = true;
+    // Coppia non standard: voce "personalizzato" selezionata, nessuna scrittura.
+    // Non-standard pair: "custom" entry selected, no write.
+    state = { general: { ...general, audio_format: '' }, stream: {} };
+    streamWrites.length = 0;
+    method.call(self, { add() {} });
+    const fmtCustom = built.filter(o => o instanceof Adw.ComboRow && o.title === 'Recording format').at(-1);
+    if (fmtCustom.selected !== 4 || fmtCustom.model.get_n_items() !== 5)
+        throw new Error('voce personalizzato non selezionata');
+    if (streamWrites.some(a => a[0] === 'set-audio-format'))
+        throw new Error('la costruzione ha scritto il formato');
+    state = { general, stream: { chunk_log_max_lines: 500 } };
 
     // Schema stantio: nessun bind (una chiave assente sarebbe fatale).
     // Stale schema: no bind (a missing key would be fatal).
