@@ -52,6 +52,16 @@ SERVICES = {
 # inerte ma leggibili/salvabili senza errori (SPEC-MAX-CONCURRENCY sez. 3).
 LEVEL_FIELDS = ["name", "endpoint", "model", "api_key_env", "api_key", "ca_cert", "timeout_seconds", "hotwords_in_prompt", "parallel", "max_concurrency"]
 
+# Whitelist unica, non per-servizio (stesso stile di LEVEL_FIELDS): la GUI
+# invia gia' solo la combinazione giusta per ogni servizio (SERVICES in
+# prefs.js), questa e' difesa in profondita' contro un `field` malformato o
+# non previsto che finirebbe letteralmente in `f"{field} = {toml_value}"`
+# nel file (set_level_field/set_stream_field/set_notification_field/
+# set_icon_field validano gia' il proprio; questo e set_storage_field sotto
+# erano gli unici due senza, incoerenza trovata dal vivo).
+SECTION_FIELDS = frozenset({"enabled", "system_prompt", "language", "prompt", "hotwords", "capture_screenshot"})
+STORAGE_FIELDS = frozenset({"base_dir", "enabled", "retention_hours"})
+
 ICON_SLOTS = list(ICON_SLOT_KEYS)
 
 STREAM_FIELDS = {
@@ -282,6 +292,8 @@ def set_section_field(service: str, field: str, value: str) -> None:
     header = SERVICES[service]["section_header"]
     if header is None:
         raise ConfigEditorError(f"Service '{service}' has no single editable section")
+    if field not in SECTION_FIELDS:
+        raise ConfigEditorError(f"Unknown field: {field}")
 
     toml_value = _toml_line_value(field, value)
     with _locked():
@@ -325,6 +337,8 @@ def set_storage_field(section: str, field: str, value: str) -> None:
     {'base_dir', 'enabled', 'retention_hours'}."""
     if section not in STORAGE_SECTIONS:
         raise ConfigEditorError(f"Unknown storage section: {section}")
+    if field not in STORAGE_FIELDS:
+        raise ConfigEditorError(f"Unknown field: {field}")
 
     with _locked():
         lines = CONFIG_PATH.read_text().split("\n")

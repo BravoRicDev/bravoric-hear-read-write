@@ -397,6 +397,23 @@ def main() -> int:
     except config_editor.ConfigEditorError:
         invalid_icon_rejected = True
     check("editor validates slot names", invalid_icon_rejected)
+    # set_section_field/set_storage_field validavano service/section ma non
+    # field: unica incoerenza coi 4 setter gemelli (set_level_field,
+    # set_stream_field, set_notification_field, set_icon_field). field non
+    # e' mai attaccante-controllato dalla GUI reale, ma finiva letteralmente
+    # in f"{field} = {toml_value}" nel file: difesa in profondita' aggiunta.
+    try:
+        config_editor.set_section_field("stt", "campo-inventato", "x")
+        invalid_section_field_rejected = False
+    except config_editor.ConfigEditorError:
+        invalid_section_field_rejected = True
+    check("editor validates set_section_field field names", invalid_section_field_rejected)
+    try:
+        config_editor.set_storage_field("stt_raw", "campo-inventato", "x")
+        invalid_storage_field_rejected = False
+    except config_editor.ConfigEditorError:
+        invalid_storage_field_rejected = True
+    check("editor validates set_storage_field field names", invalid_storage_field_rejected)
     absent_icon_path = tmp / "absent" / "config.toml"
     config_editor.CONFIG_PATH = absent_icon_path
     try:
