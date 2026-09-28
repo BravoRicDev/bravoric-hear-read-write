@@ -971,7 +971,10 @@ class BravoricIndicator extends PanelMenu.Button {
         });
         try {
             file.replace_contents_async(new TextEncoder().encode(payload), null, false,
-                Gio.FileCreateFlags.REPLACE_DESTINATION, null, (source, result) => {
+                // PRIVATE: il file contiene il testo dettato in tempo reale; senza,
+                // GIO lo crea con l'umask (0644) e ogni utente locale lo legge.
+                // Gli altri file di ~/.cache/bravoric-stt-clipboard sono 0600.
+                Gio.FileCreateFlags.REPLACE_DESTINATION | Gio.FileCreateFlags.PRIVATE, null, (source, result) => {
                     try {
                         source.replace_contents_finish(result);
                     } catch (e) {

@@ -6448,6 +6448,33 @@ max_entries = 20
     check("make_attempt: livello senza resolved_api_key non rompe il log",
           cl_mod.make_attempt(_lv_broken, 5, False, "boom")["err"] == "boom")
 
+    # --- privacy: la rotazione non deve rendere il log leggibile da altri ----
+    # Misurato dal vivo: il chunk_log reale (testo dettato) era 0644 dopo la
+    # rotazione, perche' _rotate riscriveva con open(tmp, "wb") sotto umask.
+    _cl_priv_dir = Path(tempfile.mkdtemp(prefix="brv-clpriv-"))
+    _cl_priv = _cl_priv_dir / "chunk_log.jsonl"
+    _old_umask = os.umask(0o022)
+    try:
+        for _i_priv in range(6):
+            cl_mod.append_record({"seq": _i_priv, "text": "riservato"}, path=_cl_priv, max_lines=3)
+        _mode_after_rotate = _cl_priv.stat().st_mode & 0o777
+        _rows_after_rotate = len(cl_mod.read_records(_cl_priv))
+    finally:
+        os.umask(_old_umask)
+    check("chunk_log: la rotazione e' avvenuta davvero (il test misura il file ruotato)",
+          _rows_after_rotate <= 3)
+    check("chunk_log: dopo la rotazione il file resta 0600 (testo dettato, mai leggibile da altri)",
+          _mode_after_rotate == 0o600)
+
+    # Anti-drift privacy sull'estensione: il file di testo vivo (testo dettato)
+    # va creato PRIVATE (0600). Verificato dal vivo con gjs sotto umask 022:
+    # senza il flag nasce 0644. Qui si presidia solo che il flag non sparisca.
+    _ext_js = (ROOT / "gnome-extension" / "bravoric-indicator@local" / "extension.js").read_text(encoding="utf-8")
+    _live_at = _ext_js.index("_writeStreamLiveText() {")
+    _live_block = _ext_js[_live_at:_ext_js.index("_refreshStatus() {", _live_at)]
+    check("extension.js: stream_live_text.json creato con Gio.FileCreateFlags.PRIVATE (0600)",
+          "Gio.FileCreateFlags.PRIVATE" in _live_block)
+
     # --- 10. il percorso di default e' quello vero, non un doppione -------
     # (la verifica che il percorso reale non sia stato TOCCATO da nessun test
     # e' in fondo a main(): confronta mtime+size reali, non stringhe di path

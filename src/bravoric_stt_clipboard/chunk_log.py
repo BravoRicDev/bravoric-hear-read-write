@@ -295,7 +295,13 @@ def _rotate(path: Path, max_lines: int) -> None:
             lines = [line for line in data.splitlines() if line.strip()]
             kept = lines[-max_lines:]
             tmp = path.with_name(path.name + f".tmp.{os.getpid()}")
-            with open(tmp, "wb") as handle:
+            # 0o600 ESPLICITO: open(tmp, "wb") usa l'umask (tipicamente 0644) e
+            # os.replace pubblica QUEL file al posto del log, che contiene il
+            # testo dettato: dopo la prima rotazione (il file vive al tetto di
+            # 2000 righe, quindi ruota di continuo) diventava leggibile da
+            # ogni utente locale. L'append usa gia' 0o600, la rotazione no.
+            tmp_fd = os.open(str(tmp), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+            with os.fdopen(tmp_fd, "wb") as handle:
                 handle.write(b"".join(line + b"\n" for line in kept))
             os.replace(tmp, path)
             with _count_lock:
