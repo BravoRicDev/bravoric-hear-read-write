@@ -5538,6 +5538,18 @@ def main() -> int:
           == config.DEFAULT_STORAGE_BASE_DIR)
     check("config: storage.base_dir valido resta invariato",
           config._build_config({"storage": {"base_dir": "/dati/x"}}).storage.base_dir == "/dati/x")
+    # api_client._keep_leading_words: pura, mai testata direttamente.
+    _klw = api_client._keep_leading_words
+    check("keep_leading_words: budget esatto tiene tutte le parole ('ab cd' = 5)",
+          _klw("ab cd", 5) == "ab cd")
+    check("keep_leading_words: un carattere in meno scarta la parola che sfora",
+          _klw("ab cd", 4) == "ab")
+    check("keep_leading_words: prima parola piu' lunga del budget -> vuoto (mai a meta')",
+          _klw("abcdefgh x", 3) == "")
+    check("keep_leading_words: budget <= 0 -> vuoto",
+          _klw("ab cd", 0) == "" and _klw("ab cd", -5) == "")
+    check("keep_leading_words: spazi/newline multipli normalizzati a uno",
+          _klw("ab \n  cd", 99) == "ab cd")
     _cfg_shot_absent = config._build_config({})
     check("config: [ocr] assente -> capture_screenshot default False",
           _cfg_shot_absent.ocr_capture_screenshot is False)
