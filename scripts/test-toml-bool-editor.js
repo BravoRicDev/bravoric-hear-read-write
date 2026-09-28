@@ -18,6 +18,26 @@
 // tomllib Python, non a occhio; (2) readBool e writeBool concordano, cioè la
 // GUI non mente sullo stato; (3) i casi che il reviewer aveva misurati come
 // rotti (commento in fondo, indentazione) sono coperti.
+// test-toml-bool-editor.js — round 2 (F2), test of the real product.
+//
+// The defect: TomlBoolEditor.readBool/writeBoolean used the pattern
+// `^key = (true|false)$` (m flag). A line with a trailing comment or an
+// indented one did NOT match: readBool lied about the state (returning the
+// fallback) and writeBool fell into the insert branch, duplicating the key
+// inside [notifications]. A TOML with a duplicate key does not load:
+// config.py turns TOMLDecodeError into ConfigError and the WHOLE backend
+// (STT, OCR, streaming, the Configuration menu, half of the prefs.js pages)
+// goes mute, with no warning. A comment on a single line is enough.
+//
+// Here the REAL CLASS is extracted from prefs.js by brace-matching and run
+// under gjs: not a reconstruction, so the test guards the product.
+// (prefs.js is not importable outside a Shell session: it imports the
+// resource resource:///org/gnome/Shell/Extensions/... .)
+//
+// Checks: (1) the TOML stays valid after every write, measured with Python's
+// tomllib, not by eye; (2) readBool and writeBool agree, i.e. the GUI does
+// not lie about the state; (3) the cases the reviewer had measured as broken
+// (trailing comment, indentation) are covered.
 
 import Gio from 'gi://Gio';
 import GLib from 'gi://GLib';
@@ -28,6 +48,7 @@ const PREFS_PATH = GLib.build_filenamev([
 ]);
 
 // Estrae una classe per brace-matching dal sorgente reale.
+// Extracts a class by brace-matching from the real source.
 function classSource(src, name) {
     const at = src.indexOf(`class ${name} `);
     if (at === -1)
@@ -45,6 +66,8 @@ if (!ok)
 const prefsSrc = new TextDecoder().decode(bytes);
 
 // logError serve a TomlBoolEditor: fuori da una sessione Shell non esiste.
+// logError is needed by TomlBoolEditor: outside a Shell session it does not
+// exist.
 const logError = (err, ctx) => { /* scartato: i test verificano altrove */ };
 const { TomlBoolEditor } = eval(`(() => { ${classSource(prefsSrc, 'TomlBoolEditor')}; return { TomlBoolEditor }; })()`);
 
@@ -61,6 +84,7 @@ function check(label, condition) {
 }
 
 // Percorso di prova in tmp, con la stessa forma della config reale.
+// Test path in tmp, with the same shape as the real config.
 const workdir = GLib.dir_make_tmp('tomlbool-XXXXXX');
 const cfgPath = GLib.build_filenamev([workdir, 'config.toml']);
 const KEY = 'stt_on_raw_ready';
@@ -78,8 +102,10 @@ function readConfig() {
 }
 
 // Validazione TOML vera: un parser, non un confronto di stringhe.
+// Real TOML validation: a parser, not a string comparison.
 function tomlValid(text) {
     // Si scrive il file su disco e lo si fa validare da tomllib Python.
+    // The file is written to disk and validated by Python's tomllib.
     const check_path = GLib.build_filenamev([workdir, 'check.toml']);
     Gio.File.new_for_path(check_path).replace_contents(
         new TextEncoder().encode(text), null, false, Gio.FileCreateFlags.NONE, null);
@@ -94,6 +120,8 @@ print('OK')
 `, check_path], null, GLib.SpawnFlags.SEARCH_PATH, null);
     // spawn_sync restituisce stdout/stderr come array boxed, NON come
     // ArrayBufferView: si decodifica a mano, il TextDecoder li rifiuta.
+    // spawn_sync returns stdout/stderr as a boxed array, NOT as an
+    // ArrayBufferView: they are decoded by hand, TextDecoder rejects them.
     const decode = bytes => {
         if (!bytes)
             return '';
@@ -105,6 +133,8 @@ print('OK')
     };
     // Attenzione agli indici: spawn_sync restituisce
     // [ok, stdout, stderr, exit_status] (NON [ok, status, stdout, stderr]).
+    // Mind the indexes: spawn_sync returns
+    // [ok, stdout, stderr, exit_status] (NOT [ok, status, stdout, stderr]).
     const out = decode(proc[1]);
     if (!out.startsWith('OK'))
         console.log(`    (tomllib: ${out || decode(proc[2]) || 'nessun output'})`);
@@ -114,6 +144,7 @@ print('OK')
 console.log('== F2: TomlBoolEditor (classe REALE estratta da prefs.js) ==');
 
 // --- Caso A: riga pulita, il caso che funzionava anche prima -------------
+// --- Case A: clean line, the case that also worked before -------------
 writeConfig(`[notifications]\n${KEY} = true\n${OTHER} = true\n`);
 let editor = new TomlBoolEditor(cfgPath);
 check('A: riga pulita letta come true', editor.readBool(KEY, false) === true);
@@ -123,6 +154,8 @@ check('A: TOML ancora valido', tomlValid(readConfig()));
 
 // --- Caso B: COMMENTO in fondo alla riga (il caso che rompeva) -----------
 // Prima: readBool restituiva il fallback e writeBool duplicava la chiave.
+// --- Case B: trailing COMMENT (the case that broke things) -----------
+// Before: readBool returned the fallback and writeBool duplicated the key.
 writeConfig(`[notifications]\n${KEY} = true  # non toccare\n${OTHER} = true\n`);
 editor = new TomlBoolEditor(cfgPath);
 check('B: readBool legge il valore anche con un commento in fondo',
@@ -151,6 +184,7 @@ editor.writeBool(KEY, false);
 check('D: TOML ancora valido', tomlValid(readConfig()));
 
 // --- Caso E: la chiave non esiste -> inserimento in [notifications] -----
+// --- Case E: the key does not exist -> insertion in [notifications] -----
 writeConfig(`[notifications]\n${OTHER} = true\n\n[history]\nmax_entries = 10\n`);
 editor = new TomlBoolEditor(cfgPath);
 editor.writeBool(KEY, true);
@@ -161,6 +195,7 @@ check('E: inserimento non rompe la sezione successiva',
     tomlValid(afterE) && afterE.includes('max_entries = 10'));
 
 // --- Caso F: chiave assente, nessuna sezione [notifications] -------------
+// --- Case F: key missing, no [notifications] section -------------
 writeConfig(`[history]\nmax_entries = 10\n`);
 editor = new TomlBoolEditor(cfgPath);
 editor.writeBool(KEY, true);
@@ -168,6 +203,7 @@ check('F: senza [notifications] il file resta intatto',
     tomlValid(readConfig()) && !readConfig().includes(`${KEY} = true`));
 
 // --- Caso G: file illeggibile -> fallback, senza crash ------------------
+// --- Case G: unreadable file -> fallback, no crash ------------------
 const missing = new TomlBoolEditor(GLib.build_filenamev([workdir, 'non-esiste.toml']));
 check('G: file assente -> fallback, nessuna eccezione',
     missing.readBool(KEY, false) === false);

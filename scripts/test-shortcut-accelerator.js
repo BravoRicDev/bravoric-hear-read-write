@@ -21,12 +21,37 @@
 // stringa: sarebbe un controllo vacuo, cioè esattamente il difetto che
 // questa funzione deve chiudere. I casi sotto includono percio' le due
 // stringhe che differiscono solo per la forma e per l'iniziale.
+// test-shortcut-accelerator.js — F5 (round 4), validation of the
+// accelerators.
+//
+// The defect: the only check before writing was markConflict, which looks
+// for an IDENTICAL string in five system schemas. It is not an accelerator
+// validation: an invalid shortcut stayed saved in dconf forever and NEVER
+// fired, without a single message in any language. Measured: the GUI wrote
+// 'Alt+Super+R' and '<Alt><Super>r' identically, and only the second works.
+//
+// Here the REAL FUNCTION extracted from prefs.js is run (not a copy: a copy
+// could diverge without any check noticing), on real gjs, and the behavior
+// of Gtk.accelerator_parse is measured instead of trusted. prefs.js is not
+// importable outside a Shell session (it imports the resource
+// resource:///org/gnome/Shell/...), so it is extracted by brace-matching and
+// evaluated, as already done for TomlBoolEditor.
+//
+// THE NON-VACUITY POINT this test guards: Gtk.accelerator_parse does NOT
+// return a boolean in GJS, it returns [ok, keyval, mods], a boxed array that
+// in JavaScript is ALWAYS truthy — even [false, 0, 0]. The check
+// `if (!Gtk.accelerator_parse(t))` would therefore ALWAYS pass, on ANY
+// string: it would be a vacuous check, i.e. exactly the defect this function
+// must close. The cases below therefore include the two strings that differ
+// only in form and in the initial letter.
 
 import Gio from 'gi://Gio';
 import GLib from 'gi://GLib';
 import { matchBrace } from './lib/brace-match.mjs';
 // Gtk 4 esplicitamente: senza questo gjs segnala "Gtk ha 2 versioni" e la
 // versione scelta puo' cambiare comportamento di accelerator_parse.
+// Gtk 4 explicitly: without this gjs reports "Gtk has 2 versions" and the
+// chosen version may change the behavior of accelerator_parse.
 imports.gi.versions.Gtk = '4.0';
 const { Gtk } = imports.gi;
 
@@ -52,6 +77,7 @@ if (!ok)
 const prefsSrc = new TextDecoder().decode(bytes);
 
 // Estrae una funzione per brace-matching dal sorgente reale.
+// Extracts a function by brace-matching from the real source.
 function funcSource(src, signature) {
     const at = src.indexOf(signature);
     if (at === -1)
@@ -66,6 +92,9 @@ function funcSource(src, signature) {
 // Se la funzione non c'eta' piu' nel prodotto (per esempio dopo un
 // ripristino), il test deve DIRE PERCHE' e fallire, non abortire con uno
 // stack trace: nel gate la riga di fallimento deve essere leggibile.
+// If the function is no longer in the product (for example after a
+// restore), the test must SAY WHY and fail, not abort with a stack trace: in
+// the gate the failure line must be readable.
 let acceleratorIsValid = null;
 try {
     acceleratorIsValid = eval(`(() => {
@@ -82,6 +111,8 @@ console.log('acceleratorIsValid REALE estratto da prefs.js e in esecuzione');
 console.log('== F5: acceleratori validi e non validi ==');
 
 // La forma corretta: <Mod><Mod><tasto> (angolari, tasto minuscolo o maiuscolo).
+// The correct form: <Mod><Mod><key> (angle brackets, lowercase or uppercase
+// key).
 check('forma canonica <Alt><Super>r accettata',
     acceleratorIsValid('<Alt><Super>r') === true);
 check('forma canonica <Control><Shift>v accettata',
@@ -91,6 +122,9 @@ check('forma canonica <Control><Alt>Delete accettata',
 
 // Le forme che Mutter RIFIUTA. Sono quelle che la GUI scriveva prima,
 // indistinguibili dalle precedenti per l'utente: una sola lettera di differenza.
+// The forms that Mutter REJECTS. They are the ones the GUI used to write,
+// indistinguishable from the previous ones for the user: a single letter of
+// difference.
 check('forma senza angolari Alt+Super+R rifiutata (Mutter la scarta)',
     acceleratorIsValid('Alt+Super+R') === false);
 check('forma senza angolari Ctrl+Shift+V rifiutata',
@@ -104,6 +138,8 @@ check('spazio finale rifiutato',
 
 // Modificatore SENZA tasto: parsea, ma non e' un keybinding utilizzabile.
 // serve accelerator_valid per chiudere questo buco.
+// Modifier WITHOUT a key: it parses, but it is not a usable keybinding.
+// accelerator_valid is needed to close this hole.
 check('solo modificatore <Super> rifiutato (nessun tasto)',
     acceleratorIsValid('<Super>') === false);
 check('solo modificatore <Alt> rifiutato (nessun tasto)',
@@ -111,11 +147,15 @@ check('solo modificatore <Alt> rifiutato (nessun tasto)',
 
 // Stringa vuota = scorciatoia rimossa: NON e' un errore di sintassi, e il
 // prodotto deve continuare a poterla cancellare (row.text ? ... : []).
+// Empty string = shortcut removed: it is NOT a syntax error, and the product
+// must keep being able to delete it (row.text ? ... : []).
 check('stringa vuota accettata (rimozione della scorciatoia)',
     acceleratorIsValid('') === true);
 
 // Non-vacuità: la forma che il reviewer aveva suggerito, se fosse usata
 // literally, passerebbe su TUTTE le stringhe perché un array è truthy.
+// Non-vacuity: the form the reviewer had suggested, if used literally, would
+// pass on ALL the strings because an array is truthy.
 const boxedAlwaysTruthy = ['Alt+Super+R', 'ciao mamma', ''].every(t => {
     const res = Gtk.accelerator_parse(t);
     return Array.isArray(res) && Boolean(res) === true;
@@ -132,6 +172,12 @@ check('CONFIRMATO: la destrutturazione distingue i casi (il naive no)',
 // sorgente reale (validazione PRIMA di set_strv, e un return che impedisce
 // la scrittura). Un test che passa anche con il codice di prima non
 // presidierebbe nulla: il vecchio codice non aveva nessuna delle due.
+// --- The product writes only if the row is valid, and says so -------------
+// markInvalid/refreshEntryState live inside _buildShortcutsPage, they are
+// not extractable individually: here the ORDER of the operations in the real
+// source is guarded (validation BEFORE set_strv, and a return that prevents
+// the write). A test that also passes with the previous code would guard
+// nothing: the old code had neither of the two.
 const applyBlock = funcSource(prefsSrc, "row.connect('apply', () => {");
 const validateAt = applyBlock.indexOf('refreshEntryState()');
 const returnAt = applyBlock.indexOf('if (!refreshEntryState())');
@@ -144,6 +190,7 @@ check('il prodotto chiama set_strv una sola volta nel blocco apply',
     applyBlock.split('settings.set_strv(').length === 2);
 
 // --- i18n: la nuova stringa esiste e non passa cruda --------------------
+// --- i18n: the new string exists and does not go through raw --------------------
 const newMsg = 'Not a valid shortcut: %s';
 check('la nuova stringa e\' passata da _() nel prodotto',
     prefsSrc.includes(`_('${newMsg}')`));
@@ -166,6 +213,7 @@ const itEntry = itTxt.split('\n').find(l => l.trim().startsWith('msgstr') &&
 check('la voce italiana e\' tradotta (non resta la stringa inglese)',
     itEntry !== undefined);
 // La traduzione non vuole perdere il segnaposto %s.
+// The translation must not lose the %s placeholder.
 const itMsgStr = itEntry ? itEntry.trim().slice('msgstr'.length).trim() : '';
 check('la traduzione conserva il segnaposto %s',
     itMsgStr.includes('%s'));

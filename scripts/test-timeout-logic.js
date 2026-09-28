@@ -7,6 +7,15 @@
 // _timeoutLimitFor()/_timeoutMessage().
 //
 // Uso: node scripts/test-timeout-logic.js
+// Logic test of state timeouts + menu-entry sensitivity of the GNOME
+// indicator.
+//
+// The constants are extracted from the REAL extension.js: the test fails if
+// someone changes them in the source without updating the expectations
+// (anti-drift guard). `decide()` is a faithful port of the block in
+// _refreshStatus() + _timeoutLimitFor()/_timeoutMessage().
+//
+// Usage: node scripts/test-timeout-logic.js
 'use strict';
 const fs = require('fs');
 const path = require('path');
@@ -18,6 +27,8 @@ const SRC = path.join(EXT_DIR, 'extension.js');
 const src = fs.readFileSync(SRC, 'utf8');
 
 // Estrae il corpo di `const NAME = { ... }`: accetta `chiave: N` e `chiave: N * M`.
+// Extracts the body of `const NAME = { ... }`: accepts `key: N` and
+// `key: N * M`.
 function extractMap(name) {
     const m = src.match(new RegExp(`const ${name} = \\{([^}]*)\\}`));
     if (!m)
@@ -40,6 +51,10 @@ const PROCESSING_TIMEOUT_SECONDS = extractMap('PROCESSING_TIMEOUT_SECONDS');
 // difettosa scrivendo 'recording scaduto -> idle' con service `undefined`,
 // cioe' solo la registrazione STT. Il percorso streaming non era mai passato
 // da qui.
+// P4 (round 18): the service='stream' case. Until round 18 this gate had NO
+// case with service='stream' — it certified the defective constant by
+// writing 'recording expired -> idle' with service `undefined`, i.e. only the
+// STT recording. The streaming path had never gone through here.
 function timeoutLimitFor(state, service) {
     if (state === 'processing')
         return service ? (PROCESSING_TIMEOUT_SECONDS[service] || null) : null;
@@ -47,6 +62,10 @@ function timeoutLimitFor(state, service) {
     // limite NON vale per il servizio 'stream'. Vedi il commento esteso nel
     // sorgente: i 15 minuti sono un watchdog da registrazione STT e non
     // hanno senso su una sessione per_chunk che continua a battere il cuore.
+    // Replica of _timeoutLimitFor() in extension.js (P4): on 'recording' the
+    // limit does NOT apply to the 'stream' service. See the extended comment in
+    // the source: the 15 minutes are an STT-recording watchdog and make no
+    // sense on a per_chunk session that keeps beating the heart.
     if (state === 'recording' && service === 'stream')
         return null;
     return STATE_TIMEOUT_SECONDS[state] || null;
@@ -63,6 +82,9 @@ function timeoutMessage(state) {
 // Estrae le chiavi della mappa `const NAME = { ... }` (stessa estrazione di
 // extractMap, ma solo i nomi: serve per replicare la validazione THEME_ICONS
 // che _refreshStatus() fa su uno stato sconosciuto).
+// Extracts the keys of the map `const NAME = { ... }` (same extraction as
+// extractMap, but only the names: it serves to replicate the THEME_ICONS
+// validation that _refreshStatus() does on an unknown state).
 function extractKeys(name) {
     const m = src.match(new RegExp(`const ${name} = \\{([^}]*)\\}`));
     if (!m)
@@ -86,6 +108,17 @@ const THEME_ICONS_KEYS = extractKeys('THEME_ICONS');
 //   2. Number.isFinite(data.timestamp) — senza, un timestamp assente o non
 //      numerico darebbe NaN nella sottrazione, il confronto `NaN > limit` e'
 //      False e il timeout non scatterebbe MAI per quel file di stato.
+// Faithful port of the decision block in _refreshStatus().
+//
+// It replicates the TWO DEFENSES that the source has and that this copy must
+// have too, otherwise the test passes green while the real code reacts
+// differently (defect I, round 1):
+//   1. THEME_ICONS[data.state] — an unknown state falls on 'idle', it is not
+//      propagated (otherwise _icon.gicon would look for a non-existent icon);
+//   2. Number.isFinite(data.timestamp) — without it, a missing or
+//      non-numeric timestamp would give NaN in the subtraction, the
+//      comparison `NaN > limit` is False and the timeout would NEVER fire
+//      for that state file.
 function decide(data, warnedBefore, now) {
     const reported = data.state && THEME_ICONS_KEYS.has(data.state) ? data.state : 'idle';
     let state = reported;
@@ -109,6 +142,12 @@ function decide(data, warnedBefore, now) {
     // poter riprovare). Il modello replicava prima solo `idle` e ignorava il
     // ramo error: con F7 le tre voci devono essere per costruzione uguali, e
     // un modello che ne fotografava due su tre non poteva presidiarlo.
+    // Round 3 (F7): the three start entries follow the SAME guard variable,
+    // computed by the source as `state === 'idle' || state === 'error'`
+    // (extension.js:898, B3 of round 2: in error state the user must be able to
+    // retry). The model used to replicate only `idle` and ignore the error
+    // branch: with F7 the three entries must be equal by construction, and a
+    // model that photographed two out of three could not guard it.
     const canStart = idle || state === 'error';
     return {
         state, warned, notified,
@@ -117,6 +156,9 @@ function decide(data, warnedBefore, now) {
         // F7: la voce Streaming è un avvio di cattura come le altre due. Prima
         // il sorgente non le chiamava mai setSensitive: restava cliccabile
         // durante recording/processing e il click partiva a vuoto.
+        // F7: the Streaming entry is a capture start like the other two. Before, the
+        // source never called setSensitive on it: it stayed clickable during
+        // recording/processing and the click went off empty.
         streamSensitive: canStart,
     };
 }
@@ -143,6 +185,8 @@ check("processing senza service → nessun limite", timeoutLimitFor('processing'
 check("processing service ignoto → nessun limite", timeoutLimitFor('processing', 'boh') === null);
 // P4: recording con service='stream' → nessun limite. Era il caso difettoso
 // che il gate non copriva affatto.
+// P4: recording with service='stream' → no limit. It was the defective case
+// that the gate did not cover at all.
 check("recording stream → nessun limite (P4)", timeoutLimitFor('recording', 'stream') === null);
 check("recording stt → limite invariato", timeoutLimitFor('recording', 'stt') === STATE_TIMEOUT_SECONDS.recording);
 
@@ -181,12 +225,14 @@ check('stato fresco → flag avviso riarmato', r.warned === false);
 
 console.log('== difese del sorgente replicate ==');
 // Stato sconosciuto: il sorgente lo scarta su 'idle' via THEME_ICONS.
+// Unknown state: the source discards it to 'idle' via THEME_ICONS.
 r = decide({ state: 'boh', service: 'stt', timestamp: NOW }, false, NOW);
 check('stato sconosciuto -> idle (validazione THEME_ICONS, non propagato)',
     r.state === 'idle' && r.dictationSensitive && !r.notified);
 r = decide({ state: 'idle', service: 'stt', timestamp: NOW }, false, NOW);
 check("stato noto ma non attivo resta com'era", r.state === 'idle');
 // Timestamp assente/non numerico: nessun timeout spurio.
+// Missing/non-numeric timestamp: no spurious timeout.
 r = decide({ state: 'recording', service: 'stt' }, false, NOW);
 check('timestamp assente -> nessun timeout, stato intatto',
     r.state === 'recording' && r.notified === null && !r.warned);
@@ -209,6 +255,16 @@ check("timestamp NaN -> nessun timeout (Number.isFinite)", r.state === 'recordin
 // Number.isFinite i casi 'x', true e -Infinity cambiano esito.
 // Nota: status.py scrive sempre time.time() (mai 0), quindi questi sono
 // solo ingressi corrotti — ma e' esattamente il caso che la difesa presidia.
+// The cases where the source and a simple truthiness really DIVERGE.
+// Number.isFinite accepts 0 and -0 (they are finite numbers), so with
+// timestamp = 0 the timeout fires: it is correct, the state file is 55 years
+// old. What the guard REJECTS are the truthy but non-finite/non-numeric
+// values, which with `if (data.timestamp)` would pass and produce
+// `now - Infinity`/`now - 'x'` (NaN) or, worse, with `true` a completely
+// false now - 1. Here the test separates the two implementations: without
+// Number.isFinite the cases 'x', true and -Infinity change outcome.
+// Note: status.py always writes time.time() (never 0), so these are only
+// corrupt inputs — but it is exactly the case the defense guards.
 r = decide({ state: 'recording', service: 'stt', timestamp: true }, false, NOW);
 check('timestamp true (booleano truthy) -> respinto dalla guardia (Number.isFinite)',
     r.state === 'recording' && r.notified === null);
@@ -221,6 +277,9 @@ check('timestamp +Infinity -> respinto dalla guardia (Number.isFinite)',
 // timestamp 0: Number.isFinite(0) e' true, quindi il timeout SCATTA (il file
 // e' del 1970). Fissarlo qui evita che un futuri cambiamento "correttivo"
 // della guardia venga scambiato per un invariante del test.
+// timestamp 0: Number.isFinite(0) is true, so the timeout FIRES (the file is
+// from 1970). Pinning it here prevents a future "corrective" change of the
+// guard from being mistaken for an invariant of the test.
 r = decide({ state: 'recording', service: 'stt', timestamp: 0 }, false, NOW);
 check('timestamp 0: la guardia lo ACCETTA e il timeout scatta (file del 1970)',
     r.state === 'idle' && r.notified === 'Recording timed out');
@@ -228,6 +287,8 @@ check('timestamp 0: la guardia lo ACCETTA e il timeout scatta (file del 1970)',
 
 // Con timestamp finito e scaduto il timeout scatta: la difesa non deve
 // spegnere il percorso vero.
+// With a finite and expired timestamp the timeout fires: the defense must
+// not switch off the real path.
 r = decide(fresh('recording', undefined, STATE_TIMEOUT_SECONDS.recording + 60), false, NOW);
 check('timestamp finito e scaduto -> il timeout scatta ancora',
     r.state === 'idle' && r.notified === 'Recording timed out');
@@ -261,11 +322,28 @@ check('_lastOutputItem torna a "(none)" quando non c\'è output né storico',
 //  1. strutturale sul sorgente vero (se la riga sparisce, l'asserzione vira);
 //  2. logico sulla porta `decide()`, che replica il blocco di sensitivity.
 // ---------------------------------------------------------------------
+// ---------------------------------------------------------------------
+// Defect F7 (round 3): the "Streaming" entry was NEVER disabled.
+//
+// Mechanism: in _refreshStatus() the three start entries exist
+// (_dictationItem, _ocrItem, _streamItem) but only the first two received
+// setSensitive(canStart). The third stayed clickable during recording and
+// processing: the click launched bravoric-stream-toggle, which answered
+// False without showing anything to the user.
+//
+// Two levels of guard, as for defect F above:
+//  1. structural on the real source (if the line disappears, the assertion
+//     turns);
+//  2. logical on the `decide()` port, which replicates the sensitivity
+//     block.
+// ---------------------------------------------------------------------
 console.log('== difetto F7: la voce Streaming segue la stessa guardia ==');
 check('F7 il sorgente disabilita anche _streamItem via setSensitive(canStart)',
     src.includes('this._streamItem.setSensitive(canStart)'));
 // Anti-drift: le tre chiamate devono stare nello stesso blocco di _refreshStatus,
 // non essere sparpagliate (una fuori dal blocco non avrebbe la stessa variabile).
+// Anti-drift: the three calls must be in the same block of _refreshStatus,
+// not scattered (one outside the block would not have the same variable).
 const sensBlock = src.match(/const canStart = [\s\S]*?this\._ocrItem\.setSensitive\(canStart\);/);
 check('F7 le tre voci stanno nello stesso blocco di canStart',
     !!sensBlock && sensBlock[0].includes('this._dictationItem.setSensitive(canStart)')
@@ -284,6 +362,9 @@ check('F7 error -> la voce Streaming torna attiva (come le altre due)',
     r.streamSensitive === true && r.streamSensitive === r.dictationSensitive);
 // Coerenza con le altre due su TUTTI gli stati: è la guardia unica, quindi le
 // tre voci non possono divergere (è il senso della variabile canStart).
+// Consistency with the other two on ALL states: it is the single guard, so
+// the three entries cannot diverge (that is the point of the canStart
+// variable).
 const ALL_STATES = ['idle', 'recording', 'processing', 'error'];
 check('F7 le tre voci non divergono mai su nessuno stato',
     ALL_STATES.every(s => {
@@ -292,6 +373,8 @@ check('F7 le tre voci non divergono mai su nessuno stato',
             && d.streamSensitive === d.ocrSensitive;
     }));
 // E il caso di danno vero: recording in corso, la voce era cliccabile.
+// And the case of real damage: recording in progress, the entry was
+// clickable.
 check('F7 il click durante una cattura non parte più a vuoto',
     decide(fresh('recording', 'stt', 1), false, NOW).streamSensitive === false);
 
@@ -312,10 +395,26 @@ check('F7 il click durante una cattura non parte più a vuoto',
 // service. Qui il caso è invertito: sessione viva appena sopra il limite
 // resta recording, silenziosa e con le voci disabilitate.
 // ===============================================================
+// ===============================================================
+// Defect P4 (watchdog): the 15 minutes of STATE_TIMEOUT_SECONDS.recording
+// were also applied to a LIVE per_chunk streaming session. Measured hot with
+// the REAL constants of the source: at 14m30s `recording`, at 15m01s `idle`
+// + "Recording timed out", with the supervisor still alive and ffmpeg still
+// on the microphone. In addition the Streaming entry became clickable again,
+// so the click started a SECOND ffmpeg (see point 2: the mutual exclusion,
+// now closed in stt._start).
+//
+// The test that closed the defect was the very one that certified it: it
+// asserted "recording expired → idle" and NEVER contained 'stream' as
+// service. Here the case is inverted: a live session just above the limit
+// stays recording, silent and with the entries disabled.
+// ===============================================================
 console.log('== difetto P4: il watchdog non uccide una sessione stream viva ==');
 const HALF_HOUR = 30 * 60;
 
 // 1. Il caso che oggi mancava: sessione per_chunk viva, eta' SOVRA il limite.
+// 1. The case that was missing today: live per_chunk session, age OVER the
+// limit.
 r = decide(fresh('recording', 'stream', STATE_TIMEOUT_SECONDS.recording + 60), false, NOW);
 check('P4 sessione stream viva oltre 15 min -> resta recording',
     r.state === 'recording');
@@ -324,6 +423,8 @@ check('P4 ... e senza la notifica falsa "Recording timed out"',
 
 // 2. E i casi estremi: mezz'ora, quaranta minuti. Era qui che il difetto
 // colpiva l'uso ordinario (dettatura continua), non un angolo.
+// 2. And the extreme cases: half an hour, forty minutes. This is where the
+// defect hit ordinary use (continuous dictation), not a corner.
 r = decide(fresh('recording', 'stream', HALF_HOUR), false, NOW);
 check('P4 sessione stream viva da 30 min -> resta recording, nessun avviso',
     r.state === 'recording' && r.notified === null);
@@ -333,12 +434,16 @@ check('P4 sessione stream viva da 40 min -> resta recording, nessun avviso',
 
 // 3. Le tre voci restano disabilitate: senza questo, l'utente premeva la
 // scorciatoia e partiva un secondo ffmpeg sopra la sessione viva.
+// 3. The three entries stay disabled: without this, the user pressed the
+// shortcut and a second ffmpeg started on top of the live session.
 r = decide(fresh('recording', 'stream', 40 * 60), false, NOW);
 check('P4 sessione stream viva -> nessuna delle tre voci e avviabile',
     r.dictationSensitive === false && r.ocrSensitive === false && r.streamSensitive === false);
 
 // 4. L'INVARIANTE che il fix non deve rompere: la registrazione STT resta
 // governata dai 15 minuti, e un STT morto torna idle con avviso.
+// 4. The INVARIANT the fix must not break: the STT recording stays governed
+// by the 15 minutes, and a dead STT goes back to idle with a warning.
 r = decide(fresh('recording', 'stt', STATE_TIMEOUT_SECONDS.recording + 60), false, NOW);
 check('P4 registrazione STT scaduta -> torna ancora idle con avviso',
     r.state === 'idle' && r.notified === 'Recording timed out');
@@ -355,6 +460,9 @@ check('P4 recording senza service -> limite applicato (comportamento preesistent
 // 5. Anti-drift sul sorgente VERO: se _timeoutLimitFor perde la clausola
 // stream, questo test continua a misurare una copia e il gate resta verde
 // sul codice rotto. Le due righe devono stare dentro il metodo reale.
+// 5. Anti-drift on the REAL source: if _timeoutLimitFor loses the stream
+// clause, this test keeps measuring a copy and the gate stays green on the
+// broken code. The two lines must be inside the real method.
 const limitSrc = (src.match(/_timeoutLimitFor\(state, service\) \{[\s\S]*?\n {4}\}/) || [''])[0];
 check('P4 il sorgente reale esclude stream dal limite recording',
     limitSrc.includes("if (state === 'recording' && service === 'stream')")
@@ -369,6 +477,10 @@ check('P4 il limite STT e il limite processing NON sono stati toccati',
 // limite la porta entra nel ramo `else`, che lo tiene a false. Così se più
 // tardi la sessione finisce davvero e scatta un timeout vero, l'utente
 // viene avvisato una volta (non resta silente perché il flag era già armato).
+// A stream session must not even ARM the warning flag: with no limit the
+// port enters the `else` branch, which keeps it false. So if later the
+// session really ends and a real timeout fires, the user is warned once (it
+// does not stay silent because the flag was already armed).
 r = decide(fresh('recording', 'stream', 40 * 60), true, NOW);
 check('P4 una sessione stream non arm mai _timeoutWarned (il flag resta riarmabile)',
     r.state === 'recording' && r.warned === false && r.notified === null);
@@ -376,6 +488,9 @@ check('P4 una sessione stream non arm mai _timeoutWarned (il flag resta riarmabi
 // 6. Il cuore: il backend batte il timestamp mentre la sessione gira, e' il
 // secondo pezzo del fix (a). Senza di esso l'eta' letta qui sarebbe sempre
 // quella dell'avvio.
+// 6. The heart: the backend beats the timestamp while the session runs, it is
+// the second piece of fix (a). Without it the age read here would always be
+// that of the start.
 const streamSrc = fs.readFileSync(
     path.join(__dirname, '..', 'src', 'bravoric_stt_clipboard', 'stream.py'), 'utf8');
 // Giro 18, difetto di copertura: il check precedente confrontava la scrittura
@@ -386,6 +501,14 @@ const streamSrc = fs.readFileSync(
 // Qui si legge il corpo della funzione: la porzione fra la firma e il prossimo
 // `def` di primo livello, con la docstring rimossa (perche' nella docstring la
 // parola write_status compare descrivendo il guard, non chiamandolo).
+// Round 18, coverage defect: the previous check compared the write with the
+// WHOLE stream.py. The very same line appears in 3 other start points (1350,
+// 1471, ...), so emptying the BODY of heartbeat() failed nothing: the suite
+// stayed green on code that no longer beats the heart. A test that cannot
+// fail is not a test. Here the body of the function is read: the portion
+// between the signature and the next top-level `def`, with the docstring
+// removed (because in the docstring the word write_status appears describing
+// the guard, not calling it).
 function pyFuncBody(text, signature) {
     const at = text.indexOf(signature);
     if (at === -1)
@@ -418,6 +541,14 @@ check("P4 il periodo del battito e molto piu corto del limite (non puo attravers
 // (5) coprirebbero quel caso, e in modo grossolano. Qui il metodo REALE e'
 // estratto da extension.js e valutato, esattamente come _runStreamCommand
 // piu' in basso: se la clausola stream sparisce, questo blocco vira.
+// 7. The LOGICAL part tied to the REAL source, not to the copy above.
+// Assertions 1-4 measure `timeoutLimitFor`, which is a faithful copy but a
+// copy nonetheless: if the fix were removed from the source and the copy
+// forgotten, the test would keep measuring the copy and stay green on the
+// broken code. Only the two structural assertions above (5) would cover that
+// case, and coarsely. Here the REAL method is extracted from extension.js
+// and evaluated, exactly like _runStreamCommand further below: if the stream
+// clause disappears, this block turns.
 console.log('== P4: il metodo REALE di _timeoutLimitFor ==');
 const limitSIG = '    _timeoutLimitFor(state, service) {';
 const atLimit = src.indexOf(limitSIG);
@@ -499,11 +630,15 @@ if (realLimit) {
 }
 if (realLimit) {
     // Il caso del difetto, misurato sul codice vero.
+    // The defect case, measured on the real code.
     check('P4 REALE: recording con service stream -> nessun limite',
         realLimit('recording', 'stream') === null);
     // E gli invarianti: il metodo vero continua a rispondere come prima per
     // tutti gli altri casi (se un if fosse scritto male, riporterebbe null
     // anche qui e questi lo mostrerebbero).
+    // And the invariants: the real method keeps answering as before for all the
+    // other cases (if an if were badly written, it would return null here too
+    // and these would show it).
     check('P4 REALE: recording con service stt -> limite recording',
         realLimit('recording', 'stt') === STATE_TIMEOUT_SECONDS.recording);
     check('P4 REALE: recording senza service -> limite recording (invariato)',
@@ -522,6 +657,8 @@ if (realLimit) {
         realLimit('error', undefined) === STATE_TIMEOUT_SECONDS.error);
     // La copia e il metodo reale devono concordare su TUTTA la griglia: e'
     // quello che rende lecito fidarsi dei casi 1-4 scritti sulla copia.
+    // The copy and the real method must agree on the WHOLE grid: it is what
+    // makes it legitimate to trust cases 1-4 written on the copy.
     const GRID = [];
     for (const st of ['idle', 'recording', 'processing', 'error'])
         for (const sv of [undefined, 'stt', 'ocr', 'stream', 'boh'])
@@ -547,6 +684,20 @@ if (realLimit) {
 // rosse. Stanno qui, e non in un file nuovo, perche' il gate del progetto
 // esegue questo file: un test separato non verrebbe mai lanciato.
 // ===============================================================
+// ===============================================================
+// Defect F (round 1): _runStreamCommand() did not release
+// _streamWorkerActive in its error exit branches.
+// Mechanism: _startStreamPasteWorker() sets _streamWorkerActive = true and
+// then, for a 'command' item, delegates. If the method exits on error with
+// `return`, the flag stayed True and the queue was no longer emptied for the
+// whole GNOME session (the next session resets only _streamPasteBlocked, not
+// this latch).
+//
+// The method is EXTRACTED from the real extension.js and evaluated with
+// faithful stubs of Clutter/Main/logError: if the fix is removed, these
+// assertions turn red. They live here, and not in a new file, because the
+// project's gate runs this file: a separate test would never be launched.
+// ===============================================================
 const SIG = '    _runStreamCommand(item) {';
 const atF = src.indexOf(SIG);
 check("F _runStreamCommand presente in extension.js", atF !== -1);
@@ -564,6 +715,7 @@ const sandbox = {
         { get: (t, k) => (k in t ? t[k] : 'KEY_' + String(k)) }),
     Main: { notifyError: (a, b) => notifications.push([a, b]) },
     // helper di modulo di extension.js: qui inoltrano al Main finto
+    // module helpers of extension.js: here they forward to the fake Main
     notifyErrorIfEnabled: (a, b) => notifications.push([a, b]),
     notifyStatusIfEnabled: () => {},
     GLib: { SOURCE_REMOVE: false },
@@ -584,7 +736,7 @@ function makeExt(sendKeyOk) {
         _streamSegments: ['ciao mondo'],
         _streamQueue: [{ action: 'command', sessionId: 's1', text: 'x',
                          command: { action: 'key', key: 'Return' } }],
-        _streamWorkerActive: true,     // messo dal worker prima di delegare
+        _streamWorkerActive: true,     // messo dal worker prima di delegare | set by the worker before delegating
         _streamPasteBlocked: false,
         _sendKey: () => sendKeyOk,
         _writeStreamLiveText: () => {},
@@ -596,6 +748,8 @@ function makeExt(sendKeyOk) {
 console.log('== difetto F: i rami di errore rilasciano _streamWorkerActive ==');
 if (runCommand) {
     // 1. tasto non inviabile: era il caso piu' grave (bloccava la coda per sempre)
+    // 1. key that cannot be sent: it was the most serious case (it blocked the
+    // queue forever)
     let e = makeExt(false);
     runCommand.call(e, e._streamQueue[0]);
     check("F tasto fallito: _streamWorkerActive rilasciato", e._streamWorkerActive === false);
@@ -605,6 +759,7 @@ if (runCommand) {
         e._restartCalled === undefined);
 
     // 2. scope di delete invalido (computeStreamDelete -> count -1)
+    // 2. invalid delete scope (computeStreamDelete -> count -1)
     notifications.length = 0;
     e = makeExt(true);
     sandbox.computeStreamDelete = () => ({ count: -1, segments: [] });
@@ -614,6 +769,7 @@ if (runCommand) {
     check("F delete con scope invalido: coda bloccata", e._streamPasteBlocked === true);
 
     // 3. delete parziale (un backspace non parte)
+    // 3. partial delete (a backspace does not go out)
     notifications.length = 0;
     e = makeExt(true);
     sandbox.computeStreamDelete = () => ({ count: 2, segments: ['a', 'b'] });
@@ -632,6 +788,7 @@ if (runCommand) {
     check("F azione sconosciuta: coda bloccata", e._streamPasteBlocked === true);
 
     // 5. il percorso di SUCCESSO continua a funzionare
+    // 5. the SUCCESS path keeps working
     sandbox.computeStreamDelete = () => ({ count: 0, segments: [] });
     e = makeExt(true);
     runCommand.call(e, { action: 'command', sessionId: 's1', text: 'x',
@@ -644,6 +801,8 @@ if (runCommand) {
 
 // Contatore statico sul sorgente vero: ogni blocco _streamPasteBlocked = true
 // deve essere seguito dal reset del latch prima del return successivo.
+// Static counter on the real source: every _streamPasteBlocked = true block
+// must be followed by the latch reset before the next return.
 const linesF = methodSrc.split('\n');
 const blockIdx = [];
 linesF.forEach((l, i) => { if (l.includes('this._streamPasteBlocked = true')) blockIdx.push(i); });
@@ -658,6 +817,9 @@ check("F nessun ramo di blocco lascia il latch acceso", blockIdx.every(i => {
 
 // Difetto F-bis: il re-arm a 100ms di _requestStreamEnd era infinito con la
 // coda bloccata (la coda non si svuota da sola). Deve cedere sul blocco.
+// Defect F-bis: the 100 ms re-arm of _requestStreamEnd was infinite with the
+// queue blocked (the queue does not empty by itself). It must yield on the
+// block.
 const endCheck = (src.match(/_requestStreamEnd\(sessionId\) \{[\s\S]*?\n {4}\}/) || [''])[0];
 check("F-bis _requestStreamEnd ha una condizione di fine-coda sulla coda bloccata",
     endCheck.includes('this._streamPasteBlocked'));
