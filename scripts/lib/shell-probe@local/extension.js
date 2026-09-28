@@ -72,6 +72,36 @@ export default class ShellProbe extends Extension {
                         }
                         result = JSON.stringify({ hasMonitor: !!ind._monitor, id: ind._monitorId, events: this._events ?? -1, cancelled: ind._monitor?.is_cancelled?.() });
                     }
+                    // Apre il menu dell'indicatore, apre anche i sottomenu e ne elenca le voci
+                    // (etichetta e sensibilita'), poi lo richiude.
+                    // Opens the indicator menu, also opens the submenus and lists their
+                    // entries (label and sensitivity), then closes it again.
+                    if (cmd === 'menu') {
+                        const ind = Main.panel.statusArea['bravoric-indicator@local'];
+                        ind.menu.open(false);
+                        const rows = [];
+                        for (const item of ind.menu._getMenuItems()) {
+                            if (item.menu && item.label)
+                                item.menu.open(false);
+                            rows.push({ label: item.label?.text ?? null, sensitive: item.sensitive ?? null, sub: !!item.menu });
+                            for (const sub of item.menu?._getMenuItems?.() ?? [])
+                                rows.push({ label: sub.label?.text ?? null, sensitive: sub.sensitive ?? null, sub: false, parent: item.label?.text ?? null });
+                        }
+                        ind.menu.close(false);
+                        result = JSON.stringify(rows);
+                    }
+                    // Finestre presenti nel Shell (titolo e classe), per vedere se si e' aperta
+                    // la finestra delle preferenze; `close-windows` le chiude tutte.
+                    // Windows present in the Shell (title and class), to see whether the
+                    // preferences window opened; `close-windows` closes them all.
+                    if (cmd === 'windows' || cmd === 'close-windows') {
+                        const windows = global.get_window_actors().map(a => a.meta_window);
+                        result = JSON.stringify(windows.map(w => ({ title: w.get_title(), wm_class: w.get_wm_class() })));
+                        if (cmd === 'close-windows') {
+                            for (const w of windows)
+                                w.delete(global.get_current_time());
+                        }
+                    }
                     if (cmd === 'labels') {
                         const ind = Main.panel.statusArea['bravoric-indicator@local'];
                         result = JSON.stringify({

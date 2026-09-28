@@ -65,6 +65,17 @@ for name in bravoric-stt-toggle bravoric-ocr-capture bravoric-stream-toggle; do
     chmod +x "$BIN/$name"
 done
 
+# Backend di configurazione VERO (config_editor) su una config temporanea copiata
+# dall'esempio: serve alla finestra delle preferenze aperta nel Shell vero.
+# REAL configuration backend (config_editor) on a temporary config copied from the
+# example: needed by the preferences window opened in the real Shell.
+mkdir -p "$T/home/.config/bravoric-stt-clipboard"
+cp "$REPO/config/config.example.toml" "$T/home/.config/bravoric-stt-clipboard/config.toml"
+chmod 600 "$T/home/.config/bravoric-stt-clipboard/config.toml"
+printf '#!/usr/bin/env bash\nexport HOME="%s" XDG_CONFIG_HOME="%s" PYTHONPATH="%s"\nexec python3 -m bravoric_stt_clipboard.config_editor "$@"\n' \
+    "$T/home" "$T/home/.config" "$REPO/src" > "$BIN/bravoric-config-editor"
+chmod +x "$BIN/bravoric-config-editor"
+
 export XDG_CONFIG_HOME="$T/config" XDG_DATA_HOME="$T/data" XDG_CACHE_HOME="$T/cache" XDG_RUNTIME_DIR="$T/runtime"
 export HOME="$T/home" BRV_PROBE_DIR="$T/probe" T EXT_SRC
 # Lingua del gnome-shell sotto test: BRV_LANG=en (default) o it. Con it si verifica anche
@@ -282,6 +293,38 @@ setkey show-ocr-button false
 wait_dump "[i['role'].rsplit('-',1)[-1] for i in items if i['quick']]==['dictation','stream']" \
     && pass "spento l'OCR restano dettatura e streaming, nello stesso ordine" || fail "spegnimento errato: $(dump)"
 
+echo "== menu dell'indicatore aperto nel Shell vero / indicator menu opened in the real Shell =="
+MENU_JSON="$(probe_cmd menu)"
+if python3 - "$EXT_SRC" "${BRV_LANG:-en}" "$MENU_JSON" <<'PY'
+import gettext, json, sys
+ext, lang, raw = sys.argv[1:4]
+tr = gettext.translation('bravoric-indicator', localedir=ext + '/locale', languages=[lang], fallback=True)
+_ = tr.gettext if lang != 'en' else (lambda s: s)
+rows = json.loads(raw)
+labels = [r['label'] for r in rows]
+expected = ['Dictation', 'OCR', 'Configuration', 'History', 'Streaming', 'Diagnostics', 'Copy diagnostics']
+# La voce Cronologia porta il conteggio, es. "History (0)". / The History entry carries the count, e.g. "History (0)".
+missing = [e for e in expected if not any(l and (l == _(e) or l.startswith(_(e) + ' (')) for l in labels)]
+if missing:
+    print('    voci mancanti / missing entries:', missing, 'trovate / found:', labels)
+    sys.exit(1)
+by = {r['label']: r for r in rows}
+# Da idle le tre voci di avvio sono cliccabili. / From idle the three start entries are clickable.
+if not all(by[_(k)]['sensitive'] for k in ('Dictation', 'OCR', 'Streaming')):
+    print('    voci di avvio non cliccabili da idle / start entries not clickable from idle')
+    sys.exit(1)
+# Le righe di diagnostica sono tradotte con il segnaposto sostituito. / Diagnostics rows are translated with the placeholder filled.
+venv = _('Venv: %s').replace('%s', '')
+if not any(l and l.startswith(venv) and '%s' not in l for l in labels):
+    print('    riga Venv non tradotta o con segnaposto non sostituito / Venv row untranslated or placeholder left')
+    sys.exit(1)
+PY
+then
+    pass "il menu si apre senza errori e contiene le voci attese nella lingua giusta"
+else
+    fail "menu inatteso: $MENU_JSON"
+fi
+
 echo "== disabilita e riabilita l'estensione / disable and re-enable the extension =="
 in_session "gnome-extensions disable bravoric-indicator@local" >/dev/null
 wait_dump "not any(i['quick'] for i in items) and not any(i['role']=='bravoric-indicator@local' for i in items)" \
@@ -301,9 +344,28 @@ fi
 wait_dump "any(i['accessible_name']=='${N_DICT_START}' for i in items if i['quick'])" \
     && pass "i nomi accessibili dei bottoni sono nella lingua attesa ($N_DICT_START)" || fail "nomi accessibili inattesi: $(dump)"
 
+echo "== finestra delle preferenze nel Shell vero / preferences window in the real Shell =="
+in_session "gnome-extensions prefs bravoric-indicator@local" >/dev/null
+# Attende che compaia una finestra delle preferenze fra le finestre del Shell.
+# Waits for a preferences window to show up among the Shell's windows.
+PREFS_WINDOW=""
+for i in $(seq 1 30); do
+    WINDOWS_JSON="$(probe_cmd windows)"
+    if printf '%s' "$WINDOWS_JSON" | grep -q "Bravoric"; then PREFS_WINDOW="$WINDOWS_JSON"; break; fi
+    sleep 0.5
+done
+if [ -n "$PREFS_WINDOW" ]; then
+    pass "la finestra delle preferenze si apre nel Shell vero (prefs.js caricato dall'host reale)"
+else
+    fail "nessuna finestra delle preferenze dopo 15 s: $WINDOWS_JSON"
+fi
+probe_cmd close-windows >/dev/null
+
 echo "== errori JavaScript / JavaScript errors =="
-if grep -E "JS ERROR|bravoric" "$T/shell.log" | grep -viE "backend not installed" | grep -qi "error"; then
-    fail "errori JS nel log di gnome-shell:"; grep -E "JS ERROR|bravoric" "$T/shell.log" | head -5
+# Il log di gnome-shell e quello della sessione (dove scrive la finestra delle preferenze).
+# The gnome-shell log and the session log (where the preferences window writes).
+if cat "$T/shell.log" "$T/session.log" | grep -E "JS ERROR|bravoric" | grep -viE "backend not installed" | grep -qi "error"; then
+    fail "errori JS nei log di gnome-shell/sessione:"; cat "$T/shell.log" "$T/session.log" | grep -E "JS ERROR|bravoric" | head -5
 else
     pass "nessun errore JS relativo all'estensione nel log di gnome-shell"
 fi
