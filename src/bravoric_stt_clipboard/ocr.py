@@ -4,10 +4,15 @@ OCR mode orchestration: clipboard image -> vision -> cleanup -> clipboard.
 """
 from __future__ import annotations
 
+import contextlib
+import json
 import logging
+import os
+import signal
+import tempfile
 import time
 
-from . import clipboard, notify, output_history, screenshot, status, storage
+from . import audio, clipboard, notify, output_history, screenshot, status, storage
 from .api_client import vision_extract
 from .config import Config
 from .fallback import AllLevelsFailedError, cleanup_with_validation, try_with_fallback
@@ -15,8 +20,184 @@ from .i18n import _
 
 logger = logging.getLogger(__name__)
 
+# Lock dell'OCR in corso: pid del processo `bravoric-ocr-capture` (e del
+# gnome-screenshot di selezione). E' cio' che rende l'OCR annullabile: `cancel`
+# lo legge direttamente, senza dipendere da status.json.
+# Lock of the running OCR: pid of the `bravoric-ocr-capture` process (and of the
+# selection gnome-screenshot). It is what makes the OCR cancellable: `cancel`
+# reads it directly, without depending on status.json.
+OCR_LOCK_PATH = audio._runtime_dir() / "ocr.lock"
+OCR_MARKERS = ("ocr-capture", "bravoric_stt_clipboard")
+CANCEL_WAIT_SECONDS = 5.0
+
+
+class OcrCancelled(BaseException):
+    """BaseException di proposito: nessun `except Exception` dell'OCR deve
+    inghiottire l'annullamento.
+
+    BaseException on purpose: no `except Exception` in the OCR must swallow the
+    cancellation.
+    """
+
+
+class _Run:
+    committed = False  # gia' alla scrittura negli appunti: non annullabile | past the clipboard write: not cancellable
+    cancelled = False
+
+
+def _lock_data() -> dict | None:
+    try:
+        data = json.loads(OCR_LOCK_PATH.read_text())
+    except (OSError, ValueError):
+        return None
+    pid = data.get("pid") if isinstance(data, dict) else None
+    if isinstance(pid, bool) or not isinstance(pid, int) or pid <= 0:
+        return None
+    return data
+
+
+def is_active() -> bool:
+    """C'e' un OCR vivo? Un lock di un processo morto (o con pid riusato) e' un
+    residuo e viene rimosso.
+
+    Is there a live OCR? A lock of a dead process (or with a reused pid) is a
+    leftover and is removed.
+    """
+    data = _lock_data()
+    if data is not None and audio._pid_alive(data["pid"]) and audio.pid_matches(data["pid"], OCR_MARKERS):
+        return True
+    OCR_LOCK_PATH.unlink(missing_ok=True)
+    return False
+
+
+def _write_lock(extra: dict | None = None, exclusive: bool = True) -> bool:
+    audio.ensure_private_dir(OCR_LOCK_PATH.parent)
+    payload = {"pid": os.getpid(), "started_at": time.time(), **(extra or {})}
+    fd, tmp = tempfile.mkstemp(dir=str(OCR_LOCK_PATH.parent), prefix="ocr.lock.", suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w") as fh:
+            fh.write(json.dumps(payload))
+        if exclusive:
+            os.link(tmp, str(OCR_LOCK_PATH))  # atomico, fallisce se esiste | atomic, fails if it exists
+        else:
+            os.replace(tmp, str(OCR_LOCK_PATH))
+        return True
+    except FileExistsError:
+        return False
+    finally:
+        with contextlib.suppress(OSError):
+            os.unlink(tmp)
+
+
+def _acquire_lock() -> bool:
+    if _write_lock():
+        return True
+    if is_active():
+        return False
+    return _write_lock()
+
+
+def _on_cancel_signal(signum, frame) -> None:
+    if _Run.committed or _Run.cancelled:
+        return
+    _Run.cancelled = True
+    raise OcrCancelled
+
+
+def _commit() -> None:
+    """Da qui in poi l'OCR scrive negli appunti: l'annullamento non e' piu'
+    possibile e lo stato lo dichiara (l'estensione non offre piu' "Annulla").
+
+    From here on the OCR writes to the clipboard: cancellation is no longer
+    possible and the state says so (the extension no longer offers "Cancel").
+    """
+    _Run.committed = True
+    with contextlib.suppress(Exception):
+        status.write_status(status.STATE_PROCESSING, service="ocr", cancellable=False)
+
+
+def cancel() -> bool:
+    """Annulla l'OCR in corso (selezione o elaborazione). IDEMPOTENTE: senza OCR
+    attivo non fa nulla (mai un nuovo avvio). Ritorna True se ha inviato
+    l'annullamento. Se l'OCR e' gia' alla scrittura negli appunti lo lascia finire.
+
+    Cancels the running OCR (selection or processing). IDEMPOTENT: with no active
+    OCR it does nothing (never a new start). Returns True if it sent the
+    cancellation. If the OCR is already at the clipboard write it lets it finish.
+    """
+    if not is_active():
+        _repair_status()
+        return False
+    data = _lock_data() or {}
+    pid = data["pid"]
+    current = status.read_status()
+    if current.get("state") == status.STATE_PROCESSING and current.get("cancellable") is False:
+        logger.info("OCR annullamento rifiutato: gia' alla scrittura negli appunti")
+        return False
+    with contextlib.suppress(ProcessLookupError):
+        os.kill(pid, signal.SIGTERM)
+    deadline = time.time() + CANCEL_WAIT_SECONDS
+    while time.time() < deadline and audio._pid_alive(pid) and _lock_data() is not None:
+        time.sleep(0.05)
+    if audio._pid_alive(pid) and _lock_data() is not None:
+        current = status.read_status()
+        if current.get("cancellable") is False:
+            return True
+        with contextlib.suppress(ProcessLookupError):
+            os.kill(pid, signal.SIGKILL)
+        child = data.get("child_pid")
+        if isinstance(child, int) and child > 0 and audio._pid_alive(child) \
+                and audio.pid_matches(child, ("gnome-screenshot",)):
+            with contextlib.suppress(ProcessLookupError):
+                os.kill(child, signal.SIGKILL)
+        OCR_LOCK_PATH.unlink(missing_ok=True)
+        _repair_status()
+    return True
+
+
+def _repair_status() -> None:
+    """Nessun OCR vivo ma status.json dice ancora 'processing' di OCR: residuo,
+    si riporta a idle cosi' il controllo non resta su "Annulla".
+
+    No live OCR but status.json still says OCR 'processing': leftover, back to
+    idle so the control does not stay on "Cancel".
+    """
+    current = status.read_status()
+    if current.get("state") == status.STATE_PROCESSING and current.get("service") == "ocr":
+        with contextlib.suppress(Exception):
+            status.write_status(status.STATE_IDLE, service="ocr")
+
 
 def handle_capture(cfg: Config) -> None:
+    """Avvio OCR annullabile: lock + SIGTERM = annulla. Un secondo avvio con un OCR
+    vivo viene ignorato (mai due catture sovrapposte).
+
+    Cancellable OCR start: lock + SIGTERM = cancel. A second start with a live OCR
+    is ignored (never two overlapping captures).
+    """
+    if not _acquire_lock():
+        logger.info("OCR gia' attivo, avvio ignorato")
+        return
+    _Run.committed = False
+    _Run.cancelled = False
+    previous = None
+    try:
+        previous = signal.signal(signal.SIGTERM, _on_cancel_signal)
+    except ValueError:  # non nel thread principale | not in the main thread
+        pass
+    try:
+        _capture(cfg)
+    except OcrCancelled:
+        logger.info("OCR annullato dall'utente")
+        with contextlib.suppress(Exception):
+            status.write_status(status.STATE_IDLE, service="ocr")
+    finally:
+        if previous is not None:
+            signal.signal(signal.SIGTERM, previous)
+        OCR_LOCK_PATH.unlink(missing_ok=True)
+
+
+def _capture(cfg: Config) -> None:
     # Con capture_screenshot=True una doppia pressione della scorciatoia (o
     # l'attesa lunga della selezione, fino a SELECTION_TIMEOUT_SECONDS)
     # lancerebbe un secondo gnome-screenshot interattivo sopra il primo: due
@@ -78,7 +259,10 @@ def handle_capture(cfg: Config) -> None:
     )
 
     if cfg.ocr_capture_screenshot:
-        image_bytes = screenshot.capture_area_png(cfg.screenshot_timeout_seconds)
+        image_bytes = screenshot.capture_area_png(
+            cfg.screenshot_timeout_seconds,
+            on_spawn=lambda pid: _write_lock({"child_pid": pid}, exclusive=False),
+        )
         if image_bytes is None:
             # Annullato (Esc) o nessuna risposta: un cambio idea dell'utente,
             # non un errore. Si torna a idle senza notifica, cosi' come non
@@ -132,6 +316,7 @@ def handle_capture(cfg: Config) -> None:
             notify.send(_("OCR: extraction error"), _("Empty extraction"), icon=notify.resolve_icon("error_general", cfg.icons.error_general))
         return
 
+    _commit()
     if cfg.double_injection:
         try:
             clipboard.write_text(raw_text, cfg.clipboard_tool, cfg.clipboard_timeout_seconds)

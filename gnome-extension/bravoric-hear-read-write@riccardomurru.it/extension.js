@@ -25,7 +25,7 @@ import { setRecordingBlink } from './recording-blink.mjs';
 // restano solo il widget e il cablaggio con le impostazioni.
 // Quick buttons (one click, no menu): the logic is in the pure module, only the
 // widget and the wiring with the settings stay here.
-import { QUICK_BUTTONS, createQuickButtons } from './quick-buttons.mjs';
+import { QUICK_BUTTONS, createQuickButtons, quickButtonMode } from './quick-buttons.mjs';
 
 const STATUS_PATH = GLib.build_filenamev([
     GLib.get_home_dir(), '.cache', 'bravoric-stt-clipboard', 'status.json',
@@ -239,14 +239,16 @@ function spawnVenvBinary(binName, args, logPrefix) {
             _('Bravoric backend not installed'),
             _('Run scripts/install.sh from the project repo first.'),
         );
-        return;
+        return false;
     }
     try {
         Gio.Subprocess.new([path, ...args], Gio.SubprocessFlags.NONE);
     } catch (e) {
         logError(e, logPrefix);
         notifyErrorIfEnabled(_('Bravoric error'), e.message);
+        return false;
     }
+    return true;
 }
 // Dipendenze iniettate ai moduli puri: i test eseguono watch-cache.mjs
 // davvero, con stub al posto di Gio/GLib, quindi il modulo non li importa.
@@ -257,7 +259,7 @@ const ioDeps = { Gio, GLib, logError };
 
 
 function spawnBackground(binName, ...args) {
-    spawnVenvBinary(binName, args, `bravoric-hear-read-write: impossibile lanciare ${binName}`);
+    return spawnVenvBinary(binName, args, `bravoric-hear-read-write: impossibile lanciare ${binName}`);
 }
 
 function showCopiedOsd() {
@@ -290,7 +292,7 @@ function spawnConfigEditor(...args) {
 function quickButtonLabels() {
     return {
         dictation: { start: _('Start dictation'), stop: _('Stop dictation') },
-        ocr: { start: _('Read text with OCR'), stop: _('Read text with OCR') },
+        ocr: { start: _('Read text with OCR'), stop: _('Cancel OCR') },
         stream: { start: _('Start streaming dictation'), stop: _('Stop streaming dictation') },
     };
 }
@@ -326,6 +328,11 @@ function makeQuickButton(uuid, spec, labels, onClick) {
                 icon.add_style_class_name(BLINK_CLASS);
             else
                 icon.remove_style_class_name(BLINK_CLASS);
+            // Attivo = icona di stop, cosi' con il solo mouse/tocco si vede che il
+            // click ferma; il nome accessibile cambia con lei.
+            // Active = stop icon, so with mouse/touch alone it is visible that the
+            // click stops; the accessible name changes with it.
+            icon.icon_name = active ? STOP_ICON : spec.icon;
             inner.accessible_name = active ? labels.stop : labels.start;
         },
         destroy() {
@@ -333,6 +340,10 @@ function makeQuickButton(uuid, spec, labels, onClick) {
         },
     };
 }
+
+// Icona dei controlli quando un click ferma/annulla l'azione in corso.
+// Icon of the controls when a click stops/cancels the running action.
+const STOP_ICON = 'media-playback-stop-symbolic';
 
 const BravoricIndicator = GObject.registerClass(
 class BravoricIndicator extends PanelMenu.Button {
@@ -410,6 +421,12 @@ class BravoricIndicator extends PanelMenu.Button {
         });
         this.add_child(this._icon);
 
+        // Ultimo stato letto: il menu decide start/stop dallo stesso modello dei bottoni.
+        // Last state read: the menu decides start/stop from the same model as the buttons.
+        this._uiState = 'idle';
+        this._uiService = null;
+        this._uiCancellable = null;
+
         this._lastOutputText = '';
         this._lastOutputItem = new PopupMenu.PopupMenuItem(_('Last output: (none)'));
         this._lastOutputItem.setSensitive(false);
@@ -430,11 +447,11 @@ class BravoricIndicator extends PanelMenu.Button {
         this.menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
 
         this._dictationItem = new PopupMenu.PopupImageMenuItem(_('Dictation'), 'audio-input-microphone-symbolic');
-        this._dictationItem.connect('activate', () => spawnBackground('bravoric-stt-toggle'));
+        this._dictationItem.connect('activate', () => this._runMenuAction('dictation'));
         this.menu.addMenuItem(this._dictationItem);
 
         this._ocrItem = new PopupMenu.PopupImageMenuItem(_('OCR'), 'camera-photo-symbolic');
-        this._ocrItem.connect('activate', () => spawnBackground('bravoric-ocr-capture'));
+        this._ocrItem.connect('activate', () => this._runMenuAction('ocr'));
         this.menu.addMenuItem(this._ocrItem);
 
         const configItem = new PopupMenu.PopupImageMenuItem(_('Configuration'), 'preferences-system-symbolic');
@@ -446,7 +463,7 @@ class BravoricIndicator extends PanelMenu.Button {
         this.menu.addMenuItem(this._historySubmenu);
 
         this._streamItem = new PopupMenu.PopupImageMenuItem(_('Streaming'), 'audio-input-microphone-symbolic');
-        this._streamItem.connect('activate', () => spawnBackground('bravoric-stream-toggle'));
+        this._streamItem.connect('activate', () => this._runMenuAction('stream'));
         this.menu.addMenuItem(this._streamItem);
 
         this.menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
@@ -1389,6 +1406,33 @@ class BravoricIndicator extends PanelMenu.Button {
         }
     }
 
+    // Voci di menu: etichetta/icona/sensibilita' dal modello start/stop/busy.
+    // Menu entries: label/icon/sensitivity from the start/stop/busy model.
+    _menuLabels() {
+        return {
+            dictation: { start: _('Dictation'), stop: _('Stop dictation') },
+            ocr: { start: _('OCR'), stop: _('Cancel OCR') },
+            stream: { start: _('Streaming'), stop: _('Stop streaming dictation') },
+        };
+    }
+
+    _syncMenuItem(item, key) {
+        const spec = QUICK_BUTTONS.find(s => s.key === key);
+        const mode = quickButtonMode(spec, this._uiState, this._uiService, this._uiCancellable);
+        item.setSensitive(mode !== 'busy');
+        item.label.text = mode === 'stop' ? this._menuLabels()[key].stop : this._menuLabels()[key].start;
+        item.setIcon?.(mode === 'stop' ? STOP_ICON : spec.icon);
+        item.accessible_name = item.label.text;
+    }
+
+    _runMenuAction(key) {
+        const spec = QUICK_BUTTONS.find(s => s.key === key);
+        const mode = quickButtonMode(spec, this._uiState, this._uiService, this._uiCancellable);
+        if (mode === 'busy')
+            return;
+        spawnBackground(spec.command, ...(mode === 'stop' ? spec.stopArgs : spec.startArgs));
+    }
+
     _refreshStatus() {
         // Generation token: il timer periodico (30s) chiama _refreshStatus
         // direttamente, senza passare dal debounce del file monitor, quindi
@@ -1458,9 +1502,17 @@ class BravoricIndicator extends PanelMenu.Button {
                 // disabled (avoids races on audio/clipboard). B3: in error state the user
                 // must be able to retry (the shortcut already works, but the menu entries
                 // stay disabled for 5 minutes).
-                const canStart = state === 'idle' || state === 'error';
-                this._dictationItem.setSensitive(canStart);
-                this._ocrItem.setSensitive(canStart);
+                this._uiState = state;
+                this._uiService = data.service ?? null;
+                this._uiCancellable = typeof data.cancellable === 'boolean' ? data.cancellable : null;
+                // Stesso modello dei bottoni rapidi (quick-buttons.mjs): idle/error =
+                // avvia; azione in corso e fermabile = "Ferma/Annulla" cliccabile;
+                // altro servizio o elaborazione non annullabile = non cliccabile.
+                // Same model as the quick buttons (quick-buttons.mjs): idle/error =
+                // start; running and stoppable action = clickable "Stop/Cancel"; other
+                // service or non-cancellable processing = not clickable.
+                this._syncMenuItem(this._dictationItem, 'dictation');
+                this._syncMenuItem(this._ocrItem, 'ocr');
                 // Giro 3 (F7): anche la voce Streaming è un avvio di cattura,
                 // quindi la stessa guardia delle altre due. Prima non riceveva
                 // mai setSensitive: restava cliccabile durante recording/
@@ -1472,12 +1524,12 @@ class BravoricIndicator extends PanelMenu.Button {
                 // clickable during recording/processing and the click went off empty
                 // (bravoric-stream-toggle answered False without showing anything). The
                 // three entries are enabled and disabled together.
-                this._streamItem.setSensitive(canStart);
+                this._syncMenuItem(this._streamItem, 'stream');
                 // Bottoni rapidi: stesso stato e stesso servizio, ma il bottone
                 // che sta registrando resta cliccabile (il suo click e' lo stop).
                 // Quick buttons: same state and same service, but the button that
                 // is recording stays clickable (its click is the stop).
-                this._extension?._quick?.update(state, data.service);
+                this._extension?._quick?.update(state, data.service, this._uiCancellable);
                 if (state === 'processing' && data.service) {
                     this._lastOutputItem.setSensitive(false);
                     this._lastOutputItem.label.text = data.service === 'stt'
@@ -1598,7 +1650,14 @@ export default class BravoricIndicatorExtension extends Extension {
         this._quick = createQuickButtons({
             readBool: key => settingBool(key, false),
             makeButton: (spec, onClick) => makeQuickButton(this.uuid, spec, quickButtonLabels()[spec.key], onClick),
-            spawn: command => spawnBackground(command),
+            spawn: (command, args) => spawnBackground(command, ...args),
+            later: (ms, fn) => {
+                const id = GLib.timeout_add(GLib.PRIORITY_DEFAULT, ms, () => {
+                    fn();
+                    return GLib.SOURCE_REMOVE;
+                });
+                return () => GLib.Source.remove(id);
+            },
         });
         // Un widget che non si riesce a costruire non deve mai impedire il
         // caricamento dell'estensione: l'errore si logga e il resto continua.

@@ -57,6 +57,7 @@ class FakeApi(BaseHTTPRequestHandler):
     cleaned = "Ciao mondo, prova."
     ocr_text = "testo letto dall'immagine"
     hits: ClassVar[list[str]] = []
+    delay: ClassVar[float] = 0.0  # ritardo della risposta di visione/pulizia / vision/cleanup reply delay
 
     def log_message(self, *args) -> None:  # silenzio / silence
         pass
@@ -81,6 +82,8 @@ class FakeApi(BaseHTTPRequestHandler):
         if self.path.endswith("/audio/transcriptions"):
             self._reply({"text": FakeApi.transcript})
         elif self.path.endswith("/chat/completions"):
+            if FakeApi.delay:
+                time.sleep(FakeApi.delay)
             # Pulizia LLM (schema JSON) oppure estrazione OCR (testo semplice).
             # LLM cleanup (JSON schema) or OCR extraction (plain text).
             content = json.dumps({"corrected_text": FakeApi.cleaned}) if wants_json else FakeApi.ocr_text
@@ -203,6 +206,29 @@ class Env:
         return subprocess.run([sys.executable, "-c", code], env=self.env(language), capture_output=True,
                               text=True, timeout=60, cwd=str(self.root), check=False)
 
+    def cli(self, entry: str, args: tuple = (), language: str = "en") -> subprocess.CompletedProcess:
+        """Entry point CLI vera con argv ESPLICITO (bottoni e menu li passano cosi').
+        REAL CLI entry point with EXPLICIT argv (buttons and menu pass them this way)."""
+        code = f"from bravoric_stt_clipboard.cli import {entry}; raise SystemExit({entry}({list(args)!r}))"
+        return subprocess.run([sys.executable, "-c", code], env=self.env(language), capture_output=True,
+                              text=True, timeout=90, cwd=str(self.root), check=False)
+
+    def spawn(self, entry: str, args: tuple = (), language: str = "en") -> subprocess.Popen:
+        code = f"from bravoric_stt_clipboard.cli import {entry}; raise SystemExit({entry}({list(args)!r}))"
+        return subprocess.Popen([sys.executable, "-c", code], env=self.env(language), stdout=subprocess.PIPE,
+                                stderr=subprocess.PIPE, text=True, cwd=str(self.root))
+
+    def stt_lock(self) -> Path:
+        return self.runtime / "bravoric-stt-clipboard" / "recording.lock"
+
+    def ocr_lock(self) -> Path:
+        return self.runtime / "bravoric-stt-clipboard" / "ocr.lock"
+
+    def write_status(self, payload: dict) -> None:
+        path = self.home / ".cache" / "bravoric-stt-clipboard" / "status.json"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps({"timestamp": time.time(), **payload}))
+
     def clipboard_writes(self) -> list[str]:
         if not self.clip_log.exists():
             return []
@@ -217,6 +243,26 @@ class Env:
 
     def cleanup(self) -> None:
         shutil.rmtree(self.root, ignore_errors=True)
+
+
+def wait_for(cond, timeout: float = 10.0, step: float = 0.05) -> bool:
+    end = time.time() + timeout
+    while time.time() < end:
+        if cond():
+            return True
+        time.sleep(step)
+    return cond()
+
+
+def pid_alive(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+    except OSError:
+        return False
+    try:  # uno zombie non e' vivo / a zombie is not alive
+        return Path(f"/proc/{pid}/stat").read_text().rsplit(")", 1)[1].split()[0] != "Z"
+    except OSError:
+        return False
 
 
 def dictate(env: Env, language: str = "en") -> tuple[subprocess.CompletedProcess, subprocess.CompletedProcess]:
@@ -449,6 +495,205 @@ def main() -> int:
               4.5 <= elapsed < 12, f"{elapsed:.1f}s")
         check("scadenza della selezione: silenziosa (nessun errore, appunti intatti)",
               env.clipboard_writes() == [] and not any("error" in n.lower() for n in env.notifications()), str(env.notifications()))
+    finally:
+        env.cleanup()
+
+
+    print("== STT start/stop ESPLICITI: il pulsante ferma davvero, senza tastiera / explicit start/stop ==")
+    env = Env()
+    try:
+        env.write_config([good])
+        first = env.cli("stt_toggle_main", ("start",))
+        check("start esplicito: registrazione avviata (lock creato)", first.returncode == 0 and env.stt_lock().exists(), first.stderr[-200:])
+        lock_before = env.stt_lock().read_text()
+        again = env.cli("stt_toggle_main", ("start",))
+        check("secondo start con registrazione in corso: no-op (stesso lock, nessun secondo ffmpeg)",
+              again.returncode == 0 and env.stt_lock().read_text() == lock_before)
+        # Lo stop arriva SUBITO (debounce da 0.1 s nel test: ffmpeg finto appena partito): attende, non sparisce.
+        # The stop arrives RIGHT AWAY (0.1 s debounce in the test): it waits, it does not vanish.
+        stopped = env.cli("stt_toggle_main", ("stop",))
+        check("stop esplicito: ferma la registrazione e trascrive (exit 0)", stopped.returncode == 0, stopped.stderr[-300:])
+        check("stop: lock rimosso, audio temporaneo ripulito, appunti scritti, stato idle",
+              not env.stt_lock().exists() and not list(env.tmp.glob("*")) and "Ciao mondo, prova." in env.clipboard_writes()
+              and env.status().get("state") == "idle", f"{env.clipboard_writes()} {env.status()} {list(env.tmp.glob('*'))}")
+        writes_before = list(env.clipboard_writes())
+        again = env.cli("stt_toggle_main", ("stop",))
+        check("stop IDEMPOTENTE: senza registrazione non ne avvia una nuova (nessun lock, rc 0)",
+              again.returncode == 0 and not env.stt_lock().exists() and not list(env.tmp.glob("*")))
+        check("stop idempotente: nessuna scrittura negli appunti", env.clipboard_writes() == writes_before)
+    finally:
+        env.cleanup()
+
+    print("== STT stop dentro il debounce: attende, non ignora / stop inside the debounce waits ==")
+    env = Env()
+    try:
+        env.write_config([good], extra_audio="")
+        cfg = env.home / ".config" / "bravoric-stt-clipboard" / "config.toml"
+        cfg.write_text(cfg.read_text().replace("toggle_debounce_seconds = 0.1", "toggle_debounce_seconds = 1.5"))
+        env.cli("stt_toggle_main", ("start",))
+        started = time.time()
+        stopped = env.cli("stt_toggle_main", ("stop",))
+        elapsed = time.time() - started
+        check("stop a meta' debounce (1.5 s): il click non e' perso, la registrazione si ferma e trascrive",
+              stopped.returncode == 0 and not env.stt_lock().exists() and "Ciao mondo, prova." in env.clipboard_writes(),
+              f"{stopped.stderr[-200:]} {env.clipboard_writes()}")
+        check("stop nel debounce: ha atteso il residuo del debounce (>= 1 s), non e' tornato subito",
+              elapsed >= 1.0, f"{elapsed:.2f}s")
+        # Il toggle da scorciatoia resta invariato: dentro il debounce viene ignorato (nessuna regressione).
+        # The shortcut toggle is unchanged: inside the debounce it is ignored (no regression).
+        env.cli("stt_toggle_main", ("start",))
+        toggled = env.toggle()
+        check("toggle da scorciatoia dentro il debounce: ignorato come prima (lock ancora presente)",
+              toggled.returncode == 0 and env.stt_lock().exists())
+        env.cli("stt_toggle_main", ("stop",))
+    finally:
+        env.cleanup()
+
+    print("== STT stato residuo: stop ripulisce un 'recording' senza lock / stale state ==")
+    env = Env()
+    try:
+        env.write_config([good])
+        env.write_status({"state": "recording", "service": "stt"})
+        result = env.cli("stt_toggle_main", ("stop",))
+        check("status 'recording/stt' senza lock (backend morto): lo stop lo riporta a idle e NON avvia una registrazione",
+              result.returncode == 0 and env.status().get("state") == "idle" and not env.stt_lock().exists(), str(env.status()))
+        env.write_status({"state": "recording"})
+        env.cli("stt_toggle_main", ("stop",))
+        check("status 'recording' senza service e senza lock: ripulito anch'esso",
+              env.status().get("state") == "idle", str(env.status()))
+        env.write_status({"state": "recording", "service": "stream"})
+        env.cli("stt_toggle_main", ("stop",))
+        check("status 'recording/stream' (altro servizio): lo stop STT non lo tocca",
+              env.status().get("state") == "recording" and env.status().get("service") == "stream", str(env.status()))
+    finally:
+        env.cleanup()
+
+    print("== OCR annullabile: selezione screenshot / cancellable OCR: screenshot selection ==")
+    env = Env()
+    try:
+        env.set_screenshot("hang")
+        env.write_ocr_config(good, capture_screenshot=True, extra_ocr="screenshot_timeout_seconds = 60\n")
+        proc = env.spawn("ocr_capture_main", ("start",))
+        check("selezione avviata: lock OCR con il pid del processo e del gnome-screenshot",
+              wait_for(lambda: env.ocr_lock().exists() and "child_pid" in env.ocr_lock().read_text()), str(env.status()))
+        lock = json.loads(env.ocr_lock().read_text())
+        check("durante la selezione lo stato e' processing/ocr (annullabile: nessun cancellable=false)",
+              env.status().get("state") == "processing" and env.status().get("service") == "ocr"
+              and env.status().get("cancellable") is not False, str(env.status()))
+        second = env.cli("ocr_capture_main", ("start",))
+        check("secondo start con selezione attiva: ignorato (nessuna seconda cattura)",
+              second.returncode == 0 and json.loads(env.ocr_lock().read_text())["pid"] == lock["pid"])
+        started = time.time()
+        cancelled = env.cli("ocr_capture_main", ("cancel",))
+        elapsed = time.time() - started
+        check("cancel: exit 0 e il processo OCR termina in pochi secondi (senza tastiera, senza Esc)",
+              cancelled.returncode == 0 and wait_for(lambda: proc.poll() is not None, 5) and elapsed < 6,
+              f"{cancelled.stderr[-200:]} {elapsed:.1f}s")
+        check("cancel: il gnome-screenshot di selezione e' chiuso (nessun overlay orfano)",
+              wait_for(lambda: not pid_alive(lock["child_pid"]), 3), str(lock))
+        check("cancel: lock rimosso, stato idle, appunti NON toccati, nessuna notifica d'errore",
+              not env.ocr_lock().exists() and env.status().get("state") == "idle" and env.clipboard_writes() == []
+              and not any("error" in n.lower() for n in env.notifications()), f"{env.status()} {env.notifications()}")
+        check("processo OCR annullato: uscita pulita (rc 0)", proc.returncode == 0, str(proc.returncode))
+        again = env.cli("ocr_capture_main", ("cancel",))
+        check("cancel IDEMPOTENTE: senza OCR attivo non fa nulla e non avvia una cattura (rc 0, nessun lock)",
+              again.returncode == 0 and not env.ocr_lock().exists() and env.clipboard_writes() == [])
+    finally:
+        env.cleanup()
+
+    print("== OCR: la scorciatoia (toggle senza argomenti) annulla se attivo / shortcut toggle cancels ==")
+    env = Env()
+    try:
+        env.set_screenshot("hang")
+        env.write_ocr_config(good, capture_screenshot=True, extra_ocr="screenshot_timeout_seconds = 60\n")
+        proc = env.spawn("ocr_capture_main", ())
+        wait_for(lambda: env.ocr_lock().exists() and "child_pid" in env.ocr_lock().read_text())
+        toggled = env.ocr()
+        check("seconda pressione della scorciatoia con selezione attiva: annulla (mai una seconda selezione)",
+              toggled.returncode == 0 and wait_for(lambda: proc.poll() is not None, 5) and env.status().get("state") == "idle"
+              and not env.ocr_lock().exists(), f"{toggled.stderr[-200:]} {env.status()}")
+    finally:
+        env.cleanup()
+
+    print("== OCR annullato durante la richiesta lenta: nessuna scrittura negli appunti / cancel during slow request ==")
+    env = Env()
+    FakeApi.delay = 20
+    try:
+        env.set_wl_paste_image(True)
+        env.write_ocr_config(good)
+        hits_before = len(FakeApi.hits)
+        proc = env.spawn("ocr_capture_main", ("start",))
+        check("richiesta di visione partita (server raggiunto) e stato processing/ocr",
+              wait_for(lambda: len(FakeApi.hits) > hits_before and env.status().get("state") == "processing"), str(env.status()))
+        cancelled = env.cli("ocr_capture_main", ("cancel",))
+        check("cancel durante la richiesta: il processo termina (rc 0) entro pochi secondi",
+              cancelled.returncode == 0 and wait_for(lambda: proc.poll() is not None, 6) and proc.returncode == 0,
+              f"{cancelled.stderr[-200:]} {proc.poll()}")
+        check("cancel durante la richiesta: appunti mai scritti, lock rimosso, stato idle",
+              env.clipboard_writes() == [] and not env.ocr_lock().exists() and env.status().get("state") == "idle",
+              f"{env.clipboard_writes()} {env.status()}")
+    finally:
+        FakeApi.delay = 0
+        env.cleanup()
+
+    print("== OCR: gia' alla scrittura negli appunti non promette un cancel impossibile / past the point of no return ==")
+    env = Env()
+    try:
+        env.set_wl_paste_image(True)
+        env.write_ocr_config(good)
+        env.set_wl_copy_sleep(4)  # scrittura lenta: la finestra "committed" dura qualche secondo
+        proc = env.spawn("ocr_capture_main", ("start",))
+        check("alla scrittura negli appunti lo stato dichiara cancellable=false",
+              wait_for(lambda: env.status().get("cancellable") is False, 8), str(env.status()))
+        env.cli("ocr_capture_main", ("cancel",))
+        proc.wait(timeout=30)
+        env.set_wl_copy_sleep(0)
+        check("cancel tardivo: rifiutato, l'OCR termina il proprio lavoro e lo stato non resta bloccato",
+              env.status().get("state") in ("idle", "error") and not env.ocr_lock().exists(), str(env.status()))
+    finally:
+        env.cleanup()
+
+    print("== stato condiviso: OCR e stop durante altri servizi / shared state: OCR and stop during other services ==")
+    env = Env()
+    try:
+        env.write_config([good])
+        env.cli("stt_toggle_main", ("start",))
+        env.write_status({"state": "recording", "service": "stt"})
+        env.set_wl_paste_image(True)
+        env.write_ocr_config(good)  # sovrascrive la config: la dettatura in corso ha gia' letto la sua | overwrites the config: the running dictation already read its own
+        env.cli("ocr_capture_main", ("start",))
+        check("STT in registrazione + OCR completo: lo stato resta recording/stt (l'OCR non lo spegne)",
+              env.status().get("state") == "recording" and env.status().get("service") == "stt", str(env.status()))
+        # Ripristina la config di dettatura e chiude la registrazione.
+        # Restore the dictation config and close the recording.
+        env.write_config([good])
+        env.cli("stt_toggle_main", ("stop",))
+        env.write_status({"state": "processing", "service": "stt"})
+        env.cli("stt_toggle_main", ("stop",))
+        check("stop STT durante 'processing' (nessun lock): non tocca lo stato e non avvia nulla",
+              env.status().get("state") == "processing" and not env.stt_lock().exists(), str(env.status()))
+        env.write_status({"state": "idle"})
+    finally:
+        env.cleanup()
+
+    print("== OCR: lock morto e residui / dead lock and leftovers ==")
+    env = Env()
+    try:
+        env.set_wl_paste_image(True)
+        env.write_ocr_config(good)
+        env.ocr_lock().parent.mkdir(parents=True, exist_ok=True)
+        env.ocr_lock().write_text(json.dumps({"pid": 2 ** 22 - 3, "started_at": time.time()}))
+        result = env.cli("ocr_capture_main", ("start",))
+        check("lock di un processo morto: e' un residuo, l'OCR parte e completa",
+              result.returncode == 0 and "testo letto dall'immagine" in env.clipboard_writes() and not env.ocr_lock().exists(),
+              f"{result.stderr[-200:]} {env.clipboard_writes()}")
+        env.write_status({"state": "processing", "service": "ocr"})
+        result = env.cli("ocr_capture_main", ("cancel",))
+        check("status 'processing/ocr' senza OCR vivo: cancel lo riporta a idle (il controllo non resta su Annulla)",
+              result.returncode == 0 and env.status().get("state") == "idle", str(env.status()))
+        env.write_status({"state": "recording", "service": "stt"})
+        env.cli("ocr_capture_main", ("cancel",))
+        check("cancel non tocca una registrazione STT in corso", env.status().get("state") == "recording", str(env.status()))
     finally:
         env.cleanup()
 

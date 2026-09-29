@@ -1362,6 +1362,10 @@ msgstr ""
 msgid "Stop streaming dictation"
 msgstr ""
 
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/extension.js
+msgid "Cancel OCR"
+msgstr ""
+
 #: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js
 msgid "Dictation button"
 msgstr ""

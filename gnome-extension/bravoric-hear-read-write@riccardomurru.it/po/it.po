@@ -1413,6 +1413,10 @@ msgstr "Avvia la dettatura in streaming"
 msgid "Stop streaming dictation"
 msgstr "Ferma la dettatura in streaming"
 
+#: gnome-extension/bravoric-hear-read-write@riccardomurru.it/extension.js
+msgid "Cancel OCR"
+msgstr "Annulla OCR"
+
 #: gnome-extension/bravoric-hear-read-write@riccardomurru.it/prefs.js
 msgid "Dictation button"
 msgstr "Pulsante dettatura"

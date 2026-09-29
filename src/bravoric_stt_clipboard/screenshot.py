@@ -36,7 +36,7 @@ def is_available() -> bool:
     return shutil.which("gnome-screenshot") is not None
 
 
-def capture_area_png(timeout: float = SELECTION_TIMEOUT_SECONDS) -> bytes | None:
+def capture_area_png(timeout: float = SELECTION_TIMEOUT_SECONDS, on_spawn=None) -> bytes | None:
     """Selezione interattiva di un'area (mouse) e cattura in PNG.
 
     Ritorna None se l'utente annulla (Esc: gnome-screenshot esce senza
@@ -52,14 +52,29 @@ def capture_area_png(timeout: float = SELECTION_TIMEOUT_SECONDS) -> bytes | None
     none of these is an error to notify: it is a change of mind or an
     unanswered wait, not an OCR defect. The caller tells "no image" (None)
     apart from a real transcription error downstream.
+
+    `on_spawn(pid)` (opzionale) riceve il pid del processo di selezione appena
+    avviato, cosi' chi annulla l'OCR puo' chiudere l'overlay anche se questo
+    processo viene ucciso. Un'eccezione qualunque (annullamento compreso) chiude
+    sempre il processo di selezione.
+
+    `on_spawn(pid)` (optional) receives the pid of the selection process just
+    started, so whoever cancels the OCR can close the overlay even if this process
+    is killed. Any exception (cancellation included) always closes the selection
+    process.
     """
     with tempfile.TemporaryDirectory(prefix="bravoric-screenshot-") as tmp_dir:
         out_path = Path(tmp_dir) / "capture.png"
         try:
-            result = subprocess.run(
-                ["gnome-screenshot", "--area", "--file", str(out_path)],
-                check=False, timeout=timeout,
-            )
+            proc = subprocess.Popen(["gnome-screenshot", "--area", "--file", str(out_path)])
+            try:
+                if on_spawn is not None:
+                    on_spawn(proc.pid)
+                returncode = proc.wait(timeout=timeout)
+            finally:
+                if proc.poll() is None:
+                    proc.kill()
+                    proc.wait()
         except FileNotFoundError:
             logger.warning("gnome-screenshot non trovato: installa gnome-screenshot per usare capture_screenshot")
             return None
@@ -78,7 +93,7 @@ def capture_area_png(timeout: float = SELECTION_TIMEOUT_SECONDS) -> bytes | None
             # bubble up to cli.ocr_capture_main(), which would treat it as a real defect.
             logger.warning("impossibile avviare gnome-screenshot: %s", exc)
             return None
-        if result.returncode != 0 or not out_path.is_file():
+        if returncode != 0 or not out_path.is_file():
             # Annullamento (Esc) o area vuota: gnome-screenshot esce con un
             # codice non-zero e non scrive il file. Niente da segnalare.
             # Cancel (Esc) or empty area: gnome-screenshot exits with a non-zero code

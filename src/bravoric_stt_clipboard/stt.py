@@ -56,6 +56,44 @@ def handle_toggle(cfg: Config) -> None:
         _start(cfg)
 
 
+def handle_start(cfg: Config) -> None:
+    """Avvio ESPLICITO e idempotente: con una registrazione gia' in corso non fa
+    nulla (mai un secondo ffmpeg, mai uno stop mascherato da start).
+
+    EXPLICIT and idempotent start: with a recording already running it does
+    nothing (never a second ffmpeg, never a stop disguised as a start).
+    """
+    if audio.is_recording():
+        logger.info("STT start: registrazione gia' in corso, niente da fare")
+        return
+    _start(cfg)
+
+
+def handle_stop(cfg: Config) -> None:
+    """Stop ESPLICITO e idempotente: legge il lock (non status.json), quindi non
+    dipende da uno stato obsoleto. Senza registrazione NON ne avvia una nuova
+    (il toggle lo farebbe); attende debounce e finestra di avvio.
+
+    EXPLICIT and idempotent stop: reads the lock (not status.json), so it does
+    not depend on a stale state. With no recording it does NOT start a new one
+    (the toggle would); it waits out the debounce and the start-up window.
+    """
+    if audio.is_recording():
+        _stop_and_process(cfg, wait=True)
+        return
+    # Nessuna registrazione: se status.json dice ancora 'recording' e' un residuo
+    # (backend morto): lo si riporta a idle, cosi' il controllo non resta su "Ferma".
+    # No recording: if status.json still says 'recording' it is a leftover (dead
+    # backend): bring it back to idle so the control does not stay on "Stop".
+    current = status.read_status()
+    if current.get("state") == status.STATE_RECORDING and current.get("service") in (None, "stt"):
+        try:
+            status.write_status(status.STATE_IDLE, service=current.get("service"))
+        except Exception:
+            logger.debug("impossibile ripulire lo status residuo", exc_info=True)
+    logger.info("STT stop: nessuna registrazione in corso, niente da fare")
+
+
 def _start(cfg: Config) -> None:
     # P4 (seconda parte): esclusione reciproca STT <-> streaming. I due lock
     # sono file DISTINTI (recording.lock vs stream.lock), quindi senza questa
@@ -85,9 +123,9 @@ def _start(cfg: Config) -> None:
         notify.send(_("STT: recording started"), icon=notify.resolve_icon("stt_recording_start", cfg.icons.stt_recording_start))
 
 
-def _stop_and_process(cfg: Config) -> None:
+def _stop_and_process(cfg: Config, wait: bool = False) -> None:
     try:
-        audio_path = audio.stop_recording(cfg.audio)
+        audio_path = audio.stop_recording(cfg.audio, wait=wait)
     except audio.ToggleDebouncedError as exc:
         logger.info(str(exc))
         return

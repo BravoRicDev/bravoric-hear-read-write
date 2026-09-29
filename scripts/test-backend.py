@@ -940,6 +940,7 @@ def main() -> int:
          mock.patch.object(cli, "ocr") as m_ocr_cli, \
          mock.patch.object(cli, "status") as m_status_cli, \
          mock.patch.object(cli, "notify") as m_notify_ocr2:
+        m_ocr_cli.is_active.return_value = False  # toggle: nessun OCR vivo -> avvia | toggle: no live OCR -> start
         m_ocr_cli.handle_capture.side_effect = RuntimeError("boom (simulato)")
         ret_ocr2 = cli.ocr_capture_main()
         check("ocr_capture_main: eccezione inattesa da handle_capture -> ritorna 1, non solleva",
@@ -6222,7 +6223,7 @@ def main() -> int:
 
     # Anti-drift: le due catene di cattura devono stare in _stop_and_process.
     # Anti-drift: the two capture chains must stay in _stop_and_process.
-    _stop_body = (_stt_src.split("def _stop_and_process(cfg: Config) -> None:")[1]
+    _stop_body = (_stt_src.split("def _stop_and_process(cfg: Config, wait: bool = False) -> None:")[1]
                   .split("\ndef ")[0])
     check("P2: stt.py cattura RuntimeError oltre a ToggleDebouncedError",
           "except audio.ToggleDebouncedError" in _stop_body
@@ -6550,29 +6551,44 @@ def main() -> int:
         # cancellation.
         raise PermissionError("simulato: permesso negato")
 
-    _orig_ss_run = screenshot.subprocess.run
+    # screenshot.py ora usa Popen (processo annullabile): il doppione ospita la
+    # vecchia funzione "run" e la esegue in wait(), dove si risolve l'esito.
+    # screenshot.py now uses Popen (cancellable process): the double hosts the old
+    # "run" function and executes it in wait(), where the outcome is resolved.
+    def _popen_double(run_fn):
+        class _P:
+            pid = 0
+            def __init__(self, args, **_kw):
+                self.args = args
+            def wait(self, timeout=None):
+                return run_fn(self.args, timeout=timeout).returncode
+            def poll(self):
+                return 0
+        return _P
+
+    _orig_ss_run = screenshot.subprocess.Popen
     try:
-        screenshot.subprocess.run = _fake_run_success
+        screenshot.subprocess.Popen = _popen_double(_fake_run_success)
         check("screenshot: successo -> bytes del PNG catturato",
               screenshot.capture_area_png() == b"\x89PNG\r\n\x1a\nFAKE")
 
-        screenshot.subprocess.run = _fake_run_cancel
+        screenshot.subprocess.Popen = _popen_double(_fake_run_cancel)
         check("screenshot: annullato (Esc, exit!=0, nessun file) -> None, non un errore",
               screenshot.capture_area_png() is None)
 
-        screenshot.subprocess.run = _fake_run_missing
+        screenshot.subprocess.Popen = _popen_double(_fake_run_missing)
         check("screenshot: gnome-screenshot assente -> None (loggato, non solleva)",
               screenshot.capture_area_png() is None)
 
-        screenshot.subprocess.run = _fake_run_timeout
+        screenshot.subprocess.Popen = _popen_double(_fake_run_timeout)
         check("screenshot: timeout selezione -> None",
               screenshot.capture_area_png() is None)
 
-        screenshot.subprocess.run = _fake_run_oserror
+        screenshot.subprocess.Popen = _popen_double(_fake_run_oserror)
         check("screenshot: OSError generico all'avvio -> None, non solleva",
               screenshot.capture_area_png() is None)
     finally:
-        screenshot.subprocess.run = _orig_ss_run
+        screenshot.subprocess.Popen = _orig_ss_run
 
     print("== ocr.py: capture_screenshot=True chiama screenshot invece di clipboard ==")
     cfg_shot = _dc.replace(cfg_stream_min, ocr_capture_screenshot=True)
@@ -8306,11 +8322,12 @@ max_entries = 20
         except _fb_mod.AllLevelsFailedError:
             _strict_rejects = True
         check("cablaggio: cleanup_min_length_ratio=0.7 scarta un risultato corto", _strict_rejects)
-    with mock.patch("bravoric_stt_clipboard.screenshot.subprocess.run") as _m_shot:
-        _m_shot.return_value = types.SimpleNamespace(returncode=1)
+    with mock.patch("bravoric_stt_clipboard.screenshot.subprocess.Popen") as _m_shot:
+        _m_shot.return_value.wait.return_value = 1
+        _m_shot.return_value.poll.return_value = 0
         screenshot.capture_area_png(7)
         check("cablaggio: capture_area_png usa il timeout passato",
-              _m_shot.call_args.kwargs["timeout"] == 7)
+              _m_shot.return_value.wait.call_args.kwargs["timeout"] == 7)
     _prompt_seen: dict = {}
     class _PromptSess:
         def post(self, *a, **kw):

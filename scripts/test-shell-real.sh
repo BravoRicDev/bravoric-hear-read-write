@@ -56,12 +56,12 @@ chmod 700 "$T/runtime"
 ln -s "$EXT_SRC" "$T/data/gnome-shell/extensions/bravoric-hear-read-write@riccardomurru.it"
 ln -s "$PROBE_SRC" "$T/data/gnome-shell/extensions/shell-probe@local"
 
-# Finto venv: ogni binario registra il proprio nome in $T/calls.
-# Fake venv: every binary records its own name in $T/calls.
+# Finto venv: ogni binario registra nome e argomenti in $T/calls (una riga per chiamata).
+# Fake venv: every binary records its name and arguments in $T/calls (one line per call).
 BIN="$T/data/bravoric-stt-clipboard/venv/bin"
 mkdir -p "$BIN"
 for name in bravoric-stt-toggle bravoric-ocr-capture bravoric-stream-toggle; do
-    printf '#!/usr/bin/env bash\necho "%s" >> "%s/calls"\n' "$name" "$T" > "$BIN/$name"
+    printf '#!/usr/bin/env bash\necho "%s $*" >> "%s/calls"\n' "$name" "$T" > "$BIN/$name"
     chmod +x "$BIN/$name"
 done
 
@@ -213,23 +213,25 @@ for key in dictation ocr stream; do
     [ "$(probe_cmd "click $key")" = clicked ] && pass "click su $key inviato" || fail "click su $key non eseguito"
 done
 sleep 1.5
-python3 - "$T/calls" <<'PY' && pass "i tre binari sono stati lanciati (stt, ocr, stream)" || fail "binari lanciati diversi dal previsto: $(cat "$T/calls" 2>/dev/null | tr '\n' ' ')"
+python3 - "$T/calls" <<'PY' && pass "i tre binari sono stati lanciati con gli argomenti espliciti da idle (stt start, ocr start, stream toggle)" || fail "binari lanciati diversi dal previsto: $(cat "$T/calls" 2>/dev/null | tr '\n' '|')"
 import sys
-calls = open(sys.argv[1]).read().split()
-sys.exit(0 if sorted(calls) == ['bravoric-ocr-capture', 'bravoric-stream-toggle', 'bravoric-stt-toggle'] else 1)
+calls = [l.strip() for l in open(sys.argv[1]).read().splitlines() if l.strip()]
+sys.exit(0 if sorted(calls) == ['bravoric-ocr-capture start', 'bravoric-stream-toggle', 'bravoric-stt-toggle start'] else 1)
 PY
 
 echo "== stato dal backend: i bottoni seguono status.json / state from the backend =="
 # Scrive status.json come fa il backend (tmp + rename) nella HOME temporanea.
 # Writes status.json the way the backend does (tmp + rename) in the temporary HOME.
-write_status() {  # write_status <state> [service]
-    python3 - "$T/home/.cache/bravoric-stt-clipboard" "$1" "${2:-}" <<'PY'
+write_status() {  # write_status <state> [service] [cancellable: true|false]
+    python3 - "$T/home/.cache/bravoric-stt-clipboard" "$1" "${2:-}" "${3:-}" <<'PY'
 import json, os, sys, time
-directory, state, service = sys.argv[1:4]
+directory, state, service, cancellable = sys.argv[1:5]
 os.makedirs(directory, exist_ok=True)
 payload = {"state": state, "timestamp": time.time()}
 if service:
     payload["service"] = service
+if cancellable:
+    payload["cancellable"] = cancellable == "true"
 tmp = os.path.join(directory, "status.json.tmp")
 with open(tmp, "w") as fh:
     json.dump(payload, fh)
@@ -265,8 +267,8 @@ if [ "$(gjs -m "$T/monitor-check.mjs" 2>/dev/null | tail -1)" = yes ]; then INOT
 if [ "$INOTIFY" = 0 ]; then
     echo "  SKIP  eventi inotify non disponibili in questo ambiente: lo stato e' applicato con un refresh esplicito / inotify events unavailable here: state applied with an explicit refresh"
 fi
-apply_state() {  # apply_state <state> [service]
-    write_status "$1" "${2:-}"
+apply_state() {  # apply_state <state> [service] [cancellable]
+    write_status "$1" "${2:-}" "${3:-}"
     if [ "$INOTIFY" = 0 ]; then
         sleep 0.5
         probe_cmd refresh >/dev/null
@@ -287,6 +289,47 @@ wait_dump "(lambda b: b['stream']['reactive'] and b['stream']['accessible_name']
 apply_state idle
 wait_dump "(lambda b: all(x['reactive'] for x in b.values()) and b['dictation']['accessible_name']=='${N_DICT_START}')($by_key)" \
     && pass "tornati a idle tutti cliccabili e con il nome 'Start ...'" || fail "ritorno a idle non rispecchiato: $(dump)"
+
+echo "== stop esplicito: il secondo click ferma, non riavvia / explicit stop: the second click stops, never restarts =="
+N_OCR_CANCEL="Cancel OCR"; [ "${BRV_LANG:-en}" = it ] && N_OCR_CANCEL="Annulla OCR"
+calls_lines() { grep -c "$1" "$T/calls" 2>/dev/null || true; }
+: > "$T/calls"
+apply_state recording stt
+wait_dump "(lambda b: b['dictation']['accessible_name']=='${N_DICT_STOP}')($by_key)" >/dev/null
+probe_cmd "click dictation" >/dev/null; sleep 1
+[ "$(cat "$T/calls")" = "bravoric-stt-toggle stop" ] \
+    && pass "dettatura in registrazione: il click lancia 'bravoric-stt-toggle stop' (mai start/toggle)" \
+    || fail "click di stop dettatura errato: $(tr '\n' '|' < "$T/calls")"
+: > "$T/calls"
+apply_state recording ""
+wait_dump "(lambda b: b['dictation']['reactive'] and b['dictation']['accessible_name']=='${N_DICT_STOP}')($by_key)" \
+    && pass "recording SENZA service: la dettatura resta cliccabile come 'Stop' (non piu' disabilitata)" \
+    || fail "recording senza service non gestito: $(dump)"
+probe_cmd "click dictation" >/dev/null; sleep 1
+[ "$(cat "$T/calls")" = "bravoric-stt-toggle stop" ] \
+    && pass "recording senza service: il click e' comunque uno stop esplicito" || fail "click senza service errato: $(tr '\n' '|' < "$T/calls")"
+: > "$T/calls"
+apply_state processing ocr
+wait_dump "(lambda b: b['ocr']['reactive'] and b['ocr']['accessible_name']=='${N_OCR_CANCEL}' and not b['dictation']['reactive'] and not b['stream']['reactive'])($by_key)" \
+    && pass "OCR in elaborazione: il bottone diventa '${N_OCR_CANCEL}' ed e' cliccabile, gli altri no" \
+    || fail "OCR in elaborazione non rispecchiato: $(dump)"
+probe_cmd "click ocr" >/dev/null; sleep 1
+[ "$(cat "$T/calls")" = "bravoric-ocr-capture cancel" ] \
+    && pass "OCR: il click lancia 'bravoric-ocr-capture cancel'" || fail "click di annullamento OCR errato: $(tr '\n' '|' < "$T/calls")"
+apply_state processing ocr false
+wait_dump "(lambda b: not b['ocr']['reactive'])($by_key)" \
+    && pass "OCR con cancellable=false: non promette un annullamento impossibile (non cliccabile)" \
+    || fail "OCR non annullabile ancora cliccabile: $(dump)"
+apply_state recording stt
+MENU_JSON="$(probe_cmd menu)"
+python3 - "$MENU_JSON" <<'PY' && pass "menu in registrazione stt: 'Stop dictation' cliccabile, OCR e Streaming disabilitati" || fail "menu in registrazione errato: $MENU_JSON"
+import json, sys
+rows = {r['label']: r for r in json.loads(sys.argv[1]) if r['label']}
+stop = [r for k, r in rows.items() if 'top dictation' in k or 'Ferma la dettatura' in k]
+sys.exit(0 if stop and stop[0]['sensitive'] and not rows['OCR']['sensitive'] else 1)
+PY
+apply_state idle
+wait_dump "(lambda b: all(x['reactive'] for x in b.values()))($by_key)" >/dev/null
 
 echo "== spegnere un bottone / turning one off =="
 setkey show-ocr-button false

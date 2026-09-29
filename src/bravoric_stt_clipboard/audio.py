@@ -77,6 +77,15 @@ class ToggleDebouncedError(RuntimeError):
     """
 
 
+# Tetto dell'attesa della finestra di avvio in uno stop esplicito (vedi
+# stop_recording, wait=True): un avvio che non pubblica il lock completo entro
+# questo limite e' morto o bloccato.
+# Cap on the start-up window wait in an explicit stop (see stop_recording,
+# wait=True): a start that does not publish the full lock within this limit is
+# dead or stuck.
+START_WINDOW_TIMEOUT_SECONDS = 10.0
+
+
 def _read_lock() -> dict | None:
     if not LOCK_PATH.exists():
         return None
@@ -265,7 +274,35 @@ def start_recording(audio_cfg: AudioConfig) -> Path:
     return out_path
 
 
-def stop_recording(audio_cfg: AudioConfig) -> Path:
+def _wait_until_stoppable(audio_cfg: AudioConfig) -> None:
+    """Stop ESPLICITO (bottone/menu): non si ignora ne' si fallisce se arriva
+    dentro il debounce o la finestra di avvio, si ATTENDE che la registrazione
+    sia fermabile. Cosi' un click "Ferma" subito dopo "Avvia" ferma davvero,
+    invece di sparire in silenzio (il toggle da scorciatoia resta invariato).
+
+    EXPLICIT stop (button/menu): it is neither ignored nor failed when it arrives
+    inside the debounce or the start-up window, it WAITS until the recording can
+    be stopped. So a "Stop" click right after "Start" really stops, instead of
+    vanishing silently (the shortcut toggle stays unchanged).
+    """
+    deadline = time.time() + START_WINDOW_TIMEOUT_SECONDS + audio_cfg.toggle_debounce_seconds
+    while time.time() < deadline:
+        lock = _read_lock()
+        if lock is None:
+            return
+        remaining = audio_cfg.toggle_debounce_seconds - (time.time() - lock["started_at"])
+        if remaining > 0:
+            time.sleep(min(remaining, 0.2))
+            continue
+        if not lock["audio_path"].strip() and _pid_alive(lock["pid"]):
+            time.sleep(0.1)
+            continue
+        return
+
+
+def stop_recording(audio_cfg: AudioConfig, wait: bool = False) -> Path:
+    if wait:
+        _wait_until_stoppable(audio_cfg)
     lock = _read_lock()
     if lock is None:
         raise RuntimeError("No recording in progress")

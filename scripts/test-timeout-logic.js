@@ -119,6 +119,11 @@ const THEME_ICONS_KEYS = extractKeys('THEME_ICONS');
 //      non-numeric timestamp would give NaN in the subtraction, the
 //      comparison `NaN > limit` is False and the timeout would NEVER fire
 //      for that state file.
+// Modulo puro caricato SENZA riscriverlo: si tolgono solo gli `export`.
+// Pure module loaded WITHOUT rewriting it: only the `export` keywords are removed.
+const QB = new Function(require('fs').readFileSync(require('path').join(__dirname, '..', 'gnome-extension', 'bravoric-hear-read-write@riccardomurru.it', 'quick-buttons.mjs'), 'utf8')
+    .replace(/^export /gm, '') + '\nreturn { QUICK_BUTTONS, quickButtonMode };')();
+
 function decide(data, warnedBefore, now) {
     const reported = data.state && THEME_ICONS_KEYS.has(data.state) ? data.state : 'idle';
     let state = reported;
@@ -149,17 +154,24 @@ function decide(data, warnedBefore, now) {
     // branch: with F7 the three entries must be equal by construction, and a
     // model that photographed two out of three could not guard it.
     const canStart = idle || state === 'error';
+    // Contratto start/stop: la sensibilita' viene dal modulo REALE quick-buttons.mjs
+    // (quickButtonMode), lo stesso usato dal menu e dai bottoni rapidi. canStart
+    // resta per i casi "avvio" (idle/error).
+    // Start/stop contract: sensitivity comes from the REAL quick-buttons.mjs module
+    // (quickButtonMode), the same used by the menu and the quick buttons. canStart
+    // stays for the "start" cases (idle/error).
+    const sens = key => QB.quickButtonMode(QB.QUICK_BUTTONS.find(b => b.key === key), state, data.service, data.cancellable) !== 'busy';
     return {
         state, warned, notified,
-        dictationSensitive: canStart,
-        ocrSensitive: canStart,
+        dictationSensitive: sens('dictation'),
+        ocrSensitive: sens('ocr'),
         // F7: la voce Streaming è un avvio di cattura come le altre due. Prima
         // il sorgente non le chiamava mai setSensitive: restava cliccabile
         // durante recording/processing e il click partiva a vuoto.
         // F7: the Streaming entry is a capture start like the other two. Before, the
         // source never called setSensitive on it: it stayed clickable during
         // recording/processing and the click went off empty.
-        streamSensitive: canStart,
+        streamSensitive: sens('stream'),
     };
 }
 
@@ -300,9 +312,9 @@ console.log('== struttura del sorgente ==');
 check('il sorgente usa _timeoutLimitFor e _timeoutMessage',
     src.includes('_timeoutLimitFor(reportedState, data.service)') &&
     src.includes('this._timeoutMessage(reportedState)'));
-check('il sorgente disabilita _dictationItem/_ocrItem via setSensitive(canStart)',
-src.includes('this._dictationItem.setSensitive(canStart)') &&
-src.includes('this._ocrItem.setSensitive(canStart)'));
+check('il sorgente sincronizza le voci di menu dal modello start/stop (_syncMenuItem)',
+src.includes("this._syncMenuItem(this._dictationItem, 'dictation')") &&
+src.includes("this._syncMenuItem(this._ocrItem, 'ocr')"));
 check("_init inizializza i flag", src.includes('this._statusParseErrors = 0') && src.includes('this._timeoutWarned = false'));
 check('_refreshStatus ha il ramo else per output assente (evita "transcribing…" bloccato)',
     src.includes('this._lastOutputItem.setSensitive(preview !== null)'));
@@ -338,20 +350,20 @@ check('_lastOutputItem torna a "(none)" quando non c\'è output né storico',
 //     block.
 // ---------------------------------------------------------------------
 console.log('== difetto F7: la voce Streaming segue la stessa guardia ==');
-check('F7 il sorgente disabilita anche _streamItem via setSensitive(canStart)',
-    src.includes('this._streamItem.setSensitive(canStart)'));
+check('F7 il sorgente sincronizza anche _streamItem dallo stesso modello',
+    src.includes("this._syncMenuItem(this._streamItem, 'stream')"));
 // Anti-drift: le tre chiamate devono stare nello stesso blocco di _refreshStatus,
 // non essere sparpagliate (una fuori dal blocco non avrebbe la stessa variabile).
 // Anti-drift: the three calls must be in the same block of _refreshStatus,
 // not scattered (one outside the block would not have the same variable).
-const sensBlock = src.match(/const canStart = [\s\S]*?this\._ocrItem\.setSensitive\(canStart\);/);
-check('F7 le tre voci stanno nello stesso blocco di canStart',
-    !!sensBlock && sensBlock[0].includes('this._dictationItem.setSensitive(canStart)')
-    && sensBlock[0].includes('this._ocrItem.setSensitive(canStart)'));
+const sensBlock = src.match(/this\._uiState = state;[\s\S]*?this\._syncMenuItem\(this\._streamItem, 'stream'\);/);
+check('F7 le tre voci stanno nello stesso blocco (stesso stato letto)',
+    !!sensBlock && sensBlock[0].includes("this._syncMenuItem(this._dictationItem, 'dictation')")
+    && sensBlock[0].includes("this._syncMenuItem(this._ocrItem, 'ocr')"));
 
 r = decide(fresh('recording', 'stt', 5), false, NOW);
-check('F7 recording -> la voce Streaming è disabilitata',
-    r.streamSensitive === false && r.dictationSensitive === false);
+check('F7 recording stt -> Streaming disabilitata; la dettatura e\' cliccabile (e\' lo stop)',
+    r.streamSensitive === false && r.dictationSensitive === true && r.ocrSensitive === false);
 r = decide(fresh('processing', 'stt', 5), false, NOW);
 check('F7 processing -> la voce Streaming è disabilitata', r.streamSensitive === false);
 r = decide(fresh('idle', undefined, 5), false, NOW);
@@ -366,16 +378,18 @@ check('F7 error -> la voce Streaming torna attiva (come le altre due)',
 // the three entries cannot diverge (that is the point of the canStart
 // variable).
 const ALL_STATES = ['idle', 'recording', 'processing', 'error'];
-check('F7 le tre voci non divergono mai su nessuno stato',
+check('F7 le tre voci divergono solo per lo stop: idle/error tutte, altrimenti solo il servizio che lavora',
     ALL_STATES.every(s => {
         const d = decide(fresh(s, 'stt', 1), false, NOW);
-        return d.streamSensitive === d.dictationSensitive
-            && d.streamSensitive === d.ocrSensitive;
+        if (s === 'idle' || s === 'error')
+            return d.streamSensitive && d.dictationSensitive && d.ocrSensitive;
+        const open = [d.dictationSensitive, d.ocrSensitive, d.streamSensitive].filter(Boolean).length;
+        return open === (s === 'recording' ? 1 : 0) && (s !== 'recording' || d.dictationSensitive);
     }));
 // E il caso di danno vero: recording in corso, la voce era cliccabile.
 // And the case of real damage: recording in progress, the entry was
 // clickable.
-check('F7 il click durante una cattura non parte più a vuoto',
+check('F7 il click durante una cattura di un ALTRO servizio non parte più a vuoto',
     decide(fresh('recording', 'stt', 1), false, NOW).streamSensitive === false);
 
 
@@ -437,8 +451,8 @@ check('P4 sessione stream viva da 40 min -> resta recording, nessun avviso',
 // 3. The three entries stay disabled: without this, the user pressed the
 // shortcut and a second ffmpeg started on top of the live session.
 r = decide(fresh('recording', 'stream', 40 * 60), false, NOW);
-check('P4 sessione stream viva -> nessuna delle tre voci e avviabile',
-    r.dictationSensitive === false && r.ocrSensitive === false && r.streamSensitive === false);
+check('P4 sessione stream viva -> dettatura e OCR non avviabili; solo Streaming e\' cliccabile (stop)',
+    r.dictationSensitive === false && r.ocrSensitive === false && r.streamSensitive === true);
 
 // 4. L'INVARIANTE che il fix non deve rompere: la registrazione STT resta
 // governata dai 15 minuti, e un STT morto torna idle con avviso.

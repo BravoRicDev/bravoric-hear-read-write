@@ -18,7 +18,8 @@ STATE_PROCESSING = "processing"
 STATE_ERROR = "error"
 
 
-def write_status(state: str, last_output: str | None = None, service: str | None = None) -> None:
+def write_status(state: str, last_output: str | None = None, service: str | None = None,
+                 cancellable: bool | None = None) -> None:
     """service: 'stt'|'ocr', solo informativo per distinguere il processing
     nel menu dell'estensione (quale servizio sta elaborando).
 
@@ -98,6 +99,12 @@ def write_status(state: str, last_output: str | None = None, service: str | None
         payload["last_output"] = last_output
     if service is not None:
         payload["service"] = service
+    if cancellable is not None:
+        # False = da qui in poi il servizio non si puo' piu' annullare (es. OCR
+        # gia' arrivato alla scrittura negli appunti): l'estensione non offre "Annulla".
+        # False = from here on the service can no longer be cancelled (e.g. OCR
+        # already at the clipboard write): the extension does not offer "Cancel".
+        payload["cancellable"] = cancellable
     _atomic_write_text(STATUS_PATH, json.dumps(payload))
 
 

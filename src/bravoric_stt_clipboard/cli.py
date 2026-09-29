@@ -16,8 +16,18 @@ def _setup_logging() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
 
-def stt_toggle_main() -> int:
+def stt_toggle_main(argv: list[str] | None = None) -> int:
+    """Senza argomenti e' il toggle della scorciatoia. `start` e `stop` sono
+    espliciti e IDEMPOTENTI (usati da bottoni e menu): `stop` senza registrazione
+    non ne avvia una, `start` con una registrazione in corso non fa nulla.
+
+    Without arguments it is the shortcut toggle. `start` and `stop` are explicit
+    and IDEMPOTENT (used by buttons and menu): `stop` with no recording does not
+    start one, `start` with a recording running does nothing.
+    """
     _setup_logging()
+    command = argv if argv is not None else sys.argv[1:]
+    action = command[0] if command and command[0] in ("start", "stop") else "toggle"
     try:
         cfg = load_config()
         notify.configure(cfg)  # timeout e lunghezza corpo / timeout and body length
@@ -28,7 +38,12 @@ def stt_toggle_main() -> int:
         )
         return 1
     try:
-        stt.handle_toggle(cfg)
+        if action == "stop":
+            stt.handle_stop(cfg)
+        elif action == "start":
+            stt.handle_start(cfg)
+        else:
+            stt.handle_toggle(cfg)
     except Exception:
         # Lanciato da una scorciatoia globale: stderr è invisibile all'utente,
         # quindi un traceback non segnalerebbe nulla. Registriamo l'errore e lo
@@ -97,8 +112,21 @@ def stt_toggle_main() -> int:
     return 0
 
 
-def ocr_capture_main() -> int:
+def ocr_capture_main(argv: list[str] | None = None) -> int:
+    """Senza argomenti: toggle (OCR attivo = annulla, altrimenti avvia). `start`
+    avvia (no-op se gia' attivo), `cancel` annulla (no-op se non attivo): entrambi
+    idempotenti. `cancel` non legge la config: deve funzionare anche se e' rotta.
+
+    No arguments: toggle (OCR active = cancel, otherwise start). `start` starts
+    (no-op if already active), `cancel` cancels (no-op if not active): both
+    idempotent. `cancel` does not read the config: it must work even if it is broken.
+    """
     _setup_logging()
+    command = argv if argv is not None else sys.argv[1:]
+    action = command[0] if command and command[0] in ("start", "cancel") else "toggle"
+    if action == "cancel" or (action == "toggle" and ocr.is_active()):
+        ocr.cancel()
+        return 0
     try:
         cfg = load_config()
         notify.configure(cfg)  # timeout e lunghezza corpo / timeout and body length
