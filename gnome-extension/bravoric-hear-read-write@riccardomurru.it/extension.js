@@ -1302,7 +1302,11 @@ class BravoricIndicator extends PanelMenu.Button {
         // Clutter virtual keyboard to send Ctrl+V (no external tool like
         // xdotool/ydotool: not present on the system, verified).
         try {
-            const seat = Clutter.get_default_backend().get_default_seat();
+            // GNOME Shell 51 ha rimosso Clutter.get_default_backend(): il backend
+            // si recupera dal contesto dello stage corrente.
+            // GNOME Shell 51 removed Clutter.get_default_backend(): get the backend
+            // from the current stage context.
+            const seat = global.stage.context.get_backend().get_default_seat();
             this._virtualDevice = seat.create_virtual_device(
                 Clutter.InputDeviceType.KEYBOARD_DEVICE);
         } catch (e) {

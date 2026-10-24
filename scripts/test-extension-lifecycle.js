@@ -121,6 +121,19 @@ async function loadExtensionModule() {
     const removedKeybindings = [];
     const spawned = [];
     const widgets = [];
+    const virtualDeviceCreations = [];
+    globalThis.stage = {
+        context: {
+            get_backend: () => ({
+                get_default_seat: () => ({
+                    create_virtual_device: () => {
+                        virtualDeviceCreations.push(true);
+                        return { run_dispose() {}, notify_keyval() {} };
+                    },
+                }),
+            }),
+        },
+    };
 
     class FakeWidget {
         constructor(props = {}) {
@@ -246,6 +259,8 @@ async function loadExtensionModule() {
     {
         const { ext, settings } = build();
         ext.enable();
+        check('GNOME stage backend crea la tastiera virtuale',
+            virtualDeviceCreations.length === 1 && ext._indicator?._virtualDevice);
         check('l\'indicatore principale e\' aggiunto alla top bar', panelRoles.includes('bravoric-hear-read-write@riccardomurru.it'));
         check('con i default nessun bottone rapido viene creato', quickRoles().length === 0);
         check('le tre scorciatoie sono registrate', keybindings.join(',') === 'dictation-shortcut,ocr-shortcut,stream-shortcut');

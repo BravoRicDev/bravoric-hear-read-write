@@ -718,7 +718,7 @@ const NOTIFY_PRELUDE = 'const notifyErrorIfEnabled = (t, b) => Main.notifyError(
             }) } },
         { KEY_Return: 36, KeyState: { PRESSED: 1, RELEASED: 0 },
             ThemedIcon: { new: name => ({ name }) },
-            get_default_backend: () => ({ get_default_seat: () => ({ create_virtual_device: () => ({}) }) }),            get_current_event_time: () => 0, unicode_to_keysym: () => 0,
+            get_current_event_time: () => 0, unicode_to_keysym: () => 0,
             InputDeviceType: { KEYBOARD_DEVICE: 1 } },
         { notify() {}, notifyError() {} },
         s => s, () => {}, () => {}, () => {}, () => {},

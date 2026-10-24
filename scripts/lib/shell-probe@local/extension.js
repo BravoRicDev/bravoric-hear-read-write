@@ -78,16 +78,16 @@ export default class ShellProbe extends Extension {
                     // entries (label and sensitivity), then closes it again.
                     if (cmd === 'menu') {
                         const ind = Main.panel.statusArea['bravoric-hear-read-write@riccardomurru.it'];
-                        ind.menu.open(false);
+                        ind.menu.open({ animate: false });
                         const rows = [];
                         for (const item of ind.menu._getMenuItems()) {
                             if (item.menu && item.label)
-                                item.menu.open(false);
+                                item.menu.open({ animate: false });
                             rows.push({ label: item.label?.text ?? null, sensitive: item.sensitive ?? null, sub: !!item.menu });
                             for (const sub of item.menu?._getMenuItems?.() ?? [])
                                 rows.push({ label: sub.label?.text ?? null, sensitive: sub.sensitive ?? null, sub: false, parent: item.label?.text ?? null });
                         }
-                        ind.menu.close(false);
+                        ind.menu.close({ animate: false });
                         result = JSON.stringify(rows);
                     }
                     // Finestre presenti nel Shell (titolo e classe), per vedere se si e' aperta

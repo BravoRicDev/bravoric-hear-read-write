@@ -321,6 +321,7 @@ wait_dump "(lambda b: not b['ocr']['reactive'])($by_key)" \
     && pass "OCR con cancellable=false: non promette un annullamento impossibile (non cliccabile)" \
     || fail "OCR non annullabile ancora cliccabile: $(dump)"
 apply_state recording stt
+wait_dump "(lambda b: b['dictation']['reactive'] and b['dictation']['accessible_name']=='${N_DICT_STOP}')($by_key)" >/dev/null
 MENU_JSON="$(probe_cmd menu)"
 python3 - "$MENU_JSON" <<'PY' && pass "menu in registrazione stt: 'Stop dictation' cliccabile, OCR e Streaming disabilitati" || fail "menu in registrazione errato: $MENU_JSON"
 import json, sys

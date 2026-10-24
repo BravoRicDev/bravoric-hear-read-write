@@ -69,7 +69,7 @@ The E.G.O. catalog submission for the GNOME extension portion is currently under
 review and is not yet available; the Python backend is required for the complete
 feature set.
 
-Requirements: GNOME Shell 45–50 on Wayland, Python 3.11+, `ffmpeg` with
+Requirements: GNOME Shell 45–51 on Wayland, Python 3.11+, `ffmpeg` with
 `libopus`, `wl-clipboard`, `notify-send`, `glib-compile-schemas`, and
 `gsettings`. `gnome-screenshot` is optional for interactive OCR capture.
 
@@ -211,7 +211,7 @@ La sottomissione al catalogo E.G.O. della parte GNOME dell'estensione è
 attualmente in revisione e non è ancora disponibile; il backend Python è
 necessario per le funzioni complete.
 
-Requisiti: GNOME Shell 45–50 su Wayland, Python 3.11+, `ffmpeg` con `libopus`,
+Requisiti: GNOME Shell 45–51 su Wayland, Python 3.11+, `ffmpeg` con `libopus`,
 `wl-clipboard`, `notify-send`, `glib-compile-schemas` e `gsettings`.
 `gnome-screenshot` è opzionale per la cattura OCR interattiva.
 
