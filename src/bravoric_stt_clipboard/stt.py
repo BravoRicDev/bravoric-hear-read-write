@@ -163,6 +163,23 @@ def _stop_and_process(cfg: Config, wait: bool = False) -> None:
         # nothing to transcribe, and it is not an error to notify (the user simply
         # pressed twice).
         logger.info(str(exc))
+        # W2-02 (audit 2026-11-03): lo stop e' fallito ma il microfono NON sta
+        # registrando. Se status.json era rimasto su 'recording' per il servizio
+        # stt, l'estensione teneva l'icona accesa per tutti i 15 minuti del
+        # watchdog. Qui lo stato viene riconciliato SUBITO con la stessa guardia
+        # di handle_stop (service None o 'stt', mai lo stato di un altro servizio).
+        # W2-02 (audit 2026-11-03): the stop failed but the microphone is NOT
+        # recording. If status.json was left on 'recording' for the stt service,
+        # the extension kept the icon on for the whole 15-minute watchdog. Here
+        # the state is reconciled immediately, with the same guard as
+        # handle_stop (service None or 'stt', never another service's state).
+        current = status.read_status()
+        if current.get("state") == status.STATE_RECORDING and current.get("service") in (None, "stt"):
+            try:
+                status.write_status(status.STATE_IDLE, service=current.get("service"))
+            except Exception:
+                logger.debug("impossibile riportare lo status a idle dopo uno stop fallito",
+                             exc_info=True)
         return
 
     try:

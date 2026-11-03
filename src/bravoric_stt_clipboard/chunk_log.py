@@ -442,6 +442,13 @@ def _rotate(path: Path, max_lines: int) -> None:
             tmp_fd = os.open(str(tmp), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
             with os.fdopen(tmp_fd, "wb") as handle:
                 handle.write(b"".join(line + b"\n" for line in kept))
+                # W1-08 (audit 2026-11-03): senza fsync il rename e' persistito
+                # mentre il contenuto no: dopo un power loss il log ruotato
+                # puo' restare vuoto/troncato, perdendo la storia.
+                # Without fsync the rename is persisted while the content is not:
+                # after a power loss the rotated log can stay empty/truncated.
+                handle.flush()
+                os.fsync(handle.fileno())
             os.replace(tmp, path)
             with _count_lock:
                 _line_counts[str(path)] = len(kept)
@@ -489,7 +496,21 @@ def append_record(record: dict, path: Path | str | None = None,
             # riga, e nessun altro scrittore ci mette dentro nel mezzo.
             # A SINGLE write() of the whole line: no reader sees half a line, and no
             # other writer puts anything in the middle of it.
-            os.write(fd, payload.encode("utf-8"))
+            # W1-07 (audit 2026-11-03): os.write puo' scrivere MENO del richiesto
+            # (ENOSPC, EINTR, limite del filesystem): la riga veniva dichiarata
+            # scritta anche quando ne mancava un pezzo, e il TETTO del tetto di
+            # righe contava una riga mai arrivata. Si insiste sul resto.
+            # os.write can write LESS than requested (ENOSPC, EINTR, filesystem
+            # limits): the line was declared written even when part of it was
+            # missing, and the line counter counted a line that never arrived.
+            # Keep writing the remainder.
+            data = payload.encode("utf-8")
+            view = memoryview(data)
+            while view:
+                written = os.write(fd, view)
+                if written <= 0:
+                    raise OSError("short write on chunk log")
+                view = view[written:]
         finally:
             os.close(fd)
         _bump_count(target, limit)

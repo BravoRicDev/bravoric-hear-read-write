@@ -94,17 +94,46 @@ mkdir -p "$DATA_DIR"
 venv_incomplete() {
     [ ! -x "$VENV_DIR/bin/python" ] || [ ! -f "$VENV_DIR/bin/activate" ]
 }
+# W5-06 (audit 2026-11-03): `rm -rf "$VENV_DIR"` senza guardia. La variabile
+# oggi e' una costante, ma basta un `VENV_DIR=` svuotato in una copia locale
+# dello script perche' `rm -rf ""` (no-op) o `rm -rf /` (disastro) partano
+# senza errore. Si cancella SOLO un path che ha la forma di un venv dentro la
+# home dell'utente: radice, home nuda e path arbitrari vengono rifiutati.
+# `rm -rf "$VENV_DIR"` without a guard. Today the variable is a constant, but a
+# `VENV_DIR=` emptied in a local copy of the script is enough for `rm -rf ""`
+# (no-op) or `rm -rf /` (disaster) to run without error. Only a path shaped like
+# a venv inside the user's home is deleted: root, bare home and arbitrary paths
+# are refused.
+venv_discard_incomplete() {
+    case "$VENV_DIR" in
+        ""|"/"|"$HOME"|"$HOME/")
+            say "ERRORE: VENV_DIR non plausibile ('$VENV_DIR'): rifiuto di cancellare." \
+                "ERROR: implausible VENV_DIR ('$VENV_DIR'): refusing to delete." >&2
+            return 1
+            ;;
+    esac
+    case "$VENV_DIR" in
+        "$HOME"/*/venv|/home/*/*/venv)
+            rm -rf -- "$VENV_DIR"
+            ;;
+        *)
+            say "ERRORE: VENV_DIR ('$VENV_DIR') non ha la forma attesa (*/venv sotto la home): rifiuto di cancellare." \
+                "ERROR: unexpected VENV_DIR ('$VENV_DIR') (expected */venv under home): refusing to delete." >&2
+            return 1
+            ;;
+    esac
+}
 if ! python3 -m venv "$VENV_DIR"; then
     say "ERRORE: creazione del venv fallita in $VENV_DIR" "ERROR: venv creation failed in $VENV_DIR" >&2
     if venv_incomplete; then
-        rm -rf "$VENV_DIR"
+        venv_discard_incomplete
         say "Rimosso l'ambiente incompleto: verrà creato un venv pulito al prossimo tentativo." "Removed the incomplete environment: a clean venv will be created on the next attempt." >&2
     fi
     exit 1
 fi
 if venv_incomplete || ! source "$VENV_DIR/bin/activate"; then
     say "ERRORE: venv incompleto in $VENV_DIR (manca l'interprete o l'activate)." "ERROR: incomplete venv in $VENV_DIR (interpreter or activate script missing)." >&2
-    rm -rf "$VENV_DIR"
+    venv_discard_incomplete
     say "Rimosso: il prossimo tentativo riparte da zero." "Removed: the next attempt starts from scratch." >&2
     exit 1
 fi
@@ -151,6 +180,40 @@ fi
 # the api_key in clear, unchanged after rerunning install.sh. Idempotent and
 # self-repairing at every run.
 chmod 600 "$CONFIG_DIR/config.toml"
+
+# W5-02 (audit 2026-11-03): le unit in config/ contengono placeholder
+# (__PROJECT_DIR__, __WHISPER_DIR__) che nessuno sostituiva: chi le copiava a
+# mano in ~/.config/systemd/user/ otteneva status=203/EXEC a ogni avvio e un
+# Restart=on-failure che riprovava all'infinito. Qui, solo su richiesta
+# esplicita (BRV_INSTALL_WHISPER_UNIT=1), i placeholder vengono risolti e la
+# unit viene scritta; senza la variabile non si tocca niente.
+# W5-02 (audit 2026-11-03): the units in config/ carry placeholders
+# (__PROJECT_DIR__, __WHISPER_DIR__) that nothing substituted: copying them by
+# hand into ~/.config/systemd/user/ produced status=203/EXEC on every start and
+# a Restart=on-failure retrying forever. Here, only on explicit request
+# (BRV_INSTALL_WHISPER_UNIT=1), the placeholders are resolved and the unit is
+# written; without the variable nothing is touched.
+if [ "${BRV_INSTALL_WHISPER_UNIT:-0}" = "1" ]; then
+    say "== unit systemd del server Whisper locale ==" "== local Whisper server systemd unit =="
+    WHISPER_UNIT_SRC="$PROJECT_DIR/config/bravoric-whisper.service"
+    WHISPER_UNIT_DIR="$HOME/.config/systemd/user"
+    WHISPER_DIR="${WHISPER_DIR:-$HOME/whisper.cpp}"
+    mkdir -p "$WHISPER_UNIT_DIR"
+    sed -e "s|__PROJECT_DIR__|$PROJECT_DIR|g" \
+        -e "s|__WHISPER_DIR__|$WHISPER_DIR|g" \
+        "$WHISPER_UNIT_SRC" > "$WHISPER_UNIT_DIR/bravoric-whisper.service"
+    # Guardia: se un placeholder resiste, la unit e' rotta per costruzione:
+    # meglio fallire qui che lasciare un 203/EXEC silenzioso al primo avvio.
+    # Guard: if a placeholder survives, the unit is broken by construction:
+    # better to fail here than leave a silent 203/EXEC at first start.
+    if grep -q '__PROJECT_DIR__\|__WHISPER_DIR__' "$WHISPER_UNIT_DIR/bravoric-whisper.service"; then
+        say "ERRORE: placeholder non sostituiti in $WHISPER_UNIT_DIR/bravoric-whisper.service" "ERROR: placeholders not substituted in $WHISPER_UNIT_DIR/bravoric-whisper.service" >&2
+        exit 1
+    fi
+    systemctl --user daemon-reload \
+        || say "daemon-reload fallito (sessione senza systemd utente?)" "daemon-reload failed (session without user systemd?)" >&2
+    say "Unit installata: $WHISPER_UNIT_DIR/bravoric-whisper.service — avvia con: systemctl --user start bravoric-whisper" "Unit installed: $WHISPER_UNIT_DIR/bravoric-whisper.service — start with: systemctl --user start bravoric-whisper"
+fi
 
 say "== estensione GNOME Shell ==" "== GNOME Shell extension =="
 # P2 (giro 18): GNOME Shell cerca le estensioni utente via

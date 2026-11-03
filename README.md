@@ -101,7 +101,7 @@ A minimal OpenAI-compatible STT provider in `config.toml` looks like this:
 ```toml
 [[stt.fallback]]
 name = "local-whisper"
-endpoint = "http://127.0.0.1:8000/v1"
+endpoint = "http://127.0.0.1:8080/v1"
 model = "whisper-1"
 api_key_env = ""
 api_key = ""
@@ -111,6 +111,37 @@ timeout_seconds = 120
 Add further `[[stt.fallback]]` entries for automatic fallback. Equivalent
 fallback lists exist for OCR and optional text cleanup. Keep API keys in the
 personal config or an environment variable; do not commit them.
+
+#### Optional: the bundled local Whisper server
+
+`bin/whisper-server.py` is a self-contained OpenAI-compatible server backed by
+faster-whisper, on `127.0.0.1:8080` by default (`--port` to change it). It is
+not installed by the main installer; to enable it:
+
+```sh
+VENV="${XDG_DATA_HOME:-$HOME/.local/share}/bravoric-stt-clipboard/whisper-venv"
+python3 -m venv "$VENV"
+"$VENV/bin/pip" install -r bin/whisper-requirements.txt
+bin/whisper-server.sh --model small --port 8080   # foreground check
+curl 127.0.0.1:8080/health                        # {"status":"ok"}
+```
+
+The first start downloads the model (a few hundred MB for `small`).
+`bin/whisper-server.sh` prefers the `whisper-venv` above and falls back to the
+system `python3`.
+
+To run it as a systemd user service, install the unit with the placeholders
+resolved (`config/bravoric-whisper.service` is a template: it is not usable
+copied verbatim):
+
+```sh
+BRV_INSTALL_WHISPER_UNIT=1 scripts/install.sh   # writes ~/.config/systemd/user/bravoric-whisper.service
+systemctl --user start bravoric-whisper
+```
+
+The GPU/Vulkan variant (`config/bravoric-whisper-gpu.service`) targets
+whisper.cpp on Asahi and needs `WHISPER_DIR` pointing at its checkout; it uses
+the same port, so run only one of the two.
 
 ### Output channels and voice commands
 
@@ -241,7 +272,7 @@ Esempio minimo di endpoint STT OpenAI-compatible in `config.toml`:
 ```toml
 [[stt.fallback]]
 name = "whisper-locale"
-endpoint = "http://127.0.0.1:8000/v1"
+endpoint = "http://127.0.0.1:8080/v1"
 model = "whisper-1"
 api_key_env = ""
 api_key = ""
@@ -252,6 +283,37 @@ Si possono aggiungere altri blocchi `[[stt.fallback]]` per il fallback
 automatico; esistono liste equivalenti per OCR e pulizia testuale opzionale.
 Le chiavi API vanno nella configurazione personale o in una variabile d'ambiente,
 mai nel repository.
+
+#### Opzionale: il server Whisper locale incluso
+
+`bin/whisper-server.py` è un server OpenAI-compatible autonomo basato su
+faster-whisper, in ascolto su `127.0.0.1:8080` per default (`--port` per
+cambiarla). Non viene installato dall'installer principale; per abilitarlo:
+
+```sh
+VENV="${XDG_DATA_HOME:-$HOME/.local/share}/bravoric-stt-clipboard/whisper-venv"
+python3 -m venv "$VENV"
+"$VENV/bin/pip" install -r bin/whisper-requirements.txt
+bin/whisper-server.sh --model small --port 8080   # prova in primo piano
+curl 127.0.0.1:8080/health                        # {"status":"ok"}
+```
+
+Al primo avvio scarica il modello (qualche centinaio di MB per `small`).
+`bin/whisper-server.sh` preferisce il `whisper-venv` qui sopra e ripiega sul
+`python3` di sistema.
+
+Per farlo girare come servizio utente systemd, installa la unit con i
+placeholder risolti (`config/bravoric-whisper.service` è un template: copiarlo
+così com'è non funziona):
+
+```sh
+BRV_INSTALL_WHISPER_UNIT=1 scripts/install.sh   # scrive ~/.config/systemd/user/bravoric-whisper.service
+systemctl --user start bravoric-whisper
+```
+
+La variante GPU/Vulkan (`config/bravoric-whisper-gpu.service`) è per whisper.cpp
+su Asahi e richiede `WHISPER_DIR` puntato al suo checkout; usa la stessa porta,
+quindi se ne avvia una sola delle due.
 
 ### Canali di output e comandi vocali
 

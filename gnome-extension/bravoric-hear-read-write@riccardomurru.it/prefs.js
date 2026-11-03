@@ -2073,7 +2073,16 @@ export default class BravoricPreferences extends ExtensionPreferences {
         page.add(group);
 
         for (const item of ICON_SLOTS) {
-            const iconState = state.icons[item.slot];
+            // E1-07 (audit 2026-11-03): `state.icons` puo' mancare del tutto se
+            // get_state risponde senza la sezione (versione vecchia del backend,
+            // risposta parziale): `state.icons[slot]` lanciava un TypeError e la
+            // pagina Icons restava BIANCA. `iconState` era gia' opzionale, la
+            // sorgente no.
+            // `state.icons` can be missing entirely if get_state answers without
+            // the section (older backend, partial response): `state.icons[slot]`
+            // threw a TypeError and the Icons page stayed BLANK. `iconState` was
+            // already optional, its source was not.
+            const iconState = state.icons?.[item.slot];
             const row = new Adw.ActionRow({
                 title: _(item.label),
                 subtitle: iconState?.override ?? iconState?.default ?? '',
@@ -2500,6 +2509,14 @@ export default class BravoricPreferences extends ExtensionPreferences {
                     value: Number.isFinite(parsedConcurrency)
                         ? Math.min(8, Math.max(1, parsedConcurrency)) : 3,
                 }),
+                // E1-08 smentito: `digits: 1` e' richiesto dalla spec per
+                // l'estetica della riga e la serializzazione compensa gia' il
+                // "3.0" con Math.round (vedi il blocco sotto). Non portarlo a 0:
+                // test-prefs-voice-commands.js lo asserisce.
+                // E1-08 disproved: `digits: 1` is required by the spec for the
+                // row's look, and serialization already rounds "3.0" away with
+                // Math.round (see the block below). Do not set it to 0:
+                // test-prefs-voice-commands.js asserts it.
                 digits: 1,
             });
             // Lo slot vale solo se il livello partecipa al pool E il toggle

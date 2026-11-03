@@ -718,12 +718,25 @@ class BravoricIndicator extends PanelMenu.Button {
     }
 
     _onStreamStateChanged() {
-        let state;
+        let rawContents;
         try {
             const [, contents] = GLib.file_get_contents(STREAM_STATE_PATH);
-            state = JSON.parse(new TextDecoder().decode(contents));
+            rawContents = contents;
         } catch {
-            return; // file assente o corrotto: niente da incollare | file missing or corrupt: nothing to paste
+            return; // file assente o illeggibile: niente da incollare | file missing or unreadable: nothing to paste
+        }
+        let state;
+        try {
+            state = JSON.parse(new TextDecoder().decode(rawContents));
+        } catch (e) {
+            // E1-04 (audit 2026-11-03): file PRESENTE ma JSON non parsabile
+            // (troncato a meta' scrittura, corrotto). Prima questo caso era
+            // indistinguibile da "file non ancora creato" e spariva senza traccia.
+            // File PRESENT but unparsable JSON (truncated mid-write, corrupt).
+            // Before this was indistinguishable from "file not yet created" and
+            // vanished without a trace.
+            console.warn(`bravoric-hear-read-write: stream_state.json non e' JSON valido: ${e}`);
+            return;
         }
         if (!state || typeof state !== 'object' || Array.isArray(state))
             return;
@@ -1052,7 +1065,16 @@ class BravoricIndicator extends PanelMenu.Button {
             Left: Clutter.KEY_Left, Right: Clutter.KEY_Right, Up: Clutter.KEY_Up, Down: Clutter.KEY_Down,
             ...Object.fromEntries(Array.from({length: 12}, (_, i) => [`F${i + 1}`, Clutter[`KEY_F${i + 1}`]])),
         };
-        if (command.action === 'key' && keyMap[command.key] !== undefined) {
+        // E1-06 (audit 2026-11-03): `keyMap[command.key] !== undefined` accetta
+        // le chiavi EREDITATE dal prototipo (`constructor`, `toString`): il
+        // comando passava il guard, poi `_sendKey(Clutter.KEY_undefined)`
+        // falliva con `false` e la coda restava bloccata. `Object.hasOwn`
+        // accetta SOLO le 25 chiavi scritte nella mappa.
+        // `keyMap[command.key] !== undefined` accepts keys INHERITED from the
+        // prototype (`constructor`, `toString`): the command passed the guard,
+        // then `_sendKey(Clutter.KEY_undefined)` failed with `false` and the queue
+        // stayed blocked. `Object.hasOwn` accepts ONLY the 25 keys written in the map.
+        if (command.action === 'key' && Object.hasOwn(keyMap, command.key)) {
             const key = keyMap[command.key];
             const down = this._sendKey(key, Clutter.KeyState.PRESSED);
             const up = this._sendKey(key, Clutter.KeyState.RELEASED);

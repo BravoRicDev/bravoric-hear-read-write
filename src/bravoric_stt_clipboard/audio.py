@@ -224,6 +224,44 @@ def start_recording(audio_cfg: AudioConfig) -> Path:
         LOCK_PATH.unlink(missing_ok=True)
         raise
 
+    # W2-01 (audit 2026-11-03): Popen che riesce non significa ffmpeg che
+    # REGISTRA. Se ffmpeg muore subito (nessun server PulseAudio, dispositivo
+    # occupato, `-c:a` non supportato) prima si pubblicava comunque il lock con
+    # il pid del cadavere: is_recording() rispondeva True finche' il pid non
+    # veniva raccolto, il toggle successivo diventava uno stop e il file .ogg a
+    # 0 byte veniva "trascritto". Qui si aspetta una finestra breve e reale e
+    # si verifica che il processo sia ancora vivo, come fa gia' stream.py con
+    # il proprio lock.
+    # W2-01 (audit 2026-11-03): a successful Popen does not mean an ffmpeg that
+    # is RECORDING. If ffmpeg dies immediately (no PulseAudio server, device
+    # busy, unsupported `-c:a`) the lock used to be published anyway with the
+    # dead process's pid: is_recording() answered True until the pid was reaped,
+    # the next toggle became a stop, and the 0-byte .ogg was "transcribed".
+    # Here a short but real window is awaited and the process is checked alive,
+    # exactly as stream.py already does with its own lock.
+    for _ in range(6):  # ~0.3 s
+        if _exited_code(proc) is not None:
+            break
+        time.sleep(0.05)
+    rc = _exited_code(proc)
+    if rc is not None:
+        detail = ""
+        with contextlib.suppress(Exception):
+            probe = subprocess.run(
+                ["ffmpeg", "-hide_banner", "-loglevel", "error", "-f", "pulse",
+                 "-i", "default", "-t", "0.1", "-f", "null", "-"],
+                stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                stderr=subprocess.PIPE, timeout=10,
+            )
+            detail = (probe.stderr or b"").decode("utf-8", "replace").strip()[-400:]
+        out_path.unlink(missing_ok=True)
+        os.close(fd)
+        LOCK_PATH.unlink(missing_ok=True)
+        raise RuntimeError(
+            f"ffmpeg exited immediately (rc={rc})"
+            + (f": {detail}" if detail else "")
+        )
+
     lock_data = json.dumps({
         "pid": proc.pid,
         "audio_path": str(out_path),
@@ -468,3 +506,18 @@ def _pid_alive(pid: int) -> bool:
     except OSError:
         return False
     return True
+
+
+def _exited_code(proc: object) -> int | None:
+    """Return the process exit code only when it has really exited.
+
+    W2-01 follow-up (audit 2026-11-03): `proc.poll()` answers non-None for
+    anything that is not a real `subprocess.Popen` — the test double returns a
+    Mock — and the liveness check then aborted a *live* recording with
+    "ffmpeg exited immediately (rc=<Mock ...>)". Only a real `int` returncode
+    means "exited"; anything else is treated as alive, i.e. the old behaviour.
+    """
+    rc = getattr(proc, "poll", lambda: None)()
+    if isinstance(rc, bool) or not isinstance(rc, int):
+        return None
+    return rc

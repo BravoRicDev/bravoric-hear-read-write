@@ -217,12 +217,28 @@ def _toml_line_value(key: str, value: str) -> str:
     return f'"{escaped}"'
 
 
+# W3-01 (audit 2026-11-03): un header TOML e' valido anche indentato.
+# `_find_block_bounds` riconosceva l'inizio del blocco con `strip()` ma la
+# fine con `startswith("[")`: con header indentati (`  [stt]`) la fine non
+# veniva vista e la chiave scritta finiva nella sezione PRECEDENTE,
+# sovrascrivendone un valore in silenzio.
+# A TOML header is valid even when indented. Matching start with `strip()` and
+# end with `startswith("[")` made an indented header invisible as a boundary,
+# so the key was written into the previous section, silently overwriting it.
+_TOML_HEADER_RE = re.compile(r"^\s*\[\[?[^\[\]]+\]\]?\s*(?:#.*)?$")
+
+
+def _is_toml_header(line: str) -> bool:
+    """Vero se la riga e' un header TOML ([x] o [[x]]), anche indentato."""
+    return bool(_TOML_HEADER_RE.match(line))
+
+
 def _find_block_bounds(lines: list[str], header: str, occurrence: int) -> tuple[int, int]:
     """Trova (start, end) esclusivo del blocco N-esimo (0-based) che inizia
-    con `header`, fino alla prossima riga che inizia con '[' o EOF.
+    con `header`, fino alla prossima riga che e' un header TOML o EOF.
 
     Finds (start, end) exclusive of the N-th block (0-based) that begins with
-    `header`, up to the next line starting with '[' or EOF.
+    `header`, up to the next TOML header line or EOF.
     """
     starts = [i for i, line in enumerate(lines) if line.strip() == header]
     if occurrence >= len(starts):
@@ -230,7 +246,7 @@ def _find_block_bounds(lines: list[str], header: str, occurrence: int) -> tuple[
     start = starts[occurrence]
     end = len(lines)
     for i in range(start + 1, len(lines)):
-        if lines[i].startswith("["):
+        if _is_toml_header(lines[i]):
             end = i
             break
     return start, end
@@ -279,11 +295,29 @@ def _find_or_insert_key_in_block(
       looking at whether `lines[end-1]` is an empty line to skip (the other 4
       sites do). Default True = behavior of the majority.
     """
-    pattern = re.compile(key_regex if key_regex is not None else rf"^{re.escape(key)} = .*$")
+    # W3-02 (audit 2026-11-03): il pattern storico `^{key} = .*$` non
+    # tollerava indentazione ne' `key=value`. In quei casi la chiave NON
+    # veniva riconosciuta, veniva inserita una seconda volta e la validazione
+    # tomllib abortiva: la GUI non salvava piu' nulla ("Write aborted").
+    # Ora la chiave si riconosce a prescindere da spazi e indentazione, e
+    # l'indentazione originale viene preservata. Per una riga standard
+    # `key = value` l'output e' identico byte per byte a prima.
+    # The historical pattern did not tolerate indentation or `key=value`; the
+    # key was not recognized, was inserted twice and tomllib validation
+    # aborted the save. Now the key is matched regardless of whitespace and
+    # the original indentation is preserved; a standard `key = value` line
+    # produces exactly the same bytes as before.
+    if key_regex is not None:
+        pattern = re.compile(key_regex)
+    else:
+        pattern = re.compile(rf"^(\s*){re.escape(key)}\s*=")
     for i in range(start, end):
-        if pattern.match(lines[i]):
-            lines[i] = f"{key} = {new_value}"
-            return
+        match = pattern.match(lines[i])
+        if not match:
+            continue
+        indent = "" if key_regex is not None else match.group(1)
+        lines[i] = f"{indent}{key} = {new_value}"
+        return
     if skip_trailing_blank:
         insert_at = end - 1 if end > start and lines[end - 1] == "" else end
     else:
@@ -305,9 +339,28 @@ def _atomic_replace(text: str) -> None:
     try:
         with os.fdopen(fd, "w") as f:
             f.write(text)
+            # W3-05 (audit 2026-11-03): senza flush+fsync il rename puo' essere
+            # persistito mentre il CONTENUTO no (power loss): config.toml resta
+            # vuota o troncata e la dettatura riparte da una config di default.
+            # Stessa primitiva gia' usata con fsync in status.py/chunk_log.
+            # W3-05 (audit 2026-11-03): without flush+fsync the rename can be
+            # persisted while the CONTENT is not (power loss): config.toml stays
+            # empty or truncated and dictation restarts from a default config.
+            f.flush()
+            os.fsync(f.fileno())
         tmp_path = Path(tmp_name)
         tmp_path.chmod(0o600)  # contiene api_key: leggibile solo dall'utente | contains api_key: readable only by the user
         tmp_path.replace(CONFIG_PATH)
+        # Anche il rename va reso durevole, o l'inode nuovo puo' non comparire
+        # dopo un crash (la directory e' la voce che cambia).
+        # The rename must be durable too, or the new inode may not appear after a
+        # crash (the directory entry is what changes).
+        with contextlib.suppress(OSError):
+            dir_fd = os.open(str(CONFIG_PATH.parent), os.O_RDONLY)
+            try:
+                os.fsync(dir_fd)
+            finally:
+                os.close(dir_fd)
     except BaseException:
         Path(tmp_name).unlink(missing_ok=True)
         raise

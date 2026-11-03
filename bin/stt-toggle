@@ -2,4 +2,4 @@
 set -euo pipefail
 DATA_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/bravoric-stt-clipboard"
 source "$DATA_DIR/venv/bin/activate"
-exec bravoric-stt-toggle
+exec bravoric-stt-toggle "$@"

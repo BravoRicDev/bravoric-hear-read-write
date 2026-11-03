@@ -242,3 +242,8 @@ msgstr "solo le righe degli ultimi N minuti"
 #: src/bravoric_stt_clipboard/chunk_log.py
 msgid "alternative log path (default: the real one)"
 msgstr "percorso alternativo del log (default: quello reale)"
+
+#: src/bravoric_stt_clipboard/config.py
+#, python-brace-format
+msgid "Config not found: {path} — run install.sh to create it"
+msgstr "Config non trovata: {path} — esegui install.sh per crearla"

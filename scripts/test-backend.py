@@ -412,7 +412,15 @@ def _modulo_con_budget_neutro(sorgente: Path):
         if hasattr(costante, "co_code") and costante.co_name == "_build_vocabulary_prompt":
             costante = _flip_budget_a_zero(costante)
         costanti.append(costante)
-    modulo_compilato = modulo_compilato.replace(co_consts=tuple(costanti))
+    # Pyright non analizza `CodeType.replace(co_consts=...)` e su questa
+    # espressione emette "Code is too complex to analyze" (un falso positivo:
+    # qui non c'e' nessun condizionale). Soppressione MIRATA alla riga, non al
+    # file: il resto dello script resta analizzato. Audit 2026-11-03 (W5-09).
+    # Pyright does not analyze `CodeType.replace(co_consts=...)` and emits
+    # "Code is too complex to analyze" on this expression (a false positive:
+    # there is no conditional here). Targeted line suppression, not
+    # file-wide: the rest of the script stays analyzed.
+    modulo_compilato = modulo_compilato.replace(co_consts=tuple(costanti))  # pyright: ignore[reportGeneralTypeIssues]
     modulo = types.ModuleType("bravoric_stt_clipboard._budget_neutro")
     modulo.__package__ = "bravoric_stt_clipboard"
     modulo.__file__ = str(sorgente)
@@ -420,7 +428,18 @@ def _modulo_con_budget_neutro(sorgente: Path):
     return modulo
 
 
-def main() -> int:
+# Pyright rinuncia ad analizzare `main()` (835 `check()` in un corpo solo) ed
+# emette su questa riga "Code is too complex to analyze": non e' un difetto di
+# codice ma un limite del type checker davanti a una funzione da 8000 righe
+# (debito noto e tracciato come W5-09: lo split in moduli e' un lavoro a parte).
+# Soppressione MIRATA al `def`, non al file: il resto dello script resta
+# analizzato. Audit 2026-11-03.
+# Pyright gives up on analyzing `main()` (835 `check()` in a single body) and
+# emits "Code is too complex to analyze" on this line: not a code defect but a
+# type-checker limit in front of an 8000-line function (known debt tracked as
+# W5-09: the module split is separate work). Targeted suppression on the `def`,
+# not file-wide: the rest of the script stays analyzed.
+def main() -> int:  # pyright: ignore[reportGeneralTypeIssues]
     tmp = Path(tempfile.mkdtemp(prefix="brv-test-"))
 
     # Snapshot di TUTTI i percorsi reali dell'utente PRIMA di qualunque test.

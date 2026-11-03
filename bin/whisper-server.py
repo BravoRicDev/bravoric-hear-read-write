@@ -39,6 +39,7 @@ Endpoints:
 from __future__ import annotations
 
 import argparse
+import asyncio
 import contextlib
 import os
 import tempfile
@@ -57,6 +58,22 @@ DEFAULT_COMPUTE = os.environ.get("WHISPER_COMPUTE", "int8")
 _model: WhisperModel | None = None
 _model_name: str = DEFAULT_MODEL
 _language: str = DEFAULT_LANGUAGE
+# faster-whisper con num_workers=1 non e' thread-safe: una trascrizione alla
+# volta, ma eseguita in un thread per non fermare l'event loop.
+# faster-whisper with num_workers=1 is not thread-safe: one transcription at a
+# time, but run in a thread so the event loop keeps serving /health.
+_transcribe_lock: asyncio.Lock | None = None
+
+
+def _get_transcribe_lock() -> asyncio.Lock:
+    """Lock lazily creato nel loop attivo (una trascrizione alla volta).
+
+    Lock created lazily inside the running loop (one transcription at a time).
+    """
+    global _transcribe_lock
+    if _transcribe_lock is None:
+        _transcribe_lock = asyncio.Lock()
+    return _transcribe_lock
 
 
 @asynccontextmanager
@@ -85,6 +102,15 @@ def health() -> dict:
 @app.get("/v1/models")
 def list_models() -> dict:
     return {"object": "list", "data": [{"id": _model_name, "object": "model"}]}
+
+
+def _transcribe_sync(model: WhisperModel, path: str, kwargs: dict) -> tuple[str, object]:
+    """Trascrizione bloccante, da eseguire in un thread (asyncio.to_thread).
+
+    Blocking transcription, meant to run in a thread (asyncio.to_thread).
+    """
+    segments, info = model.transcribe(path, **kwargs)
+    return " ".join(s.text for s in segments).strip(), info
 
 
 @app.post("/v1/audio/transcriptions")
@@ -134,8 +160,16 @@ async def transcribe(
         if hotwords and hotwords.strip():
             transcribe_kwargs["hotwords"] = hotwords.strip()
         try:
-            segments, info = whisper.transcribe(str(tmp_path), **transcribe_kwargs)
-            text = " ".join(s.text for s in segments).strip()
+            # Il lavoro vero di faster-whisper avviene iterando il generatore:
+            # va fatto fuori dall'event loop, altrimenti /health non risponde per
+            # tutta la trascrizione e i chunk paralleli si serializzano.
+            # faster-whisper's real work happens while iterating the generator:
+            # run it off the event loop, otherwise /health stalls for the whole
+            # transcription and parallel chunks get serialized.
+            async with _get_transcribe_lock():
+                text, info = await asyncio.to_thread(
+                    _transcribe_sync, whisper, str(tmp_path), transcribe_kwargs,
+                )
         except Exception as exc:  # audio illeggibile/corrotto → 400, non 500 | unreadable/corrupt audio → 400, not 500
             raise HTTPException(status_code=400, detail=f"transcription failed: {exc}") from exc
         return JSONResponse({

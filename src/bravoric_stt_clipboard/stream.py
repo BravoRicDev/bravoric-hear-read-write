@@ -696,7 +696,7 @@ class _Dispatcher:
         enough.
         """
         by_key = {_level_key(level): level for level in levels}
-        deadline = time.time() + stop_timeout
+        deadline = time.monotonic() + stop_timeout
         while True:
             now = time.time()
             with self._lock:
@@ -724,7 +724,9 @@ class _Dispatcher:
                 # endpoint in cooldown or half-open probe already in flight: the slot is
                 # given back, otherwise the wait would consume it.
                 self._give_slot(key)
-            if stop_check is not None and stop_check() and time.time() > deadline:
+            if stop_check is not None and stop_check():
+                return None, None
+            if time.monotonic() > deadline:
                 return None, None
             time.sleep(self.POLL_INTERVAL)
 
@@ -1188,10 +1190,15 @@ def _worker(seq, wav_path, prompt, *, stream, sem, result_queue,
     if endpoint_gate is None:
         _chain = _sequential_chain
     else:
-        def _chain(levels, wav_path, stream, prompt):
+        # Nome distinto: una `def _chain` nello stesso scope della annotazione
+        # `_chain` e' una redeclaration per il type checker.
+        # Distinct name: a `def _chain` in the same scope as the `_chain`
+        # annotation is a redeclaration for the type checker.
+        def _chain_with_gate(levels, wav_path, stream, prompt):
             return _sequential_chain(
                 levels, wav_path, stream, prompt, endpoint_gate=endpoint_gate,
             )
+        _chain = _chain_with_gate
     # Raccoglitore di tentativi per il log JSONL. Attivato PRIMA di qualunque
     # richiesta e smontato nel finally: senza questo, i test che sostituiscono
     # `_sequential_chain` continuano a essere intercettati (il doppione chiama la
@@ -2540,24 +2547,32 @@ class StreamSession:
         """
         try:
             pid = lock["pid"]
-            with contextlib.suppress(ProcessLookupError):
-                os.kill(pid, signal.SIGTERM)
-
-            # Attendi che il supervisore termini e rimuova il lock da solo
-            # (dopo aver completato il drain dell'audio e la trascrizione finale).
-            # Wait for the supervisor to finish and remove the lock by itself (after
-            # completing the audio drain and the final transcription).
-            wait = _stop_drain_budget(self._stream.fallback)
-            deadline = time.time() + wait
-            while time.time() < deadline:
-                cur = _read_lock()
-                if cur is None or not _pid_alive(cur.get("pid", 0)):
-                    break
-                time.sleep(0.1)
+            # Solo il NOSTRO supervisore: un lock stale con pid riusato da un
+            # processo qualunque non deve ricevere SIGTERM ne' farci aspettare.
+            # Only OUR supervisor: a stale lock with a reused pid must not get a
+            # SIGTERM nor make us wait.
+            if not audio.pid_matches(pid, ("bravoric_stt_clipboard",)):
+                logger.warning(
+                    "lock pid %d non e' il supervisore: nessun segnale inviato", pid)
             else:
-                # Timeout di sicurezza superato: fallback a terminazione forzata.
-                # Safety timeout exceeded: fall back to a forced termination.
-                _terminate_pid(pid, graceful=False)
+                with contextlib.suppress(ProcessLookupError):
+                    os.kill(pid, signal.SIGTERM)
+
+                # Attendi che il supervisore termini e rimuova il lock da solo
+                # (dopo aver completato il drain dell'audio e la trascrizione finale).
+                # Wait for the supervisor to finish and remove the lock by itself (after
+                # completing the audio drain and the final transcription).
+                wait = _stop_drain_budget(self._stream.fallback)
+                deadline = time.time() + wait
+                while time.time() < deadline:
+                    cur = _read_lock()
+                    if cur is None or not _pid_alive(cur.get("pid", 0)):
+                        break
+                    time.sleep(0.1)
+                else:
+                    # Timeout di sicurezza superato: fallback a terminazione forzata.
+                    # Safety timeout exceeded: fall back to a forced termination.
+                    _terminate_pid(pid, graceful=False)
         except (KeyError, OSError):
             pass
 
@@ -2832,7 +2847,8 @@ class StreamSession:
                 # empty attempts: no endpoint was queried, so the log must say "no attempt"
                 # and not invent one.
                 sequencer.ingest(_ChunkResult(
-                    seq, "", False, str(exc), (), duration * 1000.0, 0.0))
+                    seq_id=seq, text="", success=False, error=str(exc),
+                    attempts=(), audio_s=duration, total_ms=0.0))
                 return
             prompt = (build_prompt(stream.prompt, sequencer.get_context_snapshot())
                       if stream.context_enabled else (stream.prompt or None))

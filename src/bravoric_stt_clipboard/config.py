@@ -772,20 +772,27 @@ def _build_config(raw: dict) -> Config:
         def retention(key: str) -> RetentionPolicy:
             section = storage_raw.get(key, {})
             return RetentionPolicy(
-                enabled=section.get("enabled", False),
+                # W3-04 (audit 2026-11-03): `enabled` va coercizzato come ogni
+                # altro booleano: la stringa "false" e' truthy e attiverebbe la
+                # retention (cancellazione degli artefatti) per un refuso.
+                # `enabled` must be coerced like every other boolean: the string
+                # "false" is truthy and would enable retention (artifact deletion)
+                # because of a typo.
+                enabled=_coerce_bool(section.get("enabled", False)),
                 retention_hours=int(section.get("retention_hours", 0)),
             )
 
         def service_notif(prefix: str) -> ServiceNotifications:
             return ServiceNotifications(
-                processing_start=notif_raw.get(f"{prefix}_on_processing_start", True),
+                # W3-04: senza _coerce_bool la stringa "false" abilita la notifica.
+                processing_start=_coerce_bool(notif_raw.get(f"{prefix}_on_processing_start", True)),
                 raw_ready=NotificationEvent(
-                    enabled=notif_raw.get(f"{prefix}_on_raw_ready", True),
-                    content=notif_raw.get(f"{prefix}_on_raw_ready_content", True),
+                    enabled=_coerce_bool(notif_raw.get(f"{prefix}_on_raw_ready", True)),
+                    content=_coerce_bool(notif_raw.get(f"{prefix}_on_raw_ready_content", True)),
                 ),
                 cleanup_ready=NotificationEvent(
-                    enabled=notif_raw.get(f"{prefix}_on_cleanup_ready", True),
-                    content=notif_raw.get(f"{prefix}_on_cleanup_ready_content", True),
+                    enabled=_coerce_bool(notif_raw.get(f"{prefix}_on_cleanup_ready", True)),
+                    content=_coerce_bool(notif_raw.get(f"{prefix}_on_cleanup_ready_content", True)),
                 ),
                 # _coerce_bool: la stringa "false" e' truthy in Python.
                 # _coerce_bool: the string "false" is truthy in Python.
@@ -814,7 +821,8 @@ def _build_config(raw: dict) -> Config:
             ),
             stt=stt_cfg,
             stt_cleanup=CleanupConfig(
-                enabled=stt_cleanup_raw.get("enabled", True),
+                # W3-04: _coerce_bool, non il valore grezzo ("false" e' truthy).
+                enabled=_coerce_bool(stt_cleanup_raw.get("enabled", True)),
                 system_prompt=stt_cleanup_raw.get("system_prompt", ""),
                 fallback=_parse_fallback_list(stt_cleanup_raw.get("fallback", [])),
             ),
@@ -840,7 +848,8 @@ def _build_config(raw: dict) -> Config:
             screenshot_timeout_seconds=_coerce_float_clamped(
                 ocr_raw.get("screenshot_timeout_seconds"), 120.0, 5.0, 600.0),
             ocr_cleanup=CleanupConfig(
-                enabled=ocr_cleanup_raw.get("enabled", False),
+                # W3-04: _coerce_bool, non il valore grezzo ("false" e' truthy).
+                enabled=_coerce_bool(ocr_cleanup_raw.get("enabled", False)),
                 system_prompt=ocr_cleanup_raw.get("system_prompt", ""),
                 fallback=_parse_fallback_list(ocr_cleanup_raw.get("fallback", [])),
             ),
@@ -862,7 +871,18 @@ def _build_config(raw: dict) -> Config:
                 ocr_raw=retention("ocr_raw"),
                 ocr_clean=retention("ocr_clean"),
             ),
-            history_max_entries=int(history_raw.get("max_entries", 20)),
+            # W2-09 (audit 2026-11-03): `int(...)` grezzo. Un `max_entries = "20"`
+            # (stringa) funzionava per caso, ma `max_entries = "venti"` o `1.5`
+            # facevano abortire load_config() con un traceback: UNA chiave
+            # secondaria rendeva illeggibile tutta la config, quindi tutta
+            # l'app. `_coerce_int` e' la primitiva gia' usata dal resto del
+            # file: fallback al default e clamp ai limiti.
+            # Raw `int(...)`. A `max_entries = "20"` (string) worked by accident,
+            # but `max_entries = "twenty"` or `1.5` aborted load_config() with a
+            # traceback: ONE secondary key made the whole config unreadable, so
+            # the whole app. `_coerce_int` is the primitive already used by the
+            # rest of the file: fallback to the default and clamp to the limits.
+            history_max_entries=_coerce_int(history_raw.get("max_entries"), 20, 1, 100_000),
             icons=IconsConfig(**{key: str(icons_raw.get(key, "")) for key in ICON_SLOT_KEYS}),
             stream=StreamConfig(
                 mode=stream_mode,
@@ -958,7 +978,32 @@ def _build_config(raw: dict) -> Config:
 
 def load_config(path: Path | None = None) -> Config:
     if path is None:
-        path = CONFIG_PATH_USER if CONFIG_PATH_USER.exists() else CONFIG_PATH_EXAMPLE
+        path = CONFIG_PATH_USER
+        if not path.exists():
+            # W3-03 (audit 2026-11-03): il vecchio `CONFIG_PATH_USER if exists
+            # else CONFIG_PATH_EXAMPLE` faceva partire la dettatura con la
+            # config di ESEMPIO (endpoint di laboratorio e nome della env var
+            # della API key hardcoded in quel file) senza alcun segnale
+            # all'utente: cancellare config.toml non fermava nulla, spediva
+            # l'audio a un endpoint che non e' il suo. Su un'installazione
+            # non-editable l'esempio non esiste proprio, e l'errore citava un
+            # path sotto site-packages che nessuno ha mai creato.
+            # Ora la config mancante e' un errore esplicito e azionabile; il
+            # file di esempio si usa solo se lo chiede qualcuno (path esplicito,
+            # es. `reset`).
+            # W3-03 (audit 2026-11-03): the old
+            # `CONFIG_PATH_USER if exists else CONFIG_PATH_EXAMPLE` started
+            # dictation with the EXAMPLE config (lab endpoint and hardcoded API
+            # key env-var name) without any signal to the user: deleting
+            # config.toml did not stop anything, it shipped the audio to an
+            # endpoint that is not theirs. On a non-editable install the example
+            # does not even exist, and the error named a site-packages path
+            # nobody ever created. A missing config is now an explicit,
+            # actionable error; the example file is used only when someone asks
+            # for it (explicit path, e.g. `reset`).
+            raise ConfigError(
+                _("Config not found: {path} — run install.sh to create it").format(path=path)
+            )
     if not path.exists():
         raise ConfigError(_("Config not found: {path}").format(path=path))
 

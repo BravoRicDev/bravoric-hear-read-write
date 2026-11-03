@@ -372,7 +372,16 @@ def transcribe_audio(
         raise ApiError(f"[{level.name}] transcribe failed: {resp.status_code} {_error_body(resp, level)}")
     text = _response_json(resp, level, "transcribe").get("text", "")
     if not isinstance(text, str):
-        return ""
+        # W2-03 (audit 2026-11-03): un `text` non stringa (es. `{"text": 123}`)
+        # diventava `""`, cioe' un SUCCESSO, e la catena di fallback non provava
+        # il livello successivo. Ora e' un ApiError come il caso vuoto qui sotto.
+        # A non-string `text` (e.g. `{"text": 123}`) became `""`, i.e. a SUCCESS,
+        # so the fallback chain did not try the next level. It is now an
+        # ApiError, exactly like the empty case below.
+        raise ApiError(
+            f"[{level.name}] transcribe: backend returned a non-string text "
+            f"({type(text).__name__})"
+        )
     # D1: una trascrizione VUOTA non è un successo. Il backend può rispondere
     # {"text": ""} anche con un file audio pieno (silenzio, rumore, endpoint
     # che filtra). Tornare con "" faceva trattare il vuoto come successo: il

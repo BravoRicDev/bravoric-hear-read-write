@@ -248,3 +248,8 @@ msgstr ""
 #: src/bravoric_stt_clipboard/config.py:ICON_SLOT_REGISTRY
 msgid "General — Error"
 msgstr ""
+
+#: src/bravoric_stt_clipboard/config.py
+#, python-brace-format
+msgid "Config not found: {path} — run install.sh to create it"
+msgstr ""
