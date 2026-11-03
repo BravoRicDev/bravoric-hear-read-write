@@ -1564,6 +1564,38 @@ def main() -> int:  # pyright: ignore[reportGeneralTypeIssues]
     stream_mod.STREAM_LOCK_PATH = tmp / "stream.lock"
     stream_mod.STREAM_STATE_PATH = tmp / "stream_state.json"
 
+    # Soglie dello stop interattivo (2026-11-05). Il bottone "stop" sembrava
+    # morto perche' l'attesa era la SOMMA dei timeout degli endpoint (~50 s):
+    # qui si collaudano i clamp, che sono logica pura e quindi verificabile
+    # senza processi ne' rete.
+    # Interactive stop thresholds (2026-11-05). The "stop" button looked dead
+    # because the wait was the SUM of the endpoint timeouts (~50 s): the clamps
+    # are pure logic here, so they can be checked without processes or network.
+    _bare = types.SimpleNamespace()
+    check("stop: grace di default 5 s senza config",
+          stream_mod._stop_wait_seconds(_bare) == 5.0)
+    check("stop: grace 0 -> default (nessuna attesa non e' uno stop)",
+          stream_mod._stop_wait_seconds(types.SimpleNamespace(stop_grace_seconds=0)) == 5.0)
+    check("stop: grace negativo -> default",
+          stream_mod._stop_wait_seconds(types.SimpleNamespace(stop_grace_seconds=-3)) == 5.0)
+    check("stop: grace non numerico -> default",
+          stream_mod._stop_wait_seconds(types.SimpleNamespace(stop_grace_seconds="boh")) == 5.0)
+    check("stop: grace 1000 -> clampato a 30 s",
+          stream_mod._stop_wait_seconds(types.SimpleNamespace(stop_grace_seconds=1000)) == 30.0)
+    check("stop: grace 2 resta 2",
+          stream_mod._stop_wait_seconds(types.SimpleNamespace(stop_grace_seconds=2)) == 2.0)
+    check("stop: hard di default 10 s",
+          stream_mod._stop_hard_seconds(_bare) == 10.0)
+    check("stop: hard mai sotto il grace (hard 3, grace 5 -> 5)",
+          stream_mod._stop_hard_seconds(
+              types.SimpleNamespace(stop_hard_seconds=3, stop_grace_seconds=5)) == 5.0)
+    check("stop: hard 1000 -> clampato a 120 s",
+          stream_mod._stop_hard_seconds(types.SimpleNamespace(stop_hard_seconds=1000)) == 120.0)
+    check("stop: hard non numerico -> default",
+          stream_mod._stop_hard_seconds(types.SimpleNamespace(stop_hard_seconds="x")) == 10.0)
+    check("stop: hard tiene conto del grace alto (grace 30, hard default -> 30)",
+          stream_mod._stop_hard_seconds(types.SimpleNamespace(stop_grace_seconds=30)) == 30.0)
+
     # config con fallback minimo
     # config with a minimal fallback
     cfg_stream_min = config.Config(
@@ -6102,6 +6134,70 @@ def main() -> int:  # pyright: ignore[reportGeneralTypeIssues]
                   and not _sm18.STREAM_LOCK_PATH.exists()
                   and _sm18.read_state().get("active") is not True)
 
+    # Panic stop (2026-11-05): 'stop' dello stream deve liberare la macchina
+    # anche quando il microfono e' tenuto da dettatura o OCR. Il controllo e'
+    # sui LOCK (audio.is_recording / ocr.is_active), quindi con nessun lock
+    # vivo non si tocca niente — e' la condizione che rende sicuro chiamarlo
+    # da una suite che gira sui percorsi reali dell'utente.
+    # Panic stop (2026-11-05): the stream 'stop' must free the machine even
+    # when dictation or OCR holds the microphone. The check is on the LOCKS
+    # (audio.is_recording / ocr.is_active), so with no live lock nothing is
+    # touched — the condition that makes it safe to call from a suite running
+    # on the user's real paths.
+    print("== panic stop: 'stop' dello stream chiude anche dettatura e OCR ==")
+    with tempfile.TemporaryDirectory() as _td18c:
+        _sm18.STREAM_LOCK_PATH = Path(_td18c) / "stream.lock"
+        _sm18.STREAM_STATE_PATH = Path(_td18c) / "stream_state.json"
+        _sm18.STREAM_LOCK_PATH.unlink(missing_ok=True)
+        _sm18._write_state({"session_id": "s1", "active": False, "mode": "per_chunk", "chunks": []})
+
+        # Nessun lock vivo: non deve partire NESSUNA chiusura dei due servizi.
+        # No live lock: NEITHER service may be stopped.
+        with mock.patch.object(_cli18, "load_config", lambda: cfg_stream_min), \
+             mock.patch.object(_cli18, "notify", mock.Mock()), \
+             mock.patch.object(_cli18, "logger", mock.Mock()), \
+             mock.patch.object(_cli18.audio, "is_recording", lambda: False), \
+             mock.patch.object(_cli18.ocr, "is_active", lambda: False), \
+             mock.patch.object(_cli18.stt, "handle_stop") as _m_stop18, \
+             mock.patch.object(_cli18.ocr, "cancel") as _m_cancel18:
+            _rc_idle18 = _cli18.stream_toggle_main(["stop"])
+            check("panic stop: senza lock vivi non chiama handle_stop ne' cancel",
+                  _rc_idle18 == 0
+                  and _m_stop18.call_count == 0
+                  and _m_cancel18.call_count == 0)
+
+        # Dettatura e OCR entrambi vivi: lo 'stop' dello stream li chiude.
+        # Dictation and OCR both alive: the stream 'stop' closes them.
+        with mock.patch.object(_cli18, "load_config", lambda: cfg_stream_min), \
+             mock.patch.object(_cli18, "notify", mock.Mock()), \
+             mock.patch.object(_cli18, "logger", mock.Mock()), \
+             mock.patch.object(_cli18.audio, "is_recording", lambda: True), \
+             mock.patch.object(_cli18.ocr, "is_active", lambda: True), \
+             mock.patch.object(_cli18.stt, "handle_stop") as _m_stop18b, \
+             mock.patch.object(_cli18.ocr, "cancel") as _m_cancel18b:
+            _rc_panic18 = _cli18.stream_toggle_main(["stop"])
+            check("panic stop: con dettatura viva chiama stt.handle_stop",
+                  _m_stop18b.call_count == 1)
+            check("panic stop: con OCR vivo chiama ocr.cancel",
+                  _m_cancel18b.call_count == 1)
+            check("panic stop: esce 0 anche se lo stream non era attivo",
+                  _rc_panic18 == 0)
+
+        # Un servizio che solleva non deve impedire l'altro ne' far crashare
+        # lo stop: il panic stop e' l'ultima spiaggia, deve essere totale.
+        # One service raising must not block the other nor crash the stop: the
+        # panic stop is the last resort, it must be total.
+        with mock.patch.object(_cli18, "load_config", lambda: cfg_stream_min), \
+             mock.patch.object(_cli18, "notify", mock.Mock()), \
+             mock.patch.object(_cli18, "logger", mock.Mock()), \
+             mock.patch.object(_cli18.audio, "is_recording", lambda: True), \
+             mock.patch.object(_cli18.ocr, "is_active", lambda: True), \
+             mock.patch.object(_cli18.stt, "handle_stop", side_effect=OSError("no")), \
+             mock.patch.object(_cli18.ocr, "cancel") as _m_cancel18c:
+            _rc_raise18 = _cli18.stream_toggle_main(["stop"])
+            check("panic stop: una dettatura che solleva non ferma l'annullamento OCR",
+                  _m_cancel18c.call_count == 1 and _rc_raise18 == 0)
+
     # Anti-drift: il sottocomando deve esistere davvero nel sorgente, altrimenti
     # un refactor silenzioso lo toglierebbe e l'estensione continuerebbe a
     # chiamarlo senza accorgersene (fallo SILENZIOSO, il difetto che si vuole
@@ -6112,7 +6208,18 @@ def main() -> int:  # pyright: ignore[reportGeneralTypeIssues]
     _cli_src = (ROOT / "src" / "bravoric_stt_clipboard" / "cli.py").read_text(encoding="utf-8")
     check("P4: il sottocomando 'stop' esiste nel sorgente di cli.py",
           'command[0] == "stop"' in _cli_src
-          and "if not session.is_active():" in _cli_src)
+          # Il ramo stop legge `is_active()` e chiama `stop()`, mai il toggle:
+          # 2026-11-05 la condizione e' stata resa una variabile (`_active`)
+          # perche' il ramo chiude anche dettatura e OCR, e il vecchio literal
+          # non esisteva piu'. L'asserzione segue il codice SENZA indebolirsi:
+          # verifica la lettura di is_active() E la chiamata a stop().
+          # The stop branch reads `is_active()` and calls `stop()`, never the
+          # toggle: on 2026-11-05 the condition became a variable (`_active`)
+          # because the branch also closes dictation and OCR, and the old
+          # literal no longer existed. The assertion follows the code WITHOUT
+          # weakening: it checks the is_active() read AND the stop() call.
+          and "_active = session.is_active()" in _cli_src
+          and "session.stop() if _active else True" in _cli_src)
     _ext_src = (ROOT / "gnome-extension" / "bravoric-hear-read-write@riccardomurru.it" / "extension.js").read_text(encoding="utf-8")
     _end_body = _ext_src.split("_requestStreamEnd(sessionId) {")[1].split("\n    _startVirtualDevice")[0]
     check("P4: l'estensione chiude con il sottocomando 'stop', non col toggle",

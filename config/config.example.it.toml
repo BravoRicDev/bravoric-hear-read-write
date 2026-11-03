@@ -318,6 +318,15 @@ chunk_log_max_lines = 0           # numero massimo di righe tenute (0 = default 
 prompt_max_chars = 800            # tetto del prompt inviato a Whisper (100-4000)
 vad_floor_window_frames = 100     # frame da ~30 ms per stimare il noise floor (20-1000)
 vad_min_floor_frames = 20         # frame necessari prima di fidarsi della stima (5-200)
+# Stop INTERATTIVO (bottone "Ferma la dettatura streaming"), in secondi.
+# grace: quanto il CLI aspetta la chiusura ordinata prima di escalare
+# (SIGINT -> SIGTERM -> SIGKILL). hard: il paracadute interno del supervisore,
+# si uccide da solo se il drain è ancora bloccato (vale anche quando lo stop
+# arriva come SIGTERM esterno). 0 (o chiave assente) = default del modulo:
+# grace 5, hard 10. Con clamp: grace 1-30, hard mai sotto il grace e max 120.
+# Non è a caldo: vale dalla sessione successiva.
+stop_grace_seconds = 0            # 0 = 5 s
+stop_hard_seconds = 0             # 0 = 10 s
 blacklist = "grazie, thank you, sottotitoli a cura di, sottotitoli a cura di whisper, grazie per la visione"   # scarta la trascrizione intera (chunk streaming o dettatura) uguale a una voce; ignora maiuscole. Tipiche allucinazioni di Whisper sul silenzio.
 
 # Endpoint dedicato con 3 livelli di fallback (stessa struttura di [stt]/[ocr]).

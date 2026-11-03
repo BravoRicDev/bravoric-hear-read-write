@@ -366,6 +366,21 @@ class StreamConfig:
     # minimum number of frames before the estimate is trusted.
     vad_floor_window_frames: int = 100
     vad_min_floor_frames: int = 20
+    # Soglie dello stop INTERATTIVO (bottone "Ferma la dettatura streaming"),
+    # in secondi. 0 = default del modulo stream (grace 5 s, hard 10 s).
+    # `stop_grace_seconds` e' quanto il CLI aspetta la chiusura ordinata prima
+    # di escalare; `stop_hard_seconds` e' il paracadute INTERNO del supervisore
+    # (si uccide da solo se il drain e' bloccato). Appese in coda, come tutti i
+    # campi aggiunti dopo, per non spostare i posizionali usati dai test.
+    # INTERACTIVE stop thresholds ("Stop streaming dictation" button), in
+    # seconds. 0 = the stream module default (grace 5 s, hard 10 s).
+    # `stop_grace_seconds` is how long the CLI waits for the orderly close
+    # before escalating; `stop_hard_seconds` is the supervisor's INTERNAL
+    # parachute (it kills itself if the drain is stuck). Appended at the tail,
+    # like every field added later, so as not to move the positional ones used
+    # by the tests.
+    stop_grace_seconds: float = 0.0
+    stop_hard_seconds: float = 0.0
 
 
 @dataclass
@@ -930,6 +945,10 @@ def _build_config(raw: dict) -> Config:
                     stream_raw.get("vad_floor_window_frames"), 100, 20, 1000),
                 vad_min_floor_frames=_coerce_int(
                     stream_raw.get("vad_min_floor_frames"), 20, 5, 200),
+                stop_grace_seconds=_coerce_float_clamped(
+                    stream_raw.get("stop_grace_seconds"), 0.0, 0.0, 120.0),
+                stop_hard_seconds=_coerce_float_clamped(
+                    stream_raw.get("stop_hard_seconds"), 0.0, 0.0, 300.0),
             ),
         )
         blacklist_phrases = parse_blacklist(cfg.stream.blacklist)

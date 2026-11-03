@@ -316,6 +316,15 @@ chunk_log_max_lines = 0           # maximum number of lines kept (0 = default 20
 prompt_max_chars = 800            # cap on the prompt sent to Whisper (100-4000)
 vad_floor_window_frames = 100     # ~30 ms frames used to estimate the noise floor (20-1000)
 vad_min_floor_frames = 20         # frames needed before the estimate is trusted (5-200)
+# Interactive stop (the "Stop streaming dictation" button), in seconds.
+# grace: how long the CLI waits for the orderly close before escalating
+# (SIGINT -> SIGTERM -> SIGKILL). hard: the supervisor's internal parachute,
+# it kills itself if the drain is still stuck (used when the stop arrives as
+# an external SIGTERM too). 0 (or missing key) = module default: grace 5,
+# hard 10. Clamped: grace 1-30, hard never below grace and at most 120.
+# Not hot-reloaded: it applies from the next session.
+stop_grace_seconds = 0            # 0 = 5 s
+stop_hard_seconds = 0             # 0 = 10 s
 blacklist = "grazie, thank you, sottotitoli a cura di, sottotitoli a cura di whisper, grazie per la visione"   # whole transcription (streaming chunk or dictation) matching a phrase is discarded; case-insensitive. Typical Whisper hallucinations on silence.
 
 # Dedicated endpoint with 3 fallback levels (same structure as [stt]/[ocr]).

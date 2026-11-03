@@ -5,7 +5,7 @@ import logging
 import sys
 from typing import Any
 
-from . import notify, ocr, status, stt
+from . import audio, notify, ocr, status, stt
 from .config import ConfigError, load_config
 from .i18n import _
 
@@ -112,6 +112,45 @@ def stt_toggle_main(argv: list[str] | None = None) -> int:
     return 0
 
 
+def _stop_other_sessions(cfg: Any) -> None:
+    """Ferma anche la dettatura e l'OCR, se sono in corso.
+
+    Il bottone "Ferma la dettatura streaming" non riusciva a liberare la
+    macchina: con lo stream chiuso restava una dettatura o una cattura OCR
+    viva, e chi preme quel bottone vuole smettere di parlare, non sapere
+    quale servizio possiede il microfono. La chiusura e' quindi un panic
+    stop: ferma cio' che e' vivo, senza avviare mai nulla.
+
+    Si guardano i LOCK, non `status.json`: un residuo di stato non deve far
+    partire un annullamento, e un lock vivo non deve essere ignorato perche'
+    lo stato e' obsoleto. Quando nessuno dei due servizi e' attivo questa
+    funzione non tocca niente — nessuna scrittura, nessun file riparato.
+
+    Stops dictation and OCR too, when they are running.
+
+    The "Stop streaming dictation" button could not free the machine: with
+    the stream closed a dictation or an OCR capture stayed alive, and whoever
+    presses that button wants to stop talking, not to know which service owns
+    the microphone. Closing is therefore a panic stop: it stops what is alive
+    and never starts anything.
+
+    It looks at the LOCKS, not at `status.json`: a stale state must not start
+    a cancellation, and a live lock must not be ignored because the state is
+    stale. When neither service is active this function touches nothing — no
+    write, no repaired file.
+    """
+    if audio.is_recording():
+        try:
+            stt.handle_stop(cfg)
+        except Exception:
+            logger.debug("panic stop: dettatura non fermata", exc_info=True)
+    try:
+        if ocr.is_active():
+            ocr.cancel()
+    except Exception:
+        logger.debug("panic stop: OCR non annullato", exc_info=True)
+
+
 def ocr_capture_main(argv: list[str] | None = None) -> int:
     """Senza argomenti: toggle (OCR attivo = annulla, altrimenti avvia). `start`
     avvia (no-op se gia' attivo), `cancel` annulla (no-op se non attivo): entrambi
@@ -192,10 +231,18 @@ def stream_toggle_main(argv: list[str] | None = None) -> int:
             # It is the path that closes the session dictated by voice command, which
             # must not depend on a state read that may be stale in the millisecond the
             # command arrives.
-            if not session.is_active():
+            # Se lo stream non e' attivo la chiusura resta un no-op, ma il
+            # panic stop sotto vale comunque: dettatura e OCR vivi devono
+            # cadere anche quando il servizio che si sta chiudendo non c'e'.
+            # With no active stream the close stays a no-op, but the panic
+            # stop below applies anyway: live dictation and OCR must fall even
+            # when the service being closed is not there.
+            _active = session.is_active()
+            if not _active:
                 logger.info("stream stop: nessuna sessione attiva, niente da fare")
-                return 0
-            return 0 if session.stop() else 1
+            _stopped = session.stop() if _active else True
+            _stop_other_sessions(cfg)
+            return 0 if _stopped else 1
         if session.is_active():
             if not session.stop():
                 return 1

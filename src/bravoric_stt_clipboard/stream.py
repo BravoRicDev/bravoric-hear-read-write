@@ -1581,10 +1581,30 @@ class _FifoSequencer:
     def start(self):
         self._thread.start()
 
-    def drain_and_stop(self, total_chunks: int):
+    def drain_and_stop(self, total_chunks: int, timeout: float | None = None):
+        """Svuota la coda e chiude, senza potersi bloccare per sempre.
+
+        `timeout` limita l'attesa del thread del sequencer: se e' bloccato su
+        una richiesta HTTP (endpoint giu', rete assente) il join non deve
+        tenere in ostaggio lo stop. Allo scadere si procede comunque: i chunk
+        gia' pronti vengono committati come orphan, quelli ancora in volo
+        vengono persi — meglio che una sessione che non si chiude e che
+        incolla testo quando la rete torna.
+
+        Drains the queue and closes, without being able to block forever.
+
+        `timeout` bounds the wait on the sequencer thread: if it is stuck on an
+        HTTP request (endpoint down, no network) the join must not hold the stop
+        hostage. On expiry we go on anyway: chunks already ready are committed as
+        orphans, the ones still in flight are lost — better than a session that
+        never closes and pastes text when the network comes back.
+        """
         self._result_queue.put(_STOP)
         if self._thread.is_alive():
-            self._thread.join()
+            self._thread.join(timeout)
+            if self._thread.is_alive():
+                logger.warning("sequencer ancora vivo dopo il drain (%.1fs): proseguo",
+                               timeout if timeout is not None else -1.0)
         committed = []
         with self._lock:
             orphaned = sorted(self._pending)
@@ -1808,6 +1828,74 @@ def _stop_drain_budget(levels: Any) -> float:
     if count == 0:
         total = 30.0
     return max(30.0, total + 15.0)
+
+
+# Budget dell'attesa INTERATTIVA allo stop (secondi), diverso da quello del
+# drain (`_stop_drain_budget`). Il drain deve coprire la somma dei timeout di
+# rete perche' li' si sta chiudendo una sessione e si accetta di aspettare;
+# qui invece c'e' un dito su un bottone: se la rete e' giu' non si aspetta il
+# timeout di ogni endpoint (con due livelli da 15+20 s lo stop sembrava non
+# funzionare per un minuto), si da' un grace breve e poi si forza.
+# Interactive stop wait budget (seconds), different from the drain one
+# (`_stop_drain_budget`). The drain must cover the sum of the network timeouts
+# because there a session is being closed and waiting is acceptable; here a
+# finger is on a button: if the network is down we do not wait for every
+# endpoint's timeout (two levels at 15+20 s made the stop look dead for a
+# minute), we allow a short grace and then force.
+STOP_GRACE_DEFAULT = 5.0
+STOP_HARD_DEFAULT = 10.0
+
+
+def _stop_wait_seconds(stream: Any) -> float:
+    """Attesa interattiva prima dell'escalation a SIGKILL (secondi).
+
+    `stream.stop_grace_seconds` se presente e sensato, altrimenti il default.
+    Il clamp [1, 30] esiste perche' il valore viene dalla config: 0 o negativo
+    significherebbero nessuna attesa, e un numero enorme riporterebbe il
+    problema che questa funzione esiste per risolvere.
+
+    Interactive wait before escalating to SIGKILL (seconds).
+
+    `stream.stop_grace_seconds` when present and sane, otherwise the default.
+    The [1, 30] clamp exists because the value comes from the config: 0 or a
+    negative number would mean no wait, and a huge number would bring back the
+    very problem this function exists to solve.
+    """
+    raw = getattr(stream, "stop_grace_seconds", None)
+    try:
+        value = float(raw) if raw is not None else STOP_GRACE_DEFAULT
+    except (TypeError, ValueError):
+        value = STOP_GRACE_DEFAULT
+    if not math.isfinite(value) or value <= 0:
+        value = STOP_GRACE_DEFAULT
+    return min(max(value, 1.0), 30.0)
+
+
+def _stop_hard_seconds(stream: Any) -> float:
+    """Dopo quanti secondi di stop il supervisore si uccide da solo.
+
+    E' il paracadute interno al processo (`_stop_watchdog`): se il drain e'
+    bloccato su una richiesta HTTP o su `executor.shutdown`, nessuno legge piu'
+    il flag `stopping` e il processo non esce mai. Questo limite e' indipendente
+    da quello del CLI perche' deve valere anche quando lo stop arriva da un
+    SIGTERM esterno (systemd, kill manuale).
+
+    After how many seconds of stopping the supervisor kills itself.
+
+    It is the in-process parachute (`_stop_watchdog`): if the drain is stuck on
+    an HTTP request or on `executor.shutdown`, nobody reads the `stopping` flag
+    anymore and the process never exits. This limit is independent of the CLI
+    one because it must also hold when the stop comes from an external SIGTERM
+    (systemd, manual kill).
+    """
+    raw = getattr(stream, "stop_hard_seconds", None)
+    try:
+        value = float(raw) if raw is not None else STOP_HARD_DEFAULT
+    except (TypeError, ValueError):
+        value = STOP_HARD_DEFAULT
+    if not math.isfinite(value) or value <= 0:
+        value = STOP_HARD_DEFAULT
+    return min(max(value, _stop_wait_seconds(stream)), 120.0)
 
 
 # ---------------------------------------------------------------- helpers
@@ -2083,6 +2171,57 @@ def _terminate_pid(pid: int, graceful: bool = True) -> None:
     if _pid_alive(pid):
         with contextlib.suppress(ProcessLookupError):
             os.kill(pid, signal.SIGKILL)
+
+
+def _hard_exit(state: dict, session_dir: Path, proc: subprocess.Popen[bytes] | None,
+               *, reason: str = "stop") -> None:
+    """Uscita forzata del supervisore quando il drain non risponde.
+
+    Non e' un `sys.exit`: il main thread puo' essere bloccato dentro
+    `executor.shutdown` o in una richiesta HTTP, quindi l'unica via e'
+    `os._exit`. Prima di uscire lascia lo stato coerente: `active=false`,
+    status `idle`, lock rimosso se e' il nostro, ffmpeg ucciso. Senza questo
+    il lock resterebbe su disco e il CLI successivo direbbe "sessione gia' in
+    corso" su un processo che non esiste piu'.
+
+    Forced exit of the supervisor when the drain does not answer.
+
+    This is not a `sys.exit`: the main thread may be blocked inside
+    `executor.shutdown` or in an HTTP request, so `os._exit` is the only way.
+    Before exiting it leaves the state consistent: `active=false`, `idle`
+    status, lock removed when it is ours, ffmpeg killed. Without this the lock
+    would stay on disk and the next CLI would say "session already running"
+    about a process that no longer exists.
+    """
+    logger.error("stop: uscita forzata dal supervisore (%s)", reason)
+    try:
+        state["active"] = False
+        _write_state(state)
+    except Exception:
+        logger.debug("hard exit: stato non scritto", exc_info=True)
+    try:
+        status.write_status(status.STATE_IDLE, service="stream")
+    except Exception:
+        logger.debug("hard exit: status non aggiornato", exc_info=True)
+    try:
+        cur = _read_lock()
+        if cur is None or cur.get("pid") == os.getpid():
+            STREAM_LOCK_PATH.unlink(missing_ok=True)
+    except Exception:
+        logger.debug("hard exit: lock non rimosso", exc_info=True)
+    if proc is not None:
+        try:
+            proc.kill()
+        except Exception:
+            logger.debug("hard exit: ffmpeg non ucciso", exc_info=True)
+    try:
+        shutil.rmtree(session_dir, ignore_errors=True)
+    except Exception:
+        logger.debug("hard exit: sessione non rimossa", exc_info=True)
+    for out in (sys.stdout, sys.stderr):
+        with contextlib.suppress(Exception):
+            out.flush()
+    os._exit(0)
 
 
 # ---------------------------------------------------------------- recording
@@ -2545,6 +2684,7 @@ class StreamSession:
         Asks the supervisor for a graceful termination and waits for its end
         (through the disappearance of the lock) with a safety timeout.
         """
+        pid = None
         try:
             pid = lock["pid"]
             # Solo il NOSTRO supervisore: un lock stale con pid riusato da un
@@ -2560,9 +2700,19 @@ class StreamSession:
 
                 # Attendi che il supervisore termini e rimuova il lock da solo
                 # (dopo aver completato il drain dell'audio e la trascrizione finale).
+                # L'attesa qui e' quella INTERATTIVA (`_stop_wait_seconds`, default
+                # 5 s), non il budget di drain: con gli endpoint giu' il drain
+                # vorrebbe la somma dei timeout (oltre 50 s) e il bottone sembrava
+                # non fare nulla. Il drain completo resta responsabilita' del
+                # supervisore, che ha il suo watchdog per uscire comunque.
                 # Wait for the supervisor to finish and remove the lock by itself (after
                 # completing the audio drain and the final transcription).
-                wait = _stop_drain_budget(self._stream.fallback)
+                # The wait here is the INTERACTIVE one (`_stop_wait_seconds`, default
+                # 5 s), not the drain budget: with the endpoints down the drain would
+                # want the sum of the timeouts (over 50 s) and the button looked dead.
+                # The full drain stays the supervisor's job, and it has its own
+                # watchdog to exit regardless.
+                wait = _stop_wait_seconds(self._stream)
                 deadline = time.time() + wait
                 while time.time() < deadline:
                     cur = _read_lock()
@@ -2570,21 +2720,35 @@ class StreamSession:
                         break
                     time.sleep(0.1)
                 else:
-                    # Timeout di sicurezza superato: fallback a terminazione forzata.
-                    # Safety timeout exceeded: fall back to a forced termination.
-                    _terminate_pid(pid, graceful=False)
+                    # Grace scaduto: escalation. SIGINT e' quello che il
+                    # supervisore gestisce per primo; `_terminate_pid` prosegue
+                    # con SIGTERM e SIGKILL, quindi un processo sordo muore
+                    # comunque.
+                    # Grace expired: escalate. SIGINT is what the supervisor
+                    # handles first; `_terminate_pid` then goes on with SIGTERM
+                    # and SIGKILL, so a deaf process dies anyway.
+                    _terminate_pid(pid, graceful=True)
         except (KeyError, OSError):
             pass
+
+        # Il processo e' davvero morto? Un lock rimosso e `active=false` non
+        # sono una prova: se un SIGKILL non e' bastato lo stop va dichiarato
+        # fallito, altrimenti il comando reporta "fermato" su una sessione che
+        # sta ancora registrando.
+        # Is the process really dead? A removed lock and `active=false` are no
+        # proof: if a SIGKILL was not enough the stop must be reported as
+        # failed, otherwise the command reports "stopped" on a session that is
+        # still recording.
+        stopped = True
+        if pid is not None and isinstance(pid, int) and _pid_alive(pid):
+            logger.error("stop: il supervisore pid %d e' ancora vivo dopo l'escalation", pid)
+            stopped = False
 
         # Rimuovi il lock solo se è ancora il nostro (se non è già stato
         # rimosso dal supervisore nel suo finally).
         # Remove the lock only if it is still ours (if it has not already been
         # removed by the supervisor in its finally).
         cur = _read_lock()
-        try:
-            pid = lock["pid"]
-        except KeyError:
-            pid = None
         if cur is None or (pid is not None and cur.get("pid") == pid):
             STREAM_LOCK_PATH.unlink(missing_ok=True)
 
@@ -2599,10 +2763,10 @@ class StreamSession:
         state["active"] = False
         state.update(_paste_state(self._stream))
         _write_state(state)
-        if self._cfg.notifications and self._cfg.notif_stream.session_end:
+        if stopped and self._cfg.notifications and self._cfg.notif_stream.session_end:
             notify.send(_("Streaming dictation"), _("Session ended"),
                         icon=notify.resolve_icon("stream_session_end", self._cfg.icons.stream_session_end))
-        return True
+        return stopped
 
     def stop(self) -> bool:
         lock = _read_lock()
@@ -2641,18 +2805,30 @@ class StreamSession:
         proc: subprocess.Popen[bytes] | None = None
         stopping = False
         stop_time: float | None = None
-        STOP_TIMEOUT = 30.0
+        stop_signals = 0
+        # Limite di sicurezza INTERNO: se il drain si blocca su una richiesta
+        # HTTP o su `executor.shutdown`, nessuno legge piu' il flag `stopping`
+        # e il processo resta vivo per sempre. Il watchdog qui sotto lo uccide.
+        # INTERNAL safety limit: if the drain gets stuck on an HTTP request or on
+        # `executor.shutdown`, nobody reads the `stopping` flag anymore and the
+        # process stays alive forever. The watchdog below kills it.
+        STOP_TIMEOUT = _stop_hard_seconds(stream)
 
         def _on_stop(signum: int, frame) -> None:
-            nonlocal stopping, stop_time
+            nonlocal stopping, stop_time, stop_signals
+            stop_signals += 1
+            if stop_time is None:
+                stop_time = time.time()
             stopping = True
-            stop_time = time.time()
             if proc is not None:
                 with contextlib.suppress(Exception):
                     proc.send_signal(signal.SIGINT)
-
-        signal.signal(signal.SIGTERM, _on_stop)
-        signal.signal(signal.SIGINT, _on_stop)
+            # Secondo segnale = l'utente ha premuto stop due volte, oppure il
+            # CLI ha escalato dopo il grace: non si aspetta piu' niente.
+            # Second signal = the user pressed stop twice, or the CLI escalated
+            # after the grace: nothing is awaited anymore.
+            if stop_signals >= 2:
+                _hard_exit(state, session_dir, proc, reason="doppio segnale di stop")
 
         state = {
             "session_id": session_id, "active": True, "mode": MODE_PER_CHUNK,
@@ -2667,6 +2843,23 @@ class StreamSession:
             "command_phrases": sorted(_command_phrases(stream.commands)),
         }
         _write_state(state)
+
+        # Gli handler si installano DOPO `state`: _on_stop lo usa per l'uscita
+        # forzata, e un segnale in quella finestra deve trovare lo stato pronto.
+        # The handlers are installed AFTER `state`: _on_stop uses it for the
+        # forced exit, and a signal in that window must find the state ready.
+        signal.signal(signal.SIGTERM, _on_stop)
+        signal.signal(signal.SIGINT, _on_stop)
+
+        def _stop_watchdog() -> None:
+            while True:
+                time.sleep(0.2)
+                if stopping and stop_time is not None and (time.time() - stop_time) >= STOP_TIMEOUT:
+                    _hard_exit(state, session_dir, proc, reason="watchdog di stop")
+
+        threading.Thread(target=_stop_watchdog, name="bravoric-stop-watchdog",
+                         daemon=True).start()
+
         sequencer = _FifoSequencer(
             state, stream, self._record_history,
             lambda text: notify.maybe_send(
@@ -3044,8 +3237,20 @@ class StreamSession:
                 if in_utterance and voiced_frames:
                     _submit_utterance(b"".join(voiced_frames))
                 total = next(seq_counter)
-                executor.shutdown(wait=True)
-                sequencer.drain_and_stop(total)
+                # Con uno stop in corso non si aspetta il pool: `wait=True`
+                # resta appeso finche' ogni worker HTTP non ha finito di
+                # timeoutare, ed e' la ragione per cui il processo sopravviveva
+                # allo stop quando gli endpoint erano irraggiungibili.
+                # With a stop in progress the pool is not awaited: `wait=True`
+                # hangs until every HTTP worker has timed out, and that is why
+                # the process outlived the stop when the endpoints were
+                # unreachable.
+                executor.shutdown(wait=not stopping, cancel_futures=stopping)
+                # Il drain non puo' superare il grace: oltre, il watchdog
+                # chiude comunque il processo.
+                # The drain cannot exceed the grace: past it, the watchdog
+                # closes the process anyway.
+                sequencer.drain_and_stop(total, timeout=_stop_wait_seconds(stream))
                 state["active"] = False
                 _write_state(state)
                 try:
