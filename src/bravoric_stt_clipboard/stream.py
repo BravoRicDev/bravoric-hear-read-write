@@ -1989,13 +1989,69 @@ def _read_lock() -> dict | None:
 
 
 def _pid_alive(pid: int) -> bool:
+    """True solo se il processo esiste ED e' ancora in grado di lavorare.
+
+    Uno ZOMBIE risponde a `kill(pid, 0)` con successo, ma ha gia' finito di
+    eseguire: il suo codice non gira piu'. Il supervisore e' figlio del
+    processo che chiama `stop()`, quindi nel caso NORMALE di chiusura
+    ordinata diventa zombie finche' il padre non lo raccoglie — e questa
+    funzione lo dichiarava "ancora vivo", producendo due difetti misurati:
+    (1) l'attesa del grace non si interrompeva mai, quindi il bottone di stop
+    restava fermo per tutti i 5 s anche a processo gia' concluso; (2) lo
+    stop riportava FALLIMENTO (rc 1, nessuna notifica "sessione terminata",
+    stato dichiarato vivo) su una sessione che aveva smesso di registrare.
+
+    True only if the process exists AND can still do work. A ZOMBIE answers
+    `kill(pid, 0)` successfully but has already finished: its code no longer
+    runs. The supervisor is a child of the process calling `stop()`, so in the
+    NORMAL graceful-close case it becomes a zombie until the parent reaps it —
+    and this function declared it "still alive", causing two measured defects:
+    (1) the grace wait never broke early, so the stop button hung for the whole
+    5 s even on an already-finished process; (2) stop reported FAILURE (rc 1,
+    no "session ended" notification, state said alive) on a session that had
+    stopped recording.
+    """
     if not isinstance(pid, int) or pid <= 0:
         return False
+    try:
+        # /proc/<pid>/stat: il campo 3 (dopo "(comm)") e' lo stato.
+        # Il nome del processo puo' contenere spazi e parentesi, quindi si
+        # taglia dopo l'ULTIMA ')' e si prende il primo campo che segue.
+        # /proc/<pid>/stat field 3 (after "(comm)") is the state. The process
+        # name may contain spaces and parentheses, so cut after the LAST ')'
+        # and take the first field that follows.
+        raw = Path(f"/proc/{pid}/stat").read_text(encoding="utf-8", errors="replace")
+        state = raw[raw.rindex(")") + 1:].split()[0]
+        return state not in ("Z", "X", "x")
+    except (OSError, IndexError, ValueError):
+        # /proc non disponibile o formato inatteso: fallback a kill(pid, 0).
+        # /proc unavailable or unexpected shape: fall back to kill(pid, 0).
+        pass
     try:
         os.kill(pid, 0)
     except OSError:
         return False
     return True
+
+
+def _reap_child(pid: int) -> None:
+    """Raccoglie il figlio se e' nostro, senza bloccare.
+
+    Senza questo il supervisore resta zombie finche' il processo CLI non
+    esce, e finche' e' zombie ogni controllo su di lui va interpretato con
+    `_pid_alive` (che lo considera morto). `ECHILD` significa che non e' un
+    nostro figlio: non e' un errore, e' la norma quando il supervisore e'
+    stato lanciato da un altro processo.
+
+    Reaps the child if it is ours, without blocking. Without this the
+    supervisor stays a zombie until the CLI process exits; `ECHILD` means it
+    is not our child, which is not an error but the norm when the supervisor
+    was launched by another process.
+    """
+    if not isinstance(pid, int) or pid <= 0:
+        return
+    with contextlib.suppress(ChildProcessError, OSError):
+        os.waitpid(pid, os.WNOHANG)
 
 
 def is_stream_active() -> bool:
@@ -2136,11 +2192,23 @@ def _update_lock(**extra: object) -> None:
     _atomic_write_json(STREAM_LOCK_PATH, lock)
 
 
-def _terminate_pid(pid: int, graceful: bool = True) -> None:
+def _terminate_pid(pid: int, graceful: bool = True, wait_seconds: float | None = None) -> None:
     """Termina un processo (SIGINT poi SIGTERM poi SIGKILL).
 
-    Terminates a process (SIGINT then SIGTERM then SIGKILL).
+    `wait_seconds` limita l'attesa TOTALE dopo il primo segnale (default: 7 s,
+    la somma delle due attese storiche). Serve a chi ha gia' concesso un
+    grace proprio per la chiusura ordinata e non puo' regalarne altri 7:
+    dopo quel grace il processo va spento, non accompagnato.
+
+    Terminates a process (SIGINT then SIGTERM then SIGKILL). `wait_seconds`
+    caps the TOTAL wait after the first signal (default: 7 s, the sum of the
+    two historical waits). It is for callers that already granted their own
+    grace for an orderly close and cannot afford 7 more: after that grace the
+    process must be shut down, not escorted.
     """
+    budget = 7.0 if wait_seconds is None else max(0.0, wait_seconds)
+    deadline = time.monotonic() + budget
+    half = budget / 2.0
     if not _pid_alive(pid):
         return
     # Solo processi NOSTRI: registratore (ffmpeg) o supervisore
@@ -2157,20 +2225,26 @@ def _terminate_pid(pid: int, graceful: bool = True) -> None:
     sig = signal.SIGINT if graceful else signal.SIGTERM
     with contextlib.suppress(ProcessLookupError):
         os.kill(pid, sig)
-    for _attempt in range(50):
+    # Prima meta' del budget: attesa dopo il primo segnale. Poi SIGTERM con
+    # il resto. Le due fasi si fermano appena il processo e' morto.
+    # First half of the budget: wait after the first signal. Then SIGTERM with
+    # the rest. Both phases break as soon as the process is dead.
+    first_deadline = time.monotonic() + half
+    while time.monotonic() < first_deadline:
         if not _pid_alive(pid):
             break
-        time.sleep(0.1)
+        time.sleep(0.05)
     if _pid_alive(pid):
         with contextlib.suppress(ProcessLookupError):
             os.kill(pid, signal.SIGTERM)
-        for _ in range(20):
+        while time.monotonic() < deadline:
             if not _pid_alive(pid):
                 break
-            time.sleep(0.1)
+            time.sleep(0.05)
     if _pid_alive(pid):
         with contextlib.suppress(ProcessLookupError):
             os.kill(pid, signal.SIGKILL)
+    _reap_child(pid)
 
 
 def _hard_exit(state: dict, session_dir: Path, proc: subprocess.Popen[bytes] | None,
@@ -2727,7 +2801,16 @@ class StreamSession:
                     # Grace expired: escalate. SIGINT is what the supervisor
                     # handles first; `_terminate_pid` then goes on with SIGTERM
                     # and SIGKILL, so a deaf process dies anyway.
-                    _terminate_pid(pid, graceful=True)
+                    #
+                    # Dopo il grace il processo va spento SUBITO: `_terminate_pid`
+                    # con il suo budget storico di 7 s aggiungerebbe altri sette
+                    # secondi a un utente che ha gia' aspettato, ed e' il caso in
+                    # cui il drain e' bloccato da una rete che non risponde.
+                    # After the grace the process must die NOW: `_terminate_pid`
+                    # with its historical 7 s budget would add seven more seconds
+                    # for a user who already waited, and this is exactly the case
+                    # where the drain is stuck on a network that does not answer.
+                    _terminate_pid(pid, graceful=True, wait_seconds=2.0)
         except (KeyError, OSError):
             pass
 

@@ -8105,6 +8105,59 @@ max_entries = 20
         finally:
             _innocent2.kill()
             _innocent2.wait()
+
+        # --- _pid_alive: uno ZOMBIE e' morto, non vivo -----------------------
+        # Il supervisore e' figlio del processo che chiama stop(): nella
+        # chiusura ordinata diventa zombie finche' il padre non lo raccoglie,
+        # e `kill(pid, 0)` su uno zombie RIESCE. Dichiararlo vivo produceva
+        # due difetti misurati: l'attesa del grace non si interrompeva mai
+        # (bottone fermo per tutti i 5 s a processo gia' concluso) e lo stop
+        # riportava fallimento (rc 1, nessuna notifica "sessione terminata")
+        # su una sessione che aveva smesso di registrare.
+        # --- _pid_alive: a ZOMBIE is dead, not alive -------------------------
+        # The supervisor is a child of the process calling stop(): in the
+        # graceful close it becomes a zombie until the parent reaps it, and
+        # `kill(pid, 0)` on a zombie SUCCEEDS. Calling it alive produced two
+        # measured defects: the grace wait never broke early (button stuck for
+        # the whole 5 s on an already-finished process) and stop reported
+        # failure (rc 1, no "session ended" notification) on a session that
+        # had stopped recording.
+        _zomb = subprocess.Popen(["true"])
+        try:
+            for _ in range(50):
+                # /proc/<pid>/stat: attende che lo stato sia davvero 'Z'.
+                try:
+                    _raw = Path(f"/proc/{_zomb.pid}/stat").read_text(encoding="utf-8", errors="replace")
+                    if _raw[_raw.rindex(")") + 1:].split()[0] == "Z":
+                        break
+                except (OSError, IndexError, ValueError):
+                    pass
+                time.sleep(0.05)
+            check("stream._pid_alive: un processo ZOMBIE non e' 'vivo'",
+                  stream_mod._pid_alive(_zomb.pid) is False)
+            # contro-prova: da vivo la stessa funzione dice True
+            _live = subprocess.Popen(["sleep", "30"])
+            try:
+                check("stream._pid_alive (contro): un processo vivo resta vivo",
+                      stream_mod._pid_alive(_live.pid) is True)
+            finally:
+                _live.kill()
+                _live.wait()
+            # _reap_child non deve sollevare su un pid che non e' nostro figlio
+            stream_mod._reap_child(1)
+            check("stream._reap_child: un pid non nostro non solleva", True)
+        finally:
+            _zomb.kill()
+            _zomb.wait()
+
+        # _terminate_pid accetta un budget esplicito: dopo un grace gia'
+        # concesso non deve regalarne altri 7 s.
+        # _terminate_pid takes an explicit budget: after an already-granted
+        # grace it must not add another 7 s.
+        _t0_ws = time.monotonic()
+        stream_mod._terminate_pid(_innocent2.pid, graceful=False, wait_seconds=0.2)
+        _el_ws = time.monotonic() - _t0_ws
+        check("_terminate_pid: wait_seconds limita l'attesa (<= 1.5 s)", _el_ws <= 1.5)
     finally:
         audio.LOCK_PATH = _sg_saved_lock
         for _pr in (_innocent, _fake_ff):
